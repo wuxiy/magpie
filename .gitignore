@@ -10,3 +10,6 @@
 # lpk 打包产物与缓存
 /release/
 /.lzc-cli-cache/
+
+# buildscript 生成物
+/lzc/gen/
