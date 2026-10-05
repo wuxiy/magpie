@@ -1,16 +1,16 @@
 package: cloud.lazycat.app.magpie
 version: 0.1.940
-name: Magpie
+name: magpie
 description: One place to pick every agent's model - a local gateway that speaks the OpenAI / Anthropic / Gemini APIs for Claude Code, Codex and friends
 author: yetone
 license: MIT
 homepage: https://github.com/yetone/magpie
 locales:
   zh-CN:
-    name: Magpie 模型选择器
-    description: 在一处为每个 AI agent 挑选模型。内置兼容 OpenAI / Anthropic / Gemini 接口的本地网关，Claude Code、Codex 等agent 接上即可用你的订阅和 API key。
+    name: magpie
+    description: 在一处为每个 AI agent 挑选模型。内置兼容 OpenAI / Anthropic / Gemini 接口的本地网关，Claude Code、Codex 等 agent 接上即可用你的订阅和 API key。
   en-US:
-    name: Magpie
+    name: magpie
     description: One place to pick every agent's model, with a local gateway that speaks the OpenAI / Anthropic / Gemini APIs.
 permissions:
   required:
