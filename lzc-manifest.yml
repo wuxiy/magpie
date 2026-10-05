@@ -28,6 +28,16 @@ usage: |
 
 application:
   subdomain: magpie
+  # publish the agent gateway on the box itself, for callers that cannot use
+  # the domain (LightOS VMs, raw-IP LAN clients): http://<box>:3425/v1 with a
+  # gateway key. The web UI port 3430 is NOT published - it stays behind the
+  # domain and the box login.
+  ingress:
+    - protocol: tcp
+      service: magpie
+      port: 3425
+      publish_port: "3425"
+      description: magpie agent gateway (OpenAI/Anthropic/Gemini API, gateway key required)
   routes:
     # the browser UI and its /api (everything not matched below)
     - /=http://magpie:3430
