@@ -1,0 +1,142 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The GUI links GTK 3 and WebKitGTK 4.1 through cgo on Linux (see the
+      # Makefile), so vet and test need their headers and the gtk3 tag.
+      - name: Install GTK and WebKitGTK
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Tags
+        id: tags
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then echo "tags=gtk3" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Vet
+        run: go vet -tags "${{ steps.tags.outputs.tags }}" ./...
+
+      - uses: oven-sh/setup-bun@v2
+        if: runner.os == 'Linux'
+        with:
+          bun-version: 1.4.2
+
+      - name: Test
+        if: runner.os != 'Windows'
+        run: go test -tags "${{ steps.tags.outputs.tags }}" ./...
+
+      - name: Production plugin flow
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        env:
+          MAGPIE_FLOW_BIG: '1'
+        run: |
+          bun --version
+          go test -timeout 10m -tags "${{ steps.tags.outputs.tags }}" ./internal/plugin/... -run '^TestFlowBigReplyProd$' -count=1
+
+      # The redaction tests reuse this binary in fresh processes to check
+      # first-use races, so it must include the race detector.
+      - name: Race
+        if: runner.os != 'Windows'
+        # The full gateway suite can exceed Go's default 10-minute package
+        # timeout under the race detector on hosted macOS runners.
+        run: go test -race -timeout 20m -tags "${{ steps.tags.outputs.tags }}" ./internal/gateway/ ./internal/redact/
+
+      # Account usage mixes cached results with concurrent fetches.
+      - name: Race account usage
+        if: runner.os != 'Windows'
+        run: go test -race -tags "${{ steps.tags.outputs.tags }}" ./internal/provider/ -run '^Test(LoginUsage|SubscriptionUsageEachAccount)'
+
+      # Some tests fake a home through $HOME, which Windows doesn't read
+      # (USERPROFILE), or assume Unix file modes. Compile the full suite
+      # on Windows and run the isolated native checks below.
+      - name: Compile tests
+        if: runner.os == 'Windows'
+        run: go test -run '^$' ./...
+
+      # These checks use in-memory errors and loopback test servers. Run
+      # the native Winsock refusal case rather than only compiling it.
+      - name: Windows MCP health
+        if: runner.os == 'Windows'
+        run: go test -v -count=1 -timeout 2m ./internal/library -run '^(TestNetHealth|TestCheckHTTP)$'
+
+      # Usage isolates USERPROFILE and the agent homes; execute its native
+      # ChangeTime checks rather than only cross-compiling the Windows API.
+      - name: Windows usage cache
+        if: runner.os == 'Windows'
+        run: go test -v -count=1 ./internal/usage -run '^(TestWindows|TestLogChange|TestLogFileInfoPreservesIdentity$|TestUsageSameSizeAndMtimeRewrite$|TestLogGrowingRewriteThenAppend$|TestUsagePageCacheAfterUncachedQuery$)'
+
+      # Install tests keep their files in t.TempDir; exercise real Windows
+      # executable and held-handle rename/rollback behavior.
+      - name: Windows update install
+        if: runner.os == 'Windows'
+        run: go test -v -count=1 -timeout 2m ./internal/update -run '^(TestInstallBinary|TestMoveAside)'
+
+      # These tests use temporary paths, without the Unix HOME assumptions
+      # of the full suite. Run the native link-kind and sharing-error checks.
+      - name: Windows session moves
+        if: runner.os == 'Windows'
+        run: go test -v -count=1 ./internal/sessions -run '^Test(WindowsSession|Move|CopyAll)'
+
+      # dsh's layered config is read and edited in temporary homes. Run
+      # these checks on Windows too, including Desktop's home patch layer.
+      - name: Windows dsh configuration
+        if: runner.os == 'Windows'
+        run: go test -v -count=1 ./internal/agent -run '^Test(Dsh|KeepDsh)'
+
+  cli:
+    name: cli (${{ matrix.goos }}/${{ matrix.goarch }}, nogui)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: android
+            goarch: arm64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build the terminal-only release
+        env:
+          CGO_ENABLED: '0'
+        run: make release-cli TARGETS="${{ matrix.goos }}/${{ matrix.goarch }}"
+      - uses: actions/setup-node@v4
+        if: matrix.goos == 'linux'
+        with:
+          node-version: 22
+      - name: Test the site and installer
+        if: matrix.goos == 'linux'
+        run: |
+          sh -n site/public/install.sh
+          node --test site/*.test.mjs

@@ -1,0 +1,91 @@
+package gateway
+
+import (
+	"encoding/json"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/yetone/magpie/internal/provider"
+)
+
+// A Gemini reply that says nothing — a STOP with no parts, only reasoning,
+// or no candidate at all — is a failure, asked again and then told the
+// agent as an error in its own protocol, never a turn ended as it should
+// (#667: antigravity/gemini-3.8-flash handed pi content [] and zero usage
+// as a normal stop, and the agent's run ended mid-task). Antigravity's
+// Code Assist and Factory's Gemini route share the decoder and translate;
+// Factory's is the one a test can point at a fake upstream.
+func TestGeminiEmptyReplyIsAnError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	f := &fake{t: t}
+	up := httptest.NewServer(f)
+	t.Cleanup(up.Close)
+	t.Cleanup(provider.FactoryBaseForTest(up.URL, up.URL+"/eu"))
+	auth, _ := json.Marshal(map[string]any{
+		"accessToken": "tok", "refreshToken": "r",
+		"expiresAt": time.Now().Add(time.Hour).UnixMilli(),
+		"orgId":     "org_D", "activeOrganizationId": "fac_D", "email": "d@example.com",
+	})
+	dir := filepath.Dir(provider.Path())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal([]map[string]any{{
+		"agent": "factory", "user": "d@example.com", "plan": "pro", "on": true, "auth": json.RawMessage(auth),
+	}})
+	if err := os.WriteFile(filepath.Join(dir, "logins.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	const model = "factory/gemini-3.8-flash"
+	asks := []struct{ name, path, body, ended string }{
+		{"chat", "/v1/chat/completions", `{"model":"` + model + `","stream":true,"messages":[{"role":"user","content":"hi"}]}`, `"finish_reason":"stop"`},
+		{"anthropic", "/v1/messages", `{"model":"` + model + `","stream":true,"max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`, `"end_turn"`},
+		{"responses", "/v1/responses", `{"model":"` + model + `","stream":true,"input":"hi"}`, `response.completed`},
+	}
+	empties := map[string]string{
+		"STOP and no parts": `data: {"candidates":[{"content":{"role":"model","parts":[]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":0}}` + "\n\n",
+		"only reasoning": `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Let me see.","thought":true}]}}]}` + "\n\n" +
+			`data: {"candidates":[{"content":{"role":"model","parts":[{"text":""}]},"finishReason":"STOP"}]}` + "\n\n",
+		"no candidate": `data: {"usageMetadata":{"promptTokenCount":0}}` + "\n\n",
+	}
+	for what, reply := range empties {
+		f.reply = reply
+		for _, a := range asks {
+			f.calls = 0
+			code, body := post(t, a.path, a.body)
+			if code == 200 && (strings.Contains(body, a.ended) || !strings.Contains(body, "an empty reply")) {
+				t.Errorf("%s, %s: a normal end, not an error: %d %s", what, a.name, code, body)
+			}
+			if f.calls < 2 {
+				t.Errorf("%s, %s: asked %d times, not again", what, a.name, f.calls)
+			}
+		}
+		code, body := post(t, "/v1/chat/completions", `{"model":"`+model+`","messages":[{"role":"user","content":"hi"}]}`)
+		if code != 502 || !strings.Contains(body, "an empty reply") {
+			t.Errorf("%s, not streamed: %d %s", what, code, body)
+		}
+	}
+
+	// what says something, or ended at its length, still goes as it came
+	for what, reply := range map[string]string{
+		"text":                    `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"hello"}]},"finishReason":"STOP"}]}` + "\n\n",
+		"reasoning to its length": `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Let me see.","thought":true}]},"finishReason":"MAX_TOKENS"}]}` + "\n\n",
+	} {
+		f.reply = reply
+		code, body := post(t, "/v1/chat/completions", asks[0].body)
+		if code != 200 || strings.Contains(body, "an empty reply") || !strings.Contains(body, `"finish_reason"`) {
+			t.Errorf("%s: %d %s", what, code, body)
+		}
+	}
+}

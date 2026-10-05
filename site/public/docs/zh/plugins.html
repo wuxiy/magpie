@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>插件开发 · magpie 文档</title>
+<meta name="description" content="如何编写 magpie 插件：magpie 调用哪些 OpenCode 插件钩子、运行哪些 pi 扩展包，如何把它们变成带账号、模型、请求和用量的供应商，以及怎么测试、发布和上架。">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#fafafa">
+<script>
+(() => {
+  let mode = "system";
+  try { mode = localStorage.getItem("theme") || "system"; } catch {}
+  const q = matchMedia("(prefers-color-scheme: dark)");
+  const apply = () => {
+    const t = mode === "system" ? (q.matches ? "dark" : "light") : mode;
+    document.documentElement.dataset.theme = t;
+    document.querySelector('meta[name="theme-color"]').content = t === "dark" ? "#0b0b0c" : "#fafafa";
+    document.querySelectorAll("button.theme").forEach((b) => { b.dataset.mode = mode; b.title = "Theme: " + mode; });
+  };
+  q.addEventListener("change", () => mode === "system" && apply());
+  window.setTheme = (m) => { mode = m; try { m === "system" ? localStorage.removeItem("theme") : localStorage.setItem("theme", m); } catch {} apply(); };
+  window.themeMode = () => mode;
+  apply();
+})();
+</script>
+<script>try{if(/Linux/.test(navigator.userAgent)&&!/Android/.test(navigator.userAgent)||localStorage.getItem("omarchy")||/[?&]omarchy=/.test(location.search))document.write('<script src="/omarchy.js"><\/script>')}catch(e){}</script>
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/img/icon-256.png">
+<link rel="alternate" hreflang="en" href="https://usemagpie.ai/docs/plugins">
+<link rel="alternate" hreflang="zh" href="https://usemagpie.ai/docs/zh/plugins">
+<link rel="alternate" hreflang="ja" href="https://usemagpie.ai/docs/ja/plugins">
+<link rel="stylesheet" href="/docs.css">
+<meta property="og:title" content="插件开发">
+<meta property="og:description" content="用一个 OpenCode 插件或 pi 扩展包，把任何服务变成 magpie 的供应商。">
+<meta property="og:image" content="https://usemagpie.ai/img/og.png">
+<meta property="og:url" content="https://usemagpie.ai/docs/zh/plugins">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="brand" href="/zh/"><img class="bird" src="/img/magpie-small.svg" alt="">magpie <small>文档</small></a>
+  <div class="links">
+    <a href="/zh/">首页</a>
+    <a href="/docs/zh/start">快速上手</a>
+    <a href="/docs/zh/intent">意图路由</a>
+    <a href="/docs/zh/plugins">插件开发</a>
+    <a href="/docs/zh/import">Add to magpie</a>
+    <a href="https://github.com/yetone/magpie-releases/releases">版本发布</a>
+  </div>
+  <div class="langs">
+    <button class="icon-btn lang" type="button" aria-label="语言" title="语言" aria-haspopup="true" aria-expanded="false" aria-controls="langs"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c1.7 1.75 2.55 3.83 2.55 6.25S9.7 12.5 8 14.25M8 1.75C6.3 3.5 5.45 5.58 5.45 8S6.3 12.5 8 14.25"/></svg></button>
+    <div class="lang-menu" id="langs" hidden>
+      <a href="/docs/plugins" hreflang="en" lang="en">English</a>
+      <a href="/docs/zh/plugins" hreflang="zh" lang="zh">中文</a>
+      <a href="/docs/ja/plugins" hreflang="ja" lang="ja">日本語</a>
+    </div>
+  </div>
+  <a class="icon-btn" href="https://discord.gg/vGSnD3ZKQF" aria-label="magpie on Discord" title="Join us on Discord"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg></a>
+  <a class="icon-btn" href="https://github.com/yetone/magpie" aria-label="magpie on GitHub" title="Source on GitHub"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
+  <button class="icon-btn theme" type="button" aria-label="Theme" title="Theme: system"><svg class="i-system" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1.5"/><path d="M5.5 14h5M8 11.25V14"/></svg><svg class="i-light" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1"/></svg><svg class="i-dark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z"/></svg></button>
+  <a class="btn small" href="/#get">下载</a>
+</div></nav>
+
+<main class="wrap doc">
+  <aside class="toc">
+    <p>插件开发</p>
+    <a href="#overview">概览</a>
+    <a href="#quick">五分钟写一个插件</a>
+    <a href="#run">magpie 如何运行插件</a>
+    <a href="#package">包的结构</a>
+    <a href="#provider">供应商与模型</a>
+    <a href="#signin">登录</a>
+    <a href="#requests">请求</a>
+    <a href="#signin-state">登录状态</a>
+    <a href="#usage">用量</a>
+    <a href="#input">插件能拿到什么</a>
+    <a href="#ids">供应商 id</a>
+    <a href="#test">测试</a>
+    <a href="#publish">发布与上架</a>
+    <a href="#pi">pi 扩展包</a>
+    <a href="#protocol">宿主协议</a>
+    <a href="#faq">答疑</a>
+  </aside>
+
+  <article>
+    <p class="eyebrow" id="overview">文档 · 插件</p>
+    <h1>编写插件</h1>
+    <p class="lede">插件负责登录某个服务、替它发请求。magpie 把插件变成一个供应商，所有 agent 都能用，多账号、故障切换、用量这些也都有。magpie 运行的是 <a href="https://opencode.ai/docs/plugins/">OpenCode 的供应商插件</a>，为 OpenCode 写的插件不用改就能在这里用；注册了供应商的 <a href="https://github.com/earendil-works/pi">pi</a> 扩展包也能直接用（见 <a href="#pi">pi 扩展包</a>）。本页讲插件作者需要知道的：magpie 调用哪些钩子、拿到返回值后做什么，以及怎么测试、发布和上架插件。</p>
+
+    <div class="callout"><b>一段话说清楚。</b>插件是一个 npm 包、一个 git 仓库或一个文件夹。它的模块导出一个 async 函数，形式是 OpenCode v1 插件。magpie 把所有插件加载进同一个 <a href="https://bun.sh">Bun</a> 进程，也就是<em>插件宿主</em>。函数返回一组钩子：
+      <ul>
+        <li><code>config</code> 声明供应商和它的默认模型。</li>
+        <li><code>auth</code> 给出登录方式，以及一个 <code>loader</code>，由它的 <code>fetch</code> 发出每个请求。</li>
+        <li><code>provider.models</code> 列出某个账号有哪些模型。</li>
+        <li><code>auth.usage</code> 说明套餐用了多少。这是 magpie 自己的钩子，OpenCode 会忽略它。</li>
+        <li><code>auth.refresh</code> 在账号的 token 过期前续期，同一时间只续一次。它也是 magpie 自己的钩子。</li>
+      </ul>
+      agent 用什么 API 发来都可以。网关把请求转成模型使用的 API（chat completions、Responses、Anthropic Messages 或 Gemini），交给插件的 <code>fetch</code>，再把回答流式传回去。</div>
+
+    <h2 id="quick"><a class="anchor" href="#quick">五分钟写一个插件</a></h2>
+    <p>这个例子登录 Acme，一个虚构的编程套餐。Acme 用 API key 登录，接口兼容 OpenAI，并能报告每个账号的模型和用量。真实的插件主要区别在于怎么登录、怎么给请求签名。整个例子已在 magpie v0.1.676 和本地模拟的 Acme API 上跑通。</p>
+    <div class="code">
+      <span class="lang">package.json</span>
+      <button class="copy" data-copy="q-pkg">复制</button>
+      <pre id="q-pkg">{
+  "name": "opencode-acme-auth",
+  "version": "0.1.0",
+  "description": "OpenCode provider plugin: Acme Coding Plan",
+  "type": "module",
+  "main": "./index.mjs",
+  "files": ["index.mjs", "README.md"],
+  "keywords": ["opencode", "opencode-plugin", "acme"],
+  "license": "MIT",
+  "magpie": { "maxConcurrency": 4 }
+}</pre>
+    </div>
+    <div class="code">
+      <span class="lang">index.mjs</span>
+      <button class="copy" data-copy="q-index">复制</button>
+      <pre id="q-index">const PROVIDER = <span class="s">"acme"</span>
+const BASE = <span class="s">"https://api.acme.example/v1"</span>
+
+export const AcmeAuthPlugin = async ({ client }) =&gt; ({
+  <span class="c">// 供应商，以及还没人登录时它有的模型</span>
+  config: async (cfg) =&gt; {
+    cfg.provider ??= {}
+    cfg.provider[PROVIDER] ??= {
+      name: <span class="s">"Acme"</span>,
+      npm: <span class="s">"@ai-sdk/openai-compatible"</span>, <span class="c">// chat completions</span>
+      api: BASE,
+      models: {
+        <span class="s">"acme-coder"</span>: { name: <span class="s">"Acme Coder"</span>, limit: { context: 200000, output: 32000 }, tool_call: true },
+      },
+    }
+  },
+
+  auth: {
+    provider: PROVIDER,
+    methods: [{ type: <span class="s">"api"</span>, label: <span class="s">"Acme API key"</span>, placeholder: <span class="s">"acme-…"</span> }],
+    <span class="c">// 这个账号的每个请求带上什么</span>
+    async loader(getAuth) {
+      const auth = await getAuth()
+      if (auth?.type !== <span class="s">"api"</span>) return {}
+      return {
+        baseURL: BASE,
+        async fetch(input, init) {
+          const headers = new Headers(init?.headers)
+          headers.set(<span class="s">"authorization"</span>, `Bearer ${auth.key}`)
+          headers.set(<span class="s">"x-acme-client"</span>, <span class="s">"opencode-acme-auth/0.1.0"</span>)
+          return fetch(input, { ...init, headers })
+        },
+      }
+    },
+    <span class="c">// magpie 自己的钩子：套餐用了多少</span>
+    async usage(getAuth) {
+      const auth = await getAuth()
+      const res = await fetch(`${BASE}/usage`, { headers: { authorization: `Bearer ${auth.key}` } })
+      if (!res.ok) return { error: `Acme answered ${res.status}`, windows: [] }
+      const u = await res.json()
+      return {
+        plan: u.plan,
+        windows: [{ name: <span class="s">"5 hours"</span>, used: u.percent, resetsAt: u.resets_at, span: 5 * 3600 }],
+      }
+    },
+  },
+
+  <span class="c">// 向 Acme 查询这个账号有哪些模型</span>
+  provider: {
+    id: PROVIDER,
+    async models(provider, { auth } = {}) {
+      if (auth?.type !== <span class="s">"api"</span>) return provider.models
+      const res = await fetch(`${BASE}/models`, { headers: { authorization: `Bearer ${auth.key}` } })
+      if (!res.ok) return provider.models <span class="c">// magpie 保留原来的列表</span>
+      const { data } = await res.json()
+      const base = provider.models[<span class="s">"acme-coder"</span>]
+      return Object.fromEntries(data.map((m) =&gt; [m.id, { ...base, id: m.id, name: m.name ?? m.id }]))
+    },
+  },
+})</pre>
+    </div>
+    <p>把文件夹加到 magpie，登录，然后试一下：</p>
+    <div class="code">
+      <span class="lang">终端</span>
+      <button class="copy" data-copy="q-cli">复制</button>
+      <pre id="q-cli">magpie plugin add ./opencode-acme-auth   <span class="c"># 文件夹就地加载，不安装任何东西</span>
+magpie plugin login acme                 <span class="c"># 询问 key</span>
+magpie plugin                            <span class="c"># acme (Acme, 2 models)  signed in</span>
+magpie provider test acme                <span class="c"># ✓ chat  7 ms · acme-coder</span>
+magpie quota                             <span class="c"># acme · Pro · 5h 37% ↻59m</span></pre>
+    </div>
+    <p>现在 agent 可以用 <code>acme/acme-coder</code> 访问它的模型，和其他供应商的模型一样。在应用里，打开<span class="ui">插件</span>，点<span class="ui">添加插件</span>，填入文件夹路径，再在这个供应商那一行登录。</p>
+    <div class="callout"><b>在沙箱里试。</b>正在写的插件不应碰到你真正在用的 magpie。给 magpie 一个单独的 <code>HOME</code>，做法见<a href="#test">测试</a>。</div>
+
+    <h2 id="run"><a class="anchor" href="#run">magpie 如何运行插件</a></h2>
+    <ul>
+      <li><b>Bun。</b>第一次添加插件时，magpie 会下载 Bun，所有插件都跑在它上面。Bun 能直接运行 TypeScript，所以入口可以是 <code>index.ts</code>。</li>
+      <li><b>一个宿主进程。</b>所有开着的插件都加载进同一个 Bun 进程，第一次用到时启动。magpie 和宿主通过 stdin、stdout 通信，每行一条 JSON 消息。插件打印的任何内容，包括 <code>console.log</code> 和 <code>process.stdout</code>，都会被转到 stderr，magpie 以 <code>plugin: …</code> 记进日志。</li>
+      <li><b>安装。</b>
+        <ul>
+          <li>npm 包用 <code>bun add</code> 安装，不运行安装脚本，和 OpenCode 安装插件的方式一样。依赖 <code>postinstall</code> 构建的包无法使用。</li>
+          <li>git 仓库由 Bun 拉取：<code>github:owner/repo[#ref]</code>、<code>git+https://…</code> 或 <code>owner/repo</code>。</li>
+          <li>文件夹或文件的路径就地加载。</li>
+        </ul></li>
+      <li><b>重启。</b>添加、移除、更新、开关插件都会重启宿主。还在通过旧宿主流式返回的回答会先完成。终端里每条 <code>magpie</code> 命令都启动自己的宿主，所以文件夹插件总是按当前内容加载。在应用里，把插件关掉再打开即可加载你的修改。</li>
+      <li><b>代理。</b>插件为某个供应商或账号发出的每个 fetch，都走用户给这个供应商或账号设置的代理；没有设置就走 magpie 自己的代理，除非设成<em>直连</em>。回环地址从不走代理。自己传了 <code>proxy</code> 选项的 fetch 不会被改动。</li>
+      <li><b>更新。</b>
+        <ul>
+          <li>社区的包（<code>@magpie-community/*</code>）在 magpie 启动后不久自动更新，之后每六小时一次。</li>
+          <li>其他包有新版本时，<span class="ui">插件</span>上会出现一个小圆点，用户点一下或运行 <code>magpie plugin update</code> 更新。</li>
+          <li>固定了版本的写法（<code>name@1.2.3</code>）会停在那个版本。</li>
+        </ul></li>
+    </ul>
+    <p>magpie 在它的配置目录（<code>~/.config/magpie</code> 或 <code>$XDG_CONFIG_HOME/magpie</code>）里保存这些：</p>
+    <div class="table-wrap"><table>
+      <tr><th>文件</th><th>内容</th></tr>
+      <tr><td><code>plugins.json</code></td><td>已添加的插件：<code>{"plugins": [{"spec", "off"?, "options"?}], "config"?}</code>。<code>options</code> 是插件的第二个参数，和 OpenCode 的 <code>["name", {…}]</code> 一样。<code>config</code> 是交给插件的 OpenCode 配置。</td></tr>
+      <tr><td><code>plugins/</code></td><td>已安装的 npm 和 git 包，是一个独立的 Bun 项目。</td></tr>
+      <tr><td><code>plugin-auth.json</code></td><td>登录信息（权限 600），格式和 OpenCode 的 <code>auth.json</code> 相同，所以登录可以在两者之间迁移。</td></tr>
+      <tr><td><code>plugin-providers.json</code></td><td>插件上次列出的供应商和模型，magpie 启动时不必再问插件。</td></tr>
+    </table></div>
+
+    <h2 id="package"><a class="anchor" href="#package">包的结构</a></h2>
+    <h3>magpie 从哪里加载</h3>
+    <p>magpie 查找插件服务端入口的位置和 OpenCode 一样，加载第一个导出了插件的文件：</p>
+    <ol>
+      <li><code>package.json</code> 里的 <code>exports["./server"]</code>，然后 <code>main</code>，然后 <code>exports["."]</code>（<code>exports</code> 是字符串时就用它）。</li>
+      <li>否则是 <code>index.ts</code>、<code>index.tsx</code>、<code>index.js</code>、<code>index.mjs</code> 或 <code>index.cjs</code>。</li>
+    </ol>
+    <p>路径指向单个文件时，就加载那个文件。</p>
+    <h3>模块导出什么</h3>
+    <ul>
+      <li><code>export default { id, server }</code>（OpenCode v1）：<code>server</code> 就是插件。</li>
+      <li>否则，<b>模块导出的每个函数</b>都会被当作插件调用，导出的 <code>{ server }</code> 对象也一样。</li>
+    </ul>
+    <p>所以不要从入口文件导出辅助函数。测试需要的东西放在一个对象上，社区插件的做法是 <code>export const _internal = { … }</code>。</p>
+    <h3>插件函数</h3>
+    <div class="code">
+      <span class="lang">形式</span>
+      <pre>async (input, options) =&gt; hooks
+<span class="c">// input:   { client, project, directory, worktree, serverUrl, $, experimental_workspace }</span>
+<span class="c">// options: plugins.json 中这一项的 "options"，没有则为 undefined</span>
+<span class="c">// hooks:   { config?, auth?, provider?, "chat.headers"? }</span></pre>
+    </div>
+    <p>导出多个函数，一个插件就能提供多个供应商，每个函数的钩子互不相干。两个插件为同一个供应商提供了 <code>auth</code> 钩子时，后加载的生效，和 OpenCode 一样。</p>
+    <h3>package.json 里 magpie 的字段</h3>
+    <p>OpenCode 会忽略 <code>magpie</code> 对象，所以给 OpenCode 插件加上它是安全的。</p>
+    <div class="table-wrap"><table>
+      <tr><th>字段</th><th>含义</th></tr>
+      <tr><td><code>magpie.icon</code></td><td>供应商的图标：<code>https://</code> 地址或 <code>data:image/…</code> URI，最大 1 MB，SVG、PNG 等都行。</td></tr>
+      <tr><td><code>magpie.maxConcurrency</code></td><td>每个账号同时接多少个请求，1 到 1000 的整数。用户在供应商上设置的上限优先。</td></tr>
+    </table></div>
+    <p>同样的字段也可以写在 <code>auth</code> 钩子上（<code>auth.icon</code>、<code>auth.maxConcurrency</code>），优先于 <code>package.json</code>。</p>
+
+    <h2 id="provider"><a class="anchor" href="#provider">供应商与模型</a></h2>
+    <h3>声明供应商</h3>
+    <p>供应商的 id 就是 <code>auth.provider</code>。如果 <a href="https://models.dev">models.dev</a> 收录了这个 id，magpie 会以那里的条目为起点，和 OpenCode 一样。否则就在 <code>config</code> 钩子里声明供应商。用 <code>??=</code>，以免覆盖用户在 <code>plugins.json</code> 里配置的供应商：</p>
+    <div class="code">
+      <span class="lang">config 钩子</span>
+      <pre>config: async (cfg) =&gt; {
+  cfg.provider ??= {}
+  cfg.provider[<span class="s">"acme"</span>] ??= {
+    name: <span class="s">"Acme"</span>,
+    npm: <span class="s">"@ai-sdk/anthropic"</span>,          <span class="c">// 模型使用的 API（见下表）</span>
+    api: <span class="s">"https://api.acme.example/v1"</span>, <span class="c">// 请求发往哪里，除非 loader 另有指定</span>
+    models: {
+      <span class="s">"acme-large"</span>: {
+        name: <span class="s">"Acme Large"</span>,
+        id: <span class="s">"acme-large-2026-09"</span>,          <span class="c">// API 接受的 id，和键不同时填</span>
+        limit: { context: 400000, output: 64000 },
+        reasoning: true,
+        tool_call: true,
+        modalities: { input: [<span class="s">"text"</span>, <span class="s">"image"</span>] },
+        cost: { input: 3, output: 15, cache_read: 0.3 }, <span class="c">// 每百万 token 的美元价格；套餐可不填</span>
+        variants: { low: {}, medium: {}, high: {} },        <span class="c">// 推理档位</span>
+      },
+    },
+  }
+}</pre>
+    </div>
+    <p>模型还可以写 <code>provider: { npm, api }</code>，使用和供应商不同的 API 或地址；也可以写 <code>headers</code>、<code>options</code>，以及用 <code>disabled: true</code> 隐藏它。</p>
+
+    <h3 id="apis">模型使用的 API</h3>
+    <p>模型或供应商上 <code>npm</code> 指定的 AI SDK 包决定了 API，也就决定了你的 <code>fetch</code> 收到的请求格式。无论 agent 发来的是什么，magpie 的网关都已经转换好了：</p>
+    <div class="table-wrap"><table>
+      <tr><th>npm</th><th>API</th><th>基地址后的路径</th></tr>
+      <tr><td><code>@ai-sdk/anthropic</code>、<code>@ai-sdk/google-vertex/anthropic</code></td><td>Anthropic Messages</td><td><code>/messages</code></td></tr>
+      <tr><td><code>@ai-sdk/openai</code>、<code>@ai-sdk/azure</code></td><td>OpenAI Responses</td><td><code>/responses</code></td></tr>
+      <tr><td><code>@ai-sdk/google</code></td><td>Gemini</td><td><code>/models/&lt;id&gt;:streamGenerateContent?alt=sse</code></td></tr>
+      <tr><td><code>@ai-sdk/github-copilot</code></td><td>GPT-5 及之后（gpt-5-mini 除外）用 Responses，其余用 chat completions</td><td><code>/responses</code> 或 <code>/chat/completions</code></td></tr>
+      <tr><td>其他（<code>@ai-sdk/openai-compatible</code>、<code>xai</code>、<code>groq</code>、<code>deepseek</code> 等）</td><td>Chat completions</td><td><code>/chat/completions</code></td></tr>
+    </table></div>
+    <p>基地址按这个顺序选：</p>
+    <ol>
+      <li>loader 的 <code>baseURL</code>；</li>
+      <li>模型的 <code>provider.api</code>；</li>
+      <li>供应商的 <code>api</code>；</li>
+      <li>AI SDK 包自己的默认地址（<code>https://api.anthropic.com/v1</code>、<code>https://api.openai.com/v1</code> 等）。</li>
+    </ol>
+    <p>请求体里的 <code>model</code> 是模型的 API id：有 <code>id</code> 就用它，否则用键名。</p>
+
+    <h3>每个账号的模型</h3>
+    <p>模型因账号而异时，加一个 <code>provider</code> 钩子：</p>
+    <div class="code">
+      <span class="lang">provider 钩子</span>
+      <pre>provider: {
+  id: <span class="s">"acme"</span>,
+  async models(provider, { auth }) {
+    <span class="c">// provider.models：models.dev 和 config 钩子给出的模型，以 id 为键</span>
+    <span class="c">// auth：这个账号的登录信息，和 plugin-auth.json 中保存的一样</span>
+    return { <span class="s">"acme-large"</span>: { ...provider.models[<span class="s">"acme-large"</span>], name: <span class="s">"Acme Large"</span> } }
+  },
+}</pre>
+    </div>
+    <ul>
+      <li>magpie 为每个账号调用一次，在这个账号的作用域里、经过它的代理。每个账号只承接为它列出的模型，所以低档套餐的账号不会收到它没有的模型。</li>
+      <li>模型是 OpenCode 的 <code>Model</code>：
+        <ul>
+          <li><code>id</code>、<code>name</code>；</li>
+          <li><code>api: {id, url, npm}</code>；</li>
+          <li><code>limit: {context, input?, output}</code>；</li>
+          <li><code>capabilities: {reasoning, toolcall, attachment, input: {text, image, …}}</code>；</li>
+          <li><code>cost: {input, output, cache: {read, write}}</code>；</li>
+          <li><code>variants</code>、<code>release_date</code>、<code>status</code>。</li>
+        </ul>
+        最省事的做法是展开 <code>provider.models</code> 里的模型，再改几个字段。<code>status</code> 为 <code>"deprecated"</code> 的模型不会显示。</li>
+      <li>magpie 还会读取模型上的这些字段，OpenCode 会忽略它们：
+        <ul>
+          <li><code>free: true</code>：套餐免费提供，不占额度。</li>
+          <li><code>rate</code>：一次请求消耗的点数倍率，可以是数字（<code>0.5</code>），也可以照厂商的写法（<code>"x0.5"</code>）。</li>
+          <li><code>rateWas</code>：当前优惠之前的倍率。</li>
+        </ul>
+        模型选择器会显示它们。</li>
+      <li>模型支持推理时，<code>variants</code> 的键会成为它的推理档位。</li>
+    </ul>
+    <h3>连不上厂商时</h3>
+    <p>钩子出现以下任一情况，magpie 都会保留原有的列表，和内置订阅拉取列表失败时一样：</p>
+    <ul>
+      <li>请求失败后原样返回 <code>provider.models</code>；</li>
+      <li>抛出异常；</li>
+      <li>返回自己的列表，并设置 <code>list[Symbol.for("magpie.fellBack")] = true</code>。</li>
+    </ul>
+    <p>如果失败的原因是登录失效，就抛出带 <code>signIn: "expired"</code> 的错误，这个账号会被标记为需要重新登录（见<a href="#signin-state">登录状态</a>）。</p>
+
+    <h2 id="signin"><a class="anchor" href="#signin">登录</a></h2>
+    <p><code>auth</code> 钩子的形式是 <code>{ provider, methods, loader, usage?, refresh?, refreshLead?, icon?, maxConcurrency? }</code>。每个 method 是用户可选的一种登录方式。在应用里它们是按钮；在终端里，<code>magpie plugin login &lt;id&gt; [&lt;method&gt;]</code> 会询问选哪个。</p>
+    <h3>API key</h3>
+    <div class="code">
+      <span class="lang">api 方式</span>
+      <pre>{ type: <span class="s">"api"</span>, label: <span class="s">"Acme API key"</span>, placeholder: <span class="s">"acme-…"</span> }</pre>
+    </div>
+    <ul>
+      <li><code>label</code> 是 key 输入框的标题。只写“API key”的会显示成“Acme API key”。</li>
+      <li><code>placeholder</code> 是 magpie 自己的字段，显示在输入框里作提示。</li>
+      <li>没有 <code>authorize</code> 函数时，key 原样保存：<code>{type: "api", key, metadata?}</code>。<code>prompts</code> 的回答放在 <code>metadata</code> 里。</li>
+      <li>有 <code>authorize(inputs)</code> 时，由插件自己校验或换取 key，返回 <code>{type: "success", key, metadata?}</code> 或 <code>{type: "failed", error?}</code>。</li>
+    </ul>
+    <h3>浏览器或设备码登录</h3>
+    <div class="code">
+      <span class="lang">oauth 方式</span>
+      <pre>{
+  type: <span class="s">"oauth"</span>,
+  label: <span class="s">"Sign in with Acme"</span>,
+  async authorize(inputs) {
+    const d = await startDeviceCode()
+    return {
+      url: d.verification_uri,                    <span class="c">// magpie 打开它</span>
+      instructions: `Enter the code ${d.user_code}`, <span class="c">// 并显示这段说明</span>
+      method: <span class="s">"auto"</span>,                              <span class="c">// "auto"：callback() 自己完成</span>
+      async callback() {                           <span class="c">// "code"：callback(code)，用户粘贴的码</span>
+        const t = await pollForToken(d)
+        if (!t) return { type: <span class="s">"failed"</span>, error: <span class="s">"The code expired"</span> }
+        return { type: <span class="s">"success"</span>, refresh: t.refresh_token, access: t.access_token,
+                 expires: Date.now() + t.expires_in * 1000, accountId: t.email }
+      },
+    }
+  },
+}</pre>
+    </div>
+    <ul>
+      <li>带 <code>refresh</code> 的成功结果保存为 <code>{type: "oauth", refresh, access, expires, …}</code>，你返回的其他字段（<code>accountId</code>、<code>enterpriseUrl</code>、你自己的字段）都一并保存。</li>
+      <li>带 <code>key</code> 的成功结果保存为 API key。</li>
+      <li>结果里写 <code>provider: "other-id"</code>，登录就保存到插件负责的另一个供应商下。</li>
+      <li>失败结果里的 <code>error</code> 是 magpie 自己的字段：用户会看到原因（最多 500 字符）。不写的话，用户只能看到登录失败。</li>
+      <li>只有带 <code>prompts</code> 的方式才会收到 <code>inputs</code>。没有 prompts 的方式收到 <code>undefined</code>，和 OpenCode 的 TUI 一样。OpenCode 的 CLI 传的是空对象，有些插件因此会在终端里自己提问。</li>
+    </ul>
+    <h3>登录前的提问</h3>
+    <p>method 的 <code>prompts</code> 在 <code>authorize</code> 之前依次提问，每一项只在条件成立时出现：</p>
+    <div class="code">
+      <span class="lang">prompts</span>
+      <pre>prompts: [
+  { type: <span class="s">"select"</span>, key: <span class="s">"region"</span>, message: <span class="s">"Region"</span>,
+    options: [{ label: <span class="s">"Global"</span>, value: <span class="s">"global"</span> }, { label: <span class="s">"China"</span>, value: <span class="s">"cn"</span>, hint: <span class="s">"acme.cn"</span> }] },
+  { type: <span class="s">"text"</span>, key: <span class="s">"team"</span>, message: <span class="s">"Team id"</span>, placeholder: <span class="s">"t-…"</span>,
+    when: { key: <span class="s">"region"</span>, op: <span class="s">"eq"</span>, value: <span class="s">"global"</span> },        <span class="c">// 或 condition: (inputs) =&gt; boolean</span>
+    validate: (v) =&gt; (/^t-/.test(v) ? undefined : <span class="s">"Starts with t-"</span>) },
+]</pre>
+    </div>
+    <h3>账号</h3>
+    <ul>
+      <li><b>保存位置。</b>一个供应商可以登录多次。第一个账号保存在供应商 id 下，和 OpenCode 一样；其他账号保存在 <code>id#xxxxxx</code> 下。</li>
+      <li><b>用户怎么区分它们。</b>magpie 依次用 <code>accountId</code>、<code>metadata.email</code>、<code>email</code> 给账号命名。至少保存其中一个，能拿到邮箱就用邮箱。</li>
+      <li><b>重新登录。</b>新的登录和已有账号 <code>accountId</code> 相同时，会替换那个账号。如果两边都有 <code>uid</code>（厂商自己的 id，用于名字可能重复的厂商），它也必须相同。没有 id 时，比较密钥是否相同。都不匹配就成为新账号。</li>
+      <li><b>作用域。</b>magpie 为某个账号发起的每次调用，都在这个账号的作用域里运行：
+        <ul>
+          <li><code>getAuth()</code> 返回这个账号。</li>
+          <li><code>client.auth.set({ path: { id: "acme" }, body })</code> 保存到这个账号。</li>
+        </ul>
+        所以每个账号的状态要按拿到的 auth 来保存，不要放进以供应商为键的模块变量。</li>
+      <li><b>刷新。</b>提供 <code>auth.refresh</code>，magpie 就会替你续期（见<a href="#renew">续期登录</a>）。否则 token 过期时，在 <code>fetch</code> 里刷新，再用 <code>client.auth.set</code> 保存完整对象。你给的内容会替换原有内容，不做合并。</li>
+    </ul>
+    <h3 id="renew">续期登录</h3>
+    <p>从 magpie 0.1.684 起，插件可以用 <code>auth.refresh</code> 把 token 续期交给 magpie。这是 magpie 自己的钩子（OpenCode 会忽略它）：</p>
+    <div class="code">
+      <span class="lang">auth 钩子</span>
+      <pre>auth: {
+  provider: <span class="s">"acme"</span>,
+  methods: [ … ],
+  <span class="c">// 可选：在 expires 之前多久续期（毫秒），默认 5 分钟</span>
+  refreshLead: 5 * 60 * 1000,
+  async refresh(auth, provider) {  <span class="c">// auth 是这个账号保存的登录信息</span>
+    const t = await exchange(auth.refresh)
+    if (t.error === <span class="s">"invalid_grant"</span>)
+      throw Object.assign(new Error(<span class="s">"Acme 拒绝了登录"</span>), { signIn: <span class="s">"expired"</span> })
+    return { access: t.access_token, refresh: t.refresh_token ?? auth.refresh,
+             expires: Date.now() + t.expires_in * 1000 }
+  },
+  loader: async (getAuth) =&gt; ({ … }),  <span class="c">// getAuth() 拿到的已经是续期后的 token</span>
+}</pre>
+    </div>
+    <ul>
+      <li><b>什么时候运行。</b>OAuth 账号的 <code>expires</code> 距现在不到 <code>refreshLead</code> 时，在这个账号的 loader、<code>provider.models</code>、<code>auth.usage</code> 或请求之前运行。<code>expires</code> 为 0 或没有的账号不会续期。</li>
+      <li><b>同一时间只续一次。</b>发现 token 快过期的请求会一起等同一次续期，所以只允许 refresh token 用一次的厂商不会收到两次。最多等 15 秒；超时的续期在完成时照样保存。</li>
+      <li><b>保存什么。</b>你返回的字段会覆盖账号原有的同名字段（会合并，这点和 <code>client.auth.set</code> 不同），账号的标记也会清除。没什么可续的就什么都不返回。</li>
+      <li><b>失败时。</b>账号保持原样，请求带着旧 token 继续发，由厂商的回答来说明结果。带 <code>signIn: "expired"</code> 的错误会标记账号（见<a href="#signin-state">登录状态</a>），重新登录之前 magpie 不再尝试。其他错误 30 秒后再试。</li>
+      <li><b>OpenCode 和旧版 magpie。</b>它们会忽略这个钩子。如果插件也要在那里运行，<code>fetch</code> 里的检查请保留：在 magpie 下它会发现 token 是新的，什么也不做。</li>
+    </ul>
+
+    <h2 id="requests"><a class="anchor" href="#requests">请求</a></h2>
+    <p><code>loader(getAuth, provider)</code> 每个账号运行一次，账号登录信息变化后会重新运行。它返回 OpenCode 会交给 AI SDK 的内容：</p>
+    <div class="table-wrap"><table>
+      <tr><th>字段</th><th>magpie 怎么用</th></tr>
+      <tr><td><code>baseURL</code></td><td>请求发往的地址，优先于模型和供应商的 <code>api</code>。</td></tr>
+      <tr><td><code>apiKey</code></td><td>按 AI SDK 包的方式发送：Anthropic 用 <code>x-api-key</code>，Google 用 <code>x-goog-api-key</code>，其他用 <code>Authorization: Bearer</code>。API key 登录时默认就是保存的 key。</td></tr>
+      <tr><td><code>headers</code></td><td>加到每个请求上。</td></tr>
+      <tr><td><code>fetch</code></td><td>发出请求。不提供时，magpie 的宿主用标准 <code>fetch</code>。</td></tr>
+    </table></div>
+    <p>你的 <code>fetch(input, init)</code> 收到的请求：</p>
+    <ul>
+      <li><code>input</code> 是完整 URL：基地址加上模型 API 对应的路径。</li>
+      <li><code>init.method</code> 通常是 <code>POST</code>。</li>
+      <li><code>init.headers</code> 按下面的顺序设置，后面的覆盖前面的：
+        <ol>
+          <li><code>apiKey</code> 对应的 key 头；</li>
+          <li>loader 的 <code>headers</code>；</li>
+          <li>网关请求的头；</li>
+          <li><code>chat.headers</code> 钩子加的头。</li>
+        </ol></li>
+      <li><code>init.body</code> 是这种 API 格式的 JSON 字符串（不是 UTF-8 文本时为字节）。其中的 <code>model</code> 是 API id，<code>stream</code> 照 agent 的要求。</li>
+      <li><code>init.signal</code> 在 agent 放弃请求时中止。</li>
+    </ul>
+    <p>返回一个 <code>Response</code>。它的状态码、头和正文原样传回，正文逐块流式传输。如果你改写了流式正文，要去掉头里的 <code>content-length</code> 和 <code>content-encoding</code>。</p>
+    <h3>失败与故障切换</h3>
+    <ul>
+      <li>非 2xx 的响应就是厂商的回答，网关会像对待其他供应商一样处理：限流或服务端错误会把请求转到下一个账号或模型，401 会标记账号（见<a href="#signin-state">登录状态</a>）。</li>
+      <li>抛出异常会让请求失败，然后故障切换继续。</li>
+      <li>尽量用该 API 自己的错误格式回答，这样 agent 会显示厂商的原话。</li>
+    </ul>
+    <h3>chat.headers</h3>
+    <p>OpenCode 的 <code>chat.headers</code> 钩子对每个请求都会运行。它的 <code>input.sessionID</code> 是 magpie 的会话 id，在同一段对话的各轮之间保持不变。可以用它填厂商的会话头或缓存头：</p>
+    <div class="code">
+      <span class="lang">chat.headers</span>
+      <pre><span class="s">"chat.headers"</span>: async (input, output) =&gt; {
+  if (input.model.providerID === <span class="s">"acme"</span>) output.headers[<span class="s">"x-acme-session"</span>] = input.sessionID
+}</pre>
+    </div>
+
+    <h2 id="signin-state"><a class="anchor" href="#signin-state">登录状态</a></h2>
+    <p>厂商拒绝了某个账号的登录时，magpie 会给它打上标记，告诉用户，并且在它恢复之前不再往它发请求。默认情况下，401 打标记，成功清除标记。插件可以用 <code>X-Magpie-Sign-In</code> 响应头更准确地说明一个回答的含义，magpie 会在转发前去掉这个头：</p>
+    <div class="table-wrap"><table>
+      <tr><th>值</th><th>含义</th></tr>
+      <tr><td><code>expired</code></td><td>登录被拒绝，无论状态码是什么（有些厂商为此返回 403 或 502）。</td></tr>
+      <tr><td><code>kept</code></td><td>账号保持原样（这个 401 说的是别的问题）。</td></tr>
+      <tr><td><code>renewed</code></td><td>登录已续期：清除标记，无论请求接下来遇到什么。</td></tr>
+    </table></div>
+    <p>在 <code>fetch</code> 或 <code>provider.models</code> 里，抛出带 <code>signIn: "expired"</code> 的错误效果相同：</p>
+    <div class="code">
+      <span class="lang">index.mjs</span>
+      <pre>throw Object.assign(new Error(<span class="s">"Acme refused the sign-in; sign in again"</span>), { signIn: <span class="s">"expired"</span> })</pre>
+    </div>
+
+    <h2 id="usage"><a class="anchor" href="#usage">用量</a></h2>
+    <p><code>auth.usage(getAuth, provider)</code> 是 magpie 自己的钩子，说明一个账号的额度用了多少。它在账号的作用域里运行，所以它刷新的 token 会保存到这个账号。magpie 把结果显示在<span class="ui">供应商</span>里的账号上、<code>magpie quota</code> 里，以及网关的 <code>GET /v1/magpie/quotas</code>。所有字段都可选：</p>
+    <div class="code">
+      <span class="lang">usage 返回值</span>
+      <pre>{
+  plan: <span class="s">"Pro"</span>,
+  user: <span class="s">"ada@example.com"</span>,     <span class="c">// 厂商那边的账号名</span>
+  until: <span class="s">"2026-11-01T00:00:00Z"</span>, <span class="c">// 套餐到期时间</span>
+  renew: <span class="s">"auto"</span>,                <span class="c">// 或 "off"</span>
+  balance: <span class="s">"$12.40"</span>,
+  error: <span class="s">""</span>,                    <span class="c">// 显示在额度窗口的位置</span>
+  windows: [{
+    name: <span class="s">"5 hours"</span>,
+    used: 37,                   <span class="c">// 百分比；超用时大于 100</span>
+    resetsAt: <span class="s">"2026-10-03T18:00:00Z"</span>, <span class="c">// 或 resetSecs: 3600</span>
+    span: 18000,                <span class="c">// 窗口长度，单位秒</span>
+    display: <span class="s">"370 / 1000 credits"</span>,
+    model: <span class="s">"opus"</span>,              <span class="c">// 只统计 id 含这个词的模型</span>
+    models: [], notModels: [],  <span class="c">// 或恰好这些 id，或除这些外的全部</span>
+    aside: false,               <span class="c">// true：用完也不影响账号使用</span>
+  }],
+  resets: { count: 2, until: <span class="s">"…"</span>, byWindow: false, fiveHour: 1, weekly: 1 }, <span class="c">// 账号可用的重置次数</span>
+  signIn: <span class="s">"kept"</span>,               <span class="c">// 同 X-Magpie-Sign-In</span>
+}</pre>
+    </div>
+    <p>时间可以是 ISO 字符串，也可以是以秒或毫秒为单位的时间戳。没有 <code>signIn</code> 时，提示要重新登录的 <code>error</code> 会标记账号，一次正常读取会清除标记。</p>
+
+    <h2 id="input"><a class="anchor" href="#input">插件能拿到什么</a></h2>
+    <p>magpie 交给插件的是 OpenCode <code>PluginInput</code> 里的内容，只要它在没有 OpenCode 服务端时还有意义：</p>
+    <div class="table-wrap"><table>
+      <tr><th>字段</th><th>在 magpie 里</th></tr>
+      <tr><td><code>client.auth.set</code> / <code>.remove</code></td><td>保存或删除当前作用域账号的登录信息。</td></tr>
+      <tr><td><code>client.app.log</code></td><td>写入 magpie 的日志，格式为 <code>plugin [level]: [service] message</code>。</td></tr>
+      <tr><td><code>client.tui.showToast</code></td><td>写入 magpie 的日志。</td></tr>
+      <tr><td><code>client.config.get</code></td><td>所有插件的 <code>config</code> 钩子运行之后的配置。</td></tr>
+      <tr><td>其他 <code>client.*</code></td><td>返回 <code>{ data: undefined }</code>。</td></tr>
+      <tr><td><code>directory</code>、<code>worktree</code></td><td>magpie 的配置目录，可以在这里存文件。</td></tr>
+      <tr><td><code>project</code></td><td><code>{ id: "magpie", worktree }</code>。</td></tr>
+      <tr><td><code>$</code></td><td>Bun 的 shell。</td></tr>
+      <tr><td><code>serverUrl</code></td><td>占位值，后面没有 OpenCode 服务端。</td></tr>
+    </table></div>
+    <p>magpie 调用的钩子是 <code>config</code>、<code>auth</code>（它的 methods、<code>loader</code> 和 <code>usage</code>）、<code>provider.models</code> 和 <code>chat.headers</code>。插件的其他钩子（<code>tool</code>、<code>event</code>、<code>chat.params</code> 等）不会被调用，工具由 agent 自己运行。</p>
+
+    <h2 id="ids"><a class="anchor" href="#ids">供应商 id</a></h2>
+    <ul>
+      <li>agent 用 <code>&lt;id&gt;/&lt;model&gt;</code> 指代插件的模型，id 就是插件的 <code>auth.provider</code>。</li>
+      <li>这个 id 在 magpie 里已被占用时，比如内置订阅、预设（<code>google</code>、<code>openai</code>、<code>anthropic</code> 等）或 <code>magpie</code> 本身，插件的供应商会叫 <code>&lt;id&gt;-plugin</code>。请选一个只属于你的 id。</li>
+      <li>社区为 magpie 已弃用的内置订阅做的插件是例外。它们用内置订阅的 id（<code>cursor</code>、<code>zed</code> 等），用户迁移到插件后就接管这个 id，agent 无需任何改动。</li>
+    </ul>
+
+    <h2 id="test"><a class="anchor" href="#test">测试</a></h2>
+    <p>在沙箱里运行 magpie，这样你自己的 magpie、agent 和登录信息都不会被碰到：</p>
+    <div class="code">
+      <span class="lang">终端</span>
+      <button class="copy" data-copy="t-cli">复制</button>
+      <pre id="t-cli">sb=$(mktemp -d)
+m() { env HOME=$sb XDG_CONFIG_HOME=$sb/.config XDG_CACHE_HOME=$sb/.cache MAGPIE_ADDR=127.0.0.1:3499 magpie <span class="s">"$@"</span>; }
+m plugin add ./opencode-acme-auth &lt;/dev/null
+m plugin --json                     <span class="c"># 插件列出的内容：方式、账号、模型、加载错误</span>
+m plugin login acme                 <span class="c"># 每种方式、每个提问</span>
+m provider test acme                <span class="c"># 每种 API 发一个很小的请求</span>
+m provider test acme acme-coder     <span class="c"># 或只测指定的模型</span>
+m quota                             <span class="c"># usage 钩子</span>
+m plugin logout acme</pre>
+    </div>
+    <ul>
+      <li>加载失败的插件，在 <code>magpie plugin</code> 里会说明原因。</li>
+      <li>钩子的错误和插件打印的内容都在输出里，以 <code>plugin: …</code> 开头。</li>
+      <li>单元测试用 <code>bun test</code>，测试你放在 <code>_internal</code> 上的函数。</li>
+      <li><a href="https://github.com/magpie-community/plugins">社区仓库</a>里有几个脚本：
+        <ul>
+          <li><code>bun scripts/check.mjs</code> 像 magpie 一样加载每个包，并检查它的钩子。</li>
+          <li><code>scripts/try.sh &lt;name&gt;</code> 在上面那样的沙箱里运行它。</li>
+        </ul></li>
+    </ul>
+
+    <h2 id="publish"><a class="anchor" href="#publish">发布与上架</a></h2>
+    <ul>
+      <li><b>npm。</b>照常发布。用户可以按名字添加（<code>magpie plugin add opencode-acme-auth</code>），按版本（<code>…@0.2.0</code>），从 git，或从文件夹。</li>
+      <li><b>搜索。</b><span class="ui">插件</span>里的搜索会向 npm 查询 <code>&lt;关键词&gt; opencode</code>，显示名字或 keywords 里同时含有 <code>opencode</code> 和 <code>auth</code>、<code>plugin</code>、<code>provider</code> 之一的包。keywords 写成 <code>["opencode", "opencode-plugin", "&lt;厂商&gt;"]</code> 就可以。它还会查询 <code>keywords:pi-package &lt;关键词&gt;</code>，显示名字或 keywords 里提到 <code>auth</code> 或 <code>provider</code> 的 pi 扩展包。</li>
+      <li><b>README。</b>插件在 magpie 里的详情页显示它在 npm 上的 README。写清楚它登录什么、怎么登录、登录信息存在哪里、有哪些模型。</li>
+      <li><b>推荐列表。</b><span class="ui">插件</span>页推荐的是社区仓库 <a href="https://github.com/magpie-community/plugins/blob/main/registry.json"><code>registry.json</code></a> 里的插件。magpie 最多每六小时拉取一次，并内置一份副本，拉不到时使用。想被收录，就提一个 PR 加上一项：
+        <div class="code">
+          <span class="lang">registry.json</span>
+          <pre>{ <span class="s">"package"</span>: <span class="s">"opencode-acme-auth"</span>, <span class="s">"name"</span>: <span class="s">"Acme"</span>, <span class="s">"icon"</span>: <span class="s">"https://acme.example/icon.svg"</span>,
+  <span class="s">"providers"</span>: [<span class="s">"acme"</span>],
+  <span class="s">"summary"</span>: { <span class="s">"en"</span>: <span class="s">"Your Acme Coding Plan."</span>, <span class="s">"zh"</span>: <span class="s">"使用你的 Acme Coding Plan。"</span> } }</pre>
+        </div>
+        <code>MAGPIE_PLUGIN_MARKET=&lt;url&gt;</code> 让 magpie 改用另一份列表，可以用来检查你的条目；设为 <code>off</code> 则只用内置副本。</li>
+      <li><b>社区包。</b>想把插件贡献到 <a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a>：
+        <ul>
+          <li>放在 <code>packages/&lt;name&gt;</code> 下，包名为 <code>@magpie-community/opencode-&lt;name&gt;-auth</code>，除非确实需要，不要有运行时依赖。</li>
+          <li>把版本号的改动推到 <code>main</code> 就会发布。</li>
+          <li>这些包在每个 magpie 里都会自动更新。</li>
+        </ul></li>
+    </ul>
+
+    <h2 id="pi"><a class="anchor" href="#pi">pi 扩展包</a></h2>
+    <p>magpie 也运行 <a href="https://github.com/earendil-works/pi">pi</a> 的扩展包。用 <code>pi.registerProvider</code> 注册了供应商的 pi 扩展，在 magpie 里和在 pi 里一样工作，不用改任何东西，添加方式和其他插件相同（<code>magpie plugin add pi-antigravity</code>）。</p>
+    <ul>
+      <li><b>怎样算 pi 的包。</b><code>package.json</code> 里有 <code>pi</code> 清单（<code>"pi": { "extensions": [...] }</code>）、有 <code>pi-package</code> 关键词，或者 <code>dependencies</code>、<code>peerDependencies</code> 里有 <code>@earendil-works/pi-coding-agent</code>（或旧的 <code>@mariozechner/pi-coding-agent</code>）。单个文件导入了 pi 也算。</li>
+      <li><b>加载。</b>magpie 在包旁边装好 pi，用 pi 自己的加载器在同一个插件宿主里加载它。它注册的供应商成为 magpie 的供应商，模型就是 pi 为它们列出的那些（pi 能拉取账号自己的列表时用那份）。它的命令、工具、渲染器和事件处理器都不会用到。</li>
+      <li><b>登录。</b>OAuth 登录按 pi 的方式进行：它的提问（<code>onPrompt</code>）在 magpie 的登录流程里问，它的页面（<code>onAuth</code>）在浏览器里打开，<code>refreshToken</code> 负责续期。扩展包用 <code>ctx.ui</code> 弹出的对话框（<code>select</code>、<code>confirm</code>、<code>input</code>、<code>editor</code>）和交给 <code>ctx.ui.custom</code> 的终端组件，也都变成 magpie 的提问。要 API key 的供应商会有一个填 key 的输入框。每次登录就是一个账号，所以 pi 的供应商也能有多个账号。</li>
+      <li><b>pi 的文件。</b>pi 的设置、它的 <code>auth.json</code>（按 pi 的方式保存每个供应商的第一个账号）以及扩展包自己写的文件，都放在 magpie 配置目录下的 <code>pi/</code> 里，不会动用户的 <code>~/.pi</code>，除非设置了 <code>PI_CODING_AGENT_DIR</code>。账号本身和其他插件一样存在 <code>plugin-auth.json</code> 里。</li>
+      <li><b>请求。</b>pi 供应商的模型接收 Anthropic Messages：网关把 agent 发来的请求翻译过去，magpie 通过 pi 流式发送，回复里的思考、签名和工具调用都会保留。厂商的错误会带着状态码传回，所以故障切换和其他插件一样有效。</li>
+      <li><b>id。</b>pi 供应商的 id 和其他插件规则相同，见<a href="#ids">供应商 id</a>。</li>
+    </ul>
+
+    <h2 id="protocol"><a class="anchor" href="#protocol">宿主协议</a></h2>
+    <p>写插件用不到这一节，它是给开发 magpie 本身或调试宿主的人看的。magpie 向宿主的 stdin 写入 <code>{id, method, params}</code>，每行一条。宿主回复 <code>{id, result}</code> 或 <code>{id, error: {message}}</code>。</p>
+    <div class="table-wrap"><table>
+      <tr><th>方法</th><th>作用</th></tr>
+      <tr><td><code>init</code></td><td>加载插件，运行它们的 <code>config</code> 钩子。其他调用都会等它完成。</td></tr>
+      <tr><td><code>providers</code></td><td>每个供应商、它的登录方式、账号，以及每个账号的模型。</td></tr>
+      <tr><td><code>prompt</code>、<code>validate</code></td><td>登录方式的下一个提问；校验一个回答。</td></tr>
+      <tr><td><code>authorize</code>、<code>callback</code>、<code>apiKey</code></td><td>登录。</td></tr>
+      <tr><td><code>load</code></td><td>某个账号的 loader 选项。</td></tr>
+      <tr><td><code>fetch</code></td><td>一个请求。先流式发出 <code>{id, event: "head", status, headers}</code>，然后是 <code>{id, event: "chunk", data}</code>（base64），最后 <code>{id, result: null}</code>。<code>{method: "abort", params: {id}}</code> 取消它。</td></tr>
+      <tr><td><code>usage</code>、<code>check</code></td><td>账号的用量；像真实请求一样检查一个账号。</td></tr>
+      <tr><td><code>import</code>、<code>take</code>、<code>signOut</code>、<code>reload</code></td><td>账号的迁入迁出、删除，以及重新运行它们的 loader。</td></tr>
+    </table></div>
+    <p>宿主也会主动发送事件：<code>log</code>、<code>toast</code>、<code>auth</code>（登录信息已保存或刷新）和 <code>signIn</code>（账号的登录状态，同上）。源码见 <a href="https://github.com/yetone/magpie/blob/main/internal/plugin/host.js"><code>internal/plugin/host.js</code></a>。</p>
+
+    <h2 id="faq"><a class="anchor" href="#faq">答疑</a></h2>
+    <h3>我的 OpenCode 插件不改就能在 magpie 里用吗？</h3>
+    <p>可以，只要它通过 <code>auth</code>、<code>config</code>、<code>provider</code> 和 <code>chat.headers</code> 来登录和发请求。magpie 增加的部分（<code>auth.usage</code>、<code>auth.refresh</code>、<code>magpie.icon</code>、<code>maxConcurrency</code>、<code>free</code>、<code>rate</code>、<code>X-Magpie-Sign-In</code>）OpenCode 都会忽略，所以一个包能同时服务两边。</p>
+    <h3>我的 pi 扩展包能在 magpie 里用吗？</h3>
+    <p>能，只要它通过 <code>pi.registerProvider</code> 登录并提供模型。magpie 只使用它注册的供应商，见 <a href="#pi">pi 扩展包</a>。给它加上 <code>pi-package</code> 关键词，搜索就能找到它。</p>
+    <h3>为什么我的供应商叫 <code>…-plugin</code>？</h3>
+    <p>它的 id 在 magpie 里已经有了。见<a href="#ids">供应商 id</a>。</p>
+    <h3>我的一些辅助函数被当成插件运行了。</h3>
+    <p>入口模块导出的每个函数都会被当作插件调用。只导出插件函数，或者用 <code>export default { id, server }</code>。</p>
+    <h3>可以用 npm 依赖吗？</h3>
+    <p>可以。它们会随插件一起安装，但安装脚本不会运行。Bun 的 <code>fetch</code>、<code>crypto</code>、<code>fs</code> 和 <code>$</code> 能满足大部分需要。</p>
+    <h3>插件可以调用厂商的 CLI 吗？</h3>
+    <p>可以，用 Bun 的 <code>$</code> 或 <code>child_process</code>。好几个社区插件就是通过厂商自己的 CLI 登录的。要考虑到有些机器上没装它，在错误信息里说明怎么安装。</p>
+    <h3>插件能看到用户的哪些内容？</h3>
+    <p>它发出的请求里的一切：对话、工具及其结果。只把它发到用户要求的地方，也不要记进日志。</p>
+    <h3>怎么让 magpie 看到我的修改？</h3>
+    <p>终端里的 <code>magpie</code> 命令每次都按文件夹的当前内容加载。在应用里，到<span class="ui">插件</span>把它关掉再打开。</p>
+
+    <p style="margin-top:48px">有问题，或者有插件想分享？来 <a href="https://discord.gg/vGSnD3ZKQF">Discord</a> 问，或在 <a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a> 开 issue。</p>
+  </article>
+</main>
+
+<footer><div class="wrap">
+  <span>© 2026 magpie · MIT</span>
+  <div class="links">
+    <a href="/zh/">首页</a>
+    <a href="/docs/zh/intent">意图路由</a>
+    <a href="/docs/zh/plugins">插件开发</a>
+    <a href="/docs/zh/import">Add to magpie</a>
+    <a href="https://github.com/yetone/magpie">GitHub</a>
+    <a href="https://discord.gg/vGSnD3ZKQF">Discord</a>
+    <a href="https://github.com/yetone/magpie-releases/releases">版本发布</a>
+  </div>
+</div></footer>
+
+<script>
+(() => {
+  const next = { system: "light", light: "dark", dark: "system" };
+  document.querySelectorAll("button.theme").forEach((b) => {
+    b.dataset.mode = themeMode();
+    b.title = "Theme: " + themeMode();
+    b.addEventListener("click", () => setTheme(next[themeMode()]));
+  });
+
+  document.querySelectorAll(".copy").forEach((b) => b.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
+      b.textContent = "已复制"; setTimeout(() => (b.textContent = "复制"), 1400);
+    } catch {}
+  }));
+})();
+</script>
+<script src="/docs.js"></script>
+</body>
+</html>

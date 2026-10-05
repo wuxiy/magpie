@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Writing plugins · magpie docs</title>
+<meta name="description" content="How to write a magpie plugin: the OpenCode plugin hooks magpie calls, the pi packages it runs, how it turns them into a provider with accounts, models, requests and usage, and how to test, publish and list one.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#fafafa">
+<script>
+(() => {
+  let mode = "system";
+  try { mode = localStorage.getItem("theme") || "system"; } catch {}
+  const q = matchMedia("(prefers-color-scheme: dark)");
+  const apply = () => {
+    const t = mode === "system" ? (q.matches ? "dark" : "light") : mode;
+    document.documentElement.dataset.theme = t;
+    document.querySelector('meta[name="theme-color"]').content = t === "dark" ? "#0b0b0c" : "#fafafa";
+    document.querySelectorAll("button.theme").forEach((b) => { b.dataset.mode = mode; b.title = "Theme: " + mode; });
+  };
+  q.addEventListener("change", () => mode === "system" && apply());
+  window.setTheme = (m) => { mode = m; try { m === "system" ? localStorage.removeItem("theme") : localStorage.setItem("theme", m); } catch {} apply(); };
+  window.themeMode = () => mode;
+  apply();
+})();
+</script>
+<script>try{if(/Linux/.test(navigator.userAgent)&&!/Android/.test(navigator.userAgent)||localStorage.getItem("omarchy")||/[?&]omarchy=/.test(location.search))document.write('<script src="/omarchy.js"><\/script>')}catch(e){}</script>
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/img/icon-256.png">
+<link rel="alternate" hreflang="en" href="https://usemagpie.ai/docs/plugins">
+<link rel="alternate" hreflang="zh" href="https://usemagpie.ai/docs/zh/plugins">
+<link rel="alternate" hreflang="ja" href="https://usemagpie.ai/docs/ja/plugins">
+<link rel="stylesheet" href="/docs.css">
+<meta property="og:title" content="Writing plugins">
+<meta property="og:description" content="Turn any service into a magpie provider with an OpenCode plugin or a pi package.">
+<meta property="og:image" content="https://usemagpie.ai/img/og.png">
+<meta property="og:url" content="https://usemagpie.ai/docs/plugins">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="brand" href="/"><img class="bird" src="/img/magpie-small.svg" alt="">magpie <small>Docs</small></a>
+  <div class="links">
+    <a href="/">Home</a>
+    <a href="/docs/start">Get started</a>
+    <a href="/docs/intent">Intent routing</a>
+    <a href="/docs/plugins">Plugins</a>
+    <a href="/docs/import">Add to magpie</a>
+    <a href="https://github.com/yetone/magpie-releases/releases">Releases</a>
+  </div>
+  <div class="langs">
+    <button class="icon-btn lang" type="button" aria-label="Language" title="Language" aria-haspopup="true" aria-expanded="false" aria-controls="langs"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c1.7 1.75 2.55 3.83 2.55 6.25S9.7 12.5 8 14.25M8 1.75C6.3 3.5 5.45 5.58 5.45 8S6.3 12.5 8 14.25"/></svg></button>
+    <div class="lang-menu" id="langs" hidden>
+      <a href="/docs/plugins" hreflang="en" lang="en">English</a>
+      <a href="/docs/zh/plugins" hreflang="zh" lang="zh">中文</a>
+      <a href="/docs/ja/plugins" hreflang="ja" lang="ja">日本語</a>
+    </div>
+  </div>
+  <a class="icon-btn" href="https://discord.gg/vGSnD3ZKQF" aria-label="magpie on Discord" title="Join us on Discord"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg></a>
+  <a class="icon-btn" href="https://github.com/yetone/magpie" aria-label="magpie on GitHub" title="Source on GitHub"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
+  <button class="icon-btn theme" type="button" aria-label="Theme" title="Theme: system"><svg class="i-system" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1.5"/><path d="M5.5 14h5M8 11.25V14"/></svg><svg class="i-light" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1"/></svg><svg class="i-dark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z"/></svg></button>
+  <a class="btn small" href="/#get">Download</a>
+</div></nav>
+
+<main class="wrap doc">
+  <aside class="toc">
+    <p>Plugins</p>
+    <a href="#overview">Overview</a>
+    <a href="#quick">A plugin in five minutes</a>
+    <a href="#run">How magpie runs plugins</a>
+    <a href="#package">The package</a>
+    <a href="#provider">Provider and models</a>
+    <a href="#signin">Signing in</a>
+    <a href="#requests">Requests</a>
+    <a href="#signin-state">Sign-in state</a>
+    <a href="#usage">Usage</a>
+    <a href="#input">What a plugin is given</a>
+    <a href="#ids">Provider ids</a>
+    <a href="#test">Testing</a>
+    <a href="#publish">Publishing and listing</a>
+    <a href="#pi">pi packages</a>
+    <a href="#protocol">The host protocol</a>
+    <a href="#faq">FAQ</a>
+  </aside>
+
+  <article>
+    <p class="eyebrow" id="overview">Docs · Plugins</p>
+    <h1>Writing a plugin</h1>
+    <p class="lede">A plugin signs in to a service and makes its requests. magpie turns it into a provider that every agent can use, with several accounts, failover, usage and the rest. magpie runs <a href="https://opencode.ai/docs/plugins/">OpenCode’s provider plugins</a>, so a plugin written for OpenCode works here unchanged, and it runs <a href="https://github.com/earendil-works/pi">pi</a>’s packages that register a provider too (see <a href="#pi">pi packages</a>). This page covers what a plugin author needs: the hooks magpie calls, what it does with their answers, and how to test, publish and list a plugin.</p>
+
+    <div class="callout"><b>In one paragraph.</b> A plugin is an npm package, a git repository or a folder. Its module exports an async function in OpenCode’s v1 plugin shape. magpie loads every plugin into one <a href="https://bun.sh">Bun</a> process, the <em>plugin host</em>. The function returns hooks:
+      <ul>
+        <li><code>config</code> declares the provider and its default models.</li>
+        <li><code>auth</code> gives the sign-in methods, plus a <code>loader</code> whose <code>fetch</code> makes each request.</li>
+        <li><code>provider.models</code> lists the models one account has.</li>
+        <li><code>auth.usage</code> says how much of the plan is used. It is magpie’s own hook, and OpenCode ignores it.</li>
+        <li><code>auth.refresh</code> renews an account’s token before it runs out, once at a time. It is magpie’s own hook too.</li>
+      </ul>
+      An agent can send in any API. The gateway translates the request into the API the model speaks (chat completions, Responses, Anthropic Messages or Gemini), hands it to the plugin’s <code>fetch</code>, and streams the answer back.</div>
+
+    <h2 id="quick"><a class="anchor" href="#quick">A plugin in five minutes</a></h2>
+    <p>This example signs in to Acme, a made-up coding plan. Acme takes an API key, has an OpenAI-compatible endpoint, and reports each account’s models and usage. A real plugin differs mainly in how it signs in and signs its requests. This whole example was run against magpie v0.1.676 and a local stand-in for Acme’s API.</p>
+    <div class="code">
+      <span class="lang">package.json</span>
+      <button class="copy" data-copy="q-pkg">Copy</button>
+      <pre id="q-pkg">{
+  "name": "opencode-acme-auth",
+  "version": "0.1.0",
+  "description": "OpenCode provider plugin: Acme Coding Plan",
+  "type": "module",
+  "main": "./index.mjs",
+  "files": ["index.mjs", "README.md"],
+  "keywords": ["opencode", "opencode-plugin", "acme"],
+  "license": "MIT",
+  "magpie": { "maxConcurrency": 4 }
+}</pre>
+    </div>
+    <div class="code">
+      <span class="lang">index.mjs</span>
+      <button class="copy" data-copy="q-index">Copy</button>
+      <pre id="q-index">const PROVIDER = <span class="s">"acme"</span>
+const BASE = <span class="s">"https://api.acme.example/v1"</span>
+
+export const AcmeAuthPlugin = async ({ client }) =&gt; ({
+  <span class="c">// the provider and the models it has before anyone signs in</span>
+  config: async (cfg) =&gt; {
+    cfg.provider ??= {}
+    cfg.provider[PROVIDER] ??= {
+      name: <span class="s">"Acme"</span>,
+      npm: <span class="s">"@ai-sdk/openai-compatible"</span>, <span class="c">// chat completions</span>
+      api: BASE,
+      models: {
+        <span class="s">"acme-coder"</span>: { name: <span class="s">"Acme Coder"</span>, limit: { context: 200000, output: 32000 }, tool_call: true },
+      },
+    }
+  },
+
+  auth: {
+    provider: PROVIDER,
+    methods: [{ type: <span class="s">"api"</span>, label: <span class="s">"Acme API key"</span>, placeholder: <span class="s">"acme-…"</span> }],
+    <span class="c">// what every request of this account is sent with</span>
+    async loader(getAuth) {
+      const auth = await getAuth()
+      if (auth?.type !== <span class="s">"api"</span>) return {}
+      return {
+        baseURL: BASE,
+        async fetch(input, init) {
+          const headers = new Headers(init?.headers)
+          headers.set(<span class="s">"authorization"</span>, `Bearer ${auth.key}`)
+          headers.set(<span class="s">"x-acme-client"</span>, <span class="s">"opencode-acme-auth/0.1.0"</span>)
+          return fetch(input, { ...init, headers })
+        },
+      }
+    },
+    <span class="c">// magpie's own hook: how much of the plan is used</span>
+    async usage(getAuth) {
+      const auth = await getAuth()
+      const res = await fetch(`${BASE}/usage`, { headers: { authorization: `Bearer ${auth.key}` } })
+      if (!res.ok) return { error: `Acme answered ${res.status}`, windows: [] }
+      const u = await res.json()
+      return {
+        plan: u.plan,
+        windows: [{ name: <span class="s">"5 hours"</span>, used: u.percent, resetsAt: u.resets_at, span: 5 * 3600 }],
+      }
+    },
+  },
+
+  <span class="c">// the models this account has, asked of Acme</span>
+  provider: {
+    id: PROVIDER,
+    async models(provider, { auth } = {}) {
+      if (auth?.type !== <span class="s">"api"</span>) return provider.models
+      const res = await fetch(`${BASE}/models`, { headers: { authorization: `Bearer ${auth.key}` } })
+      if (!res.ok) return provider.models <span class="c">// magpie keeps the list it had</span>
+      const { data } = await res.json()
+      const base = provider.models[<span class="s">"acme-coder"</span>]
+      return Object.fromEntries(data.map((m) =&gt; [m.id, { ...base, id: m.id, name: m.name ?? m.id }]))
+    },
+  },
+})</pre>
+    </div>
+    <p>Add the folder to magpie, sign in, and try it:</p>
+    <div class="code">
+      <span class="lang">Terminal</span>
+      <button class="copy" data-copy="q-cli">Copy</button>
+      <pre id="q-cli">magpie plugin add ./opencode-acme-auth   <span class="c"># a folder is loaded where it is; nothing is installed</span>
+magpie plugin login acme                 <span class="c"># asks for the key</span>
+magpie plugin                            <span class="c"># acme (Acme, 2 models)  signed in</span>
+magpie provider test acme                <span class="c"># ✓ chat  7 ms · acme-coder</span>
+magpie quota                             <span class="c"># acme · Pro · 5h 37% ↻59m</span></pre>
+    </div>
+    <p>Agents now reach its models as <code>acme/acme-coder</code>, the same way as any other provider’s. In the app, open <span class="ui">Plugins</span>, click <span class="ui">Add a plugin</span> and give it the folder. Then sign in from the provider’s row.</p>
+    <div class="callout"><b>Try it in a sandbox.</b> A plugin you are writing should never touch your real magpie. Run magpie with a <code>HOME</code> of its own, as <a href="#test">Testing</a> shows.</div>
+
+    <h2 id="run"><a class="anchor" href="#run">How magpie runs plugins</a></h2>
+    <ul>
+      <li><b>Bun.</b> magpie downloads Bun the first time a plugin is added, and runs every plugin on it. Bun runs TypeScript as is, so an entry can be <code>index.ts</code>.</li>
+      <li><b>One host process.</b> Every plugin that is on loads into one Bun process, started the first time one is needed. magpie and the host talk over stdin and stdout, one JSON message a line. Anything a plugin prints, <code>console.log</code> and <code>process.stdout</code> included, is sent to stderr. magpie logs it as <code>plugin: …</code>.</li>
+      <li><b>Installing.</b>
+        <ul>
+          <li>An npm package is installed with <code>bun add</code>, with its install scripts left unrun, as OpenCode installs plugins. A dependency that needs a <code>postinstall</code> build won’t work.</li>
+          <li>A git repository is fetched by Bun: <code>github:owner/repo[#ref]</code>, <code>git+https://…</code> or <code>owner/repo</code>.</li>
+          <li>A path to a folder or file is loaded where it is.</li>
+        </ul></li>
+      <li><b>Restarts.</b> Adding, removing, updating or turning a plugin on or off restarts the host. A reply still streaming through the old host finishes first. Each <code>magpie</code> command in a terminal starts a host of its own, so it always loads a folder plugin as it is now. In the app, turn the plugin off and on to load your edits.</li>
+      <li><b>Proxy.</b> Every fetch a plugin makes for a provider or an account goes through the proxy the user set for that provider or account. Otherwise it goes through magpie’s own proxy, unless the setting is <em>direct</em>. Loopback addresses never go through a proxy. A fetch that passes its own <code>proxy</code> option is left alone.</li>
+      <li><b>Updates.</b>
+        <ul>
+          <li>The community’s packages (<code>@magpie-community/*</code>) update by themselves a little after magpie starts, then every six hours.</li>
+          <li>Any other package with a newer version shows a dot on <span class="ui">Plugins</span>, and the user updates it with a click or <code>magpie plugin update</code>.</li>
+          <li>A spec pinned to a version (<code>name@1.2.3</code>) stays on it.</li>
+        </ul></li>
+    </ul>
+    <p>What magpie keeps, in its config folder (<code>~/.config/magpie</code>, or <code>$XDG_CONFIG_HOME/magpie</code>):</p>
+    <div class="table-wrap"><table>
+      <tr><th>File</th><th>What it holds</th></tr>
+      <tr><td><code>plugins.json</code></td><td>The plugins added: <code>{"plugins": [{"spec", "off"?, "options"?}], "config"?}</code>. <code>options</code> is the plugin’s second argument, as OpenCode’s <code>["name", {…}]</code> gives it. <code>config</code> is the OpenCode config the plugins are handed.</td></tr>
+      <tr><td><code>plugins/</code></td><td>The installed npm and git packages, a Bun project of their own.</td></tr>
+      <tr><td><code>plugin-auth.json</code></td><td>The sign-ins (mode 600), in the same shape as OpenCode’s <code>auth.json</code>, so a sign-in can be moved between the two.</td></tr>
+      <tr><td><code>plugin-providers.json</code></td><td>The providers and models the plugins listed last, so magpie can start without asking them.</td></tr>
+    </table></div>
+
+    <h2 id="package"><a class="anchor" href="#package">The package</a></h2>
+    <h3>Where magpie loads it from</h3>
+    <p>magpie looks for the server side of a plugin in the same places OpenCode does, and loads the first file that exports a plugin:</p>
+    <ol>
+      <li><code>exports["./server"]</code>, then <code>main</code>, then <code>exports["."]</code> (or <code>exports</code> when it is a string), in <code>package.json</code>.</li>
+      <li>Otherwise <code>index.ts</code>, <code>index.tsx</code>, <code>index.js</code>, <code>index.mjs</code> or <code>index.cjs</code>.</li>
+    </ol>
+    <p>A path to a single file loads that file.</p>
+    <h3>What the module exports</h3>
+    <ul>
+      <li><code>export default { id, server }</code> (OpenCode v1): <code>server</code> is the plugin.</li>
+      <li>Otherwise, <b>every function the module exports</b> is called as a plugin, as is every exported <code>{ server }</code> object.</li>
+    </ul>
+    <p>So don’t export helper functions from the entry file. Put what your tests need on an object instead, as the community plugins do with <code>export const _internal = { … }</code>.</p>
+    <h3>The function</h3>
+    <div class="code">
+      <span class="lang">Shape</span>
+      <pre>async (input, options) =&gt; hooks
+<span class="c">// input:   { client, project, directory, worktree, serverUrl, $, experimental_workspace }</span>
+<span class="c">// options: the entry's "options" in plugins.json, else undefined</span>
+<span class="c">// hooks:   { config?, auth?, provider?, "chat.headers"? }</span></pre>
+    </div>
+    <p>A plugin may return more than one provider by exporting more than one function. Each one’s hooks are separate. When two plugins have an <code>auth</code> hook for the same provider, the one loaded last wins, as in OpenCode.</p>
+    <h3>magpie’s fields in package.json</h3>
+    <p>OpenCode ignores the <code>magpie</code> object, so these are safe to add to an OpenCode plugin.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Field</th><th>Meaning</th></tr>
+      <tr><td><code>magpie.icon</code></td><td>The provider’s picture: an <code>https://</code> URL or a <code>data:image/…</code> URI, at most 1 MB. SVG, PNG and the like.</td></tr>
+      <tr><td><code>magpie.maxConcurrency</code></td><td>How many requests each account takes at once, a whole number from 1 to 1000. A limit the user sets on the provider wins over it.</td></tr>
+    </table></div>
+    <p>The same fields can be set on the <code>auth</code> hook (<code>auth.icon</code>, <code>auth.maxConcurrency</code>), where they win over <code>package.json</code>.</p>
+
+    <h2 id="provider"><a class="anchor" href="#provider">Provider and models</a></h2>
+    <h3>Declaring the provider</h3>
+    <p>The provider’s id is <code>auth.provider</code>. If <a href="https://models.dev">models.dev</a> lists that id, magpie starts from its entry, as OpenCode does. Otherwise, declare the provider in a <code>config</code> hook. Use <code>??=</code>, so a provider the user configured in <code>plugins.json</code> isn’t written over:</p>
+    <div class="code">
+      <span class="lang">config hook</span>
+      <pre>config: async (cfg) =&gt; {
+  cfg.provider ??= {}
+  cfg.provider[<span class="s">"acme"</span>] ??= {
+    name: <span class="s">"Acme"</span>,
+    npm: <span class="s">"@ai-sdk/anthropic"</span>,          <span class="c">// the API its models speak (table below)</span>
+    api: <span class="s">"https://api.acme.example/v1"</span>, <span class="c">// where requests go, unless the loader says otherwise</span>
+    models: {
+      <span class="s">"acme-large"</span>: {
+        name: <span class="s">"Acme Large"</span>,
+        id: <span class="s">"acme-large-2026-09"</span>,          <span class="c">// the id the API takes, when it isn't the key</span>
+        limit: { context: 400000, output: 64000 },
+        reasoning: true,
+        tool_call: true,
+        modalities: { input: [<span class="s">"text"</span>, <span class="s">"image"</span>] },
+        cost: { input: 3, output: 15, cache_read: 0.3 }, <span class="c">// US$ per million tokens; leave out for a plan</span>
+        variants: { low: {}, medium: {}, high: {} },        <span class="c">// reasoning levels</span>
+      },
+    },
+  }
+}</pre>
+    </div>
+    <p>A model can also say <code>provider: { npm, api }</code> to use another API or address than the provider’s, <code>headers</code>, <code>options</code>, and <code>disabled: true</code> to hide it.</p>
+
+    <h3 id="apis">The API a model speaks</h3>
+    <p>The AI SDK package named by <code>npm</code>, on the model or on the provider, decides the API. That decides the shape of the request your <code>fetch</code> receives. Whatever the agent sent, magpie’s gateway has already translated it:</p>
+    <div class="table-wrap"><table>
+      <tr><th>npm</th><th>API</th><th>Path after the base</th></tr>
+      <tr><td><code>@ai-sdk/anthropic</code>, <code>@ai-sdk/google-vertex/anthropic</code></td><td>Anthropic Messages</td><td><code>/messages</code></td></tr>
+      <tr><td><code>@ai-sdk/openai</code>, <code>@ai-sdk/azure</code></td><td>OpenAI Responses</td><td><code>/responses</code></td></tr>
+      <tr><td><code>@ai-sdk/google</code></td><td>Gemini</td><td><code>/models/&lt;id&gt;:streamGenerateContent?alt=sse</code></td></tr>
+      <tr><td><code>@ai-sdk/github-copilot</code></td><td>Responses for GPT-5 and later (not gpt-5-mini), chat completions for the rest</td><td><code>/responses</code> or <code>/chat/completions</code></td></tr>
+      <tr><td>anything else (<code>@ai-sdk/openai-compatible</code>, <code>xai</code>, <code>groq</code>, <code>deepseek</code>, …)</td><td>Chat completions</td><td><code>/chat/completions</code></td></tr>
+    </table></div>
+    <p>The base is chosen in this order:</p>
+    <ol>
+      <li>the loader’s <code>baseURL</code>;</li>
+      <li>the model’s <code>provider.api</code>;</li>
+      <li>the provider’s <code>api</code>;</li>
+      <li>the AI SDK package’s own default (<code>https://api.anthropic.com/v1</code>, <code>https://api.openai.com/v1</code>, …).</li>
+    </ol>
+    <p>The body’s <code>model</code> is the model’s API id: its <code>id</code>, else its key.</p>
+
+    <h3>Each account’s models</h3>
+    <p>When the models depend on the account, add a <code>provider</code> hook:</p>
+    <div class="code">
+      <span class="lang">provider hook</span>
+      <pre>provider: {
+  id: <span class="s">"acme"</span>,
+  async models(provider, { auth }) {
+    <span class="c">// provider.models: what models.dev and the config hook give, keyed by id</span>
+    <span class="c">// auth: this account's sign-in, as plugin-auth.json keeps it</span>
+    return { <span class="s">"acme-large"</span>: { ...provider.models[<span class="s">"acme-large"</span>], name: <span class="s">"Acme Large"</span> } }
+  },
+}</pre>
+    </div>
+    <ul>
+      <li>magpie calls it once for each account, in that account’s scope and through its proxy. Each account serves only the models listed for it, so an account on a smaller plan isn’t sent a model it doesn’t have.</li>
+      <li>A model is OpenCode’s <code>Model</code>:
+        <ul>
+          <li><code>id</code>, <code>name</code>;</li>
+          <li><code>api: {id, url, npm}</code>;</li>
+          <li><code>limit: {context, input?, output}</code>;</li>
+          <li><code>capabilities: {reasoning, toolcall, attachment, input: {text, image, …}}</code>;</li>
+          <li><code>cost: {input, output, cache: {read, write}}</code>;</li>
+          <li><code>variants</code>, <code>release_date</code>, <code>status</code>.</li>
+        </ul>
+        Spreading a model from <code>provider.models</code> and changing a few fields is the easy way. A model whose <code>status</code> is <code>"deprecated"</code> isn’t shown.</li>
+      <li>magpie also reads these fields on a model, which OpenCode ignores:
+        <ul>
+          <li><code>free: true</code>: the plan serves it at no cost to its allowance.</li>
+          <li><code>rate</code>: the credits a request costs, as a multiple, given as a number (<code>0.5</code>) or as the vendor writes it (<code>"x0.5"</code>).</li>
+          <li><code>rateWas</code>: the rate before a discount that is running now.</li>
+        </ul>
+        Model pickers show them.</li>
+      <li>The keys of <code>variants</code> become the model’s reasoning levels when it reasons.</li>
+    </ul>
+    <h3>When the vendor can’t be reached</h3>
+    <p>magpie keeps the list it already had, as it does for a built-in subscription whose list couldn’t be fetched, when the hook does any of these:</p>
+    <ul>
+      <li>returns <code>provider.models</code> unchanged after a fetch that failed;</li>
+      <li>throws;</li>
+      <li>returns a list of its own with <code>list[Symbol.for("magpie.fellBack")] = true</code>.</li>
+    </ul>
+    <p>If what failed was the sign-in, throw an error with <code>signIn: "expired"</code> on it. The account is then marked as needing a new sign-in (see <a href="#signin-state">Sign-in state</a>).</p>
+
+    <h2 id="signin"><a class="anchor" href="#signin">Signing in</a></h2>
+    <p>The <code>auth</code> hook is <code>{ provider, methods, loader, usage?, refresh?, refreshLead?, icon?, maxConcurrency? }</code>. Each method is a way to sign in that the user can pick. In the app the methods are buttons; in a terminal, <code>magpie plugin login &lt;id&gt; [&lt;method&gt;]</code> asks which one.</p>
+    <h3>An API key</h3>
+    <div class="code">
+      <span class="lang">api method</span>
+      <pre>{ type: <span class="s">"api"</span>, label: <span class="s">"Acme API key"</span>, placeholder: <span class="s">"acme-…"</span> }</pre>
+    </div>
+    <ul>
+      <li><code>label</code> titles the key’s field. A label that only says “API key” is shown as “Acme API key”.</li>
+      <li><code>placeholder</code> is magpie’s own field, a hint inside the field.</li>
+      <li>Without an <code>authorize</code> function, the key is saved as is: <code>{type: "api", key, metadata?}</code>. Answers to <code>prompts</code> go in <code>metadata</code>.</li>
+      <li>With <code>authorize(inputs)</code>, the plugin checks or exchanges the key itself. It returns <code>{type: "success", key, metadata?}</code> or <code>{type: "failed", error?}</code>.</li>
+    </ul>
+    <h3>A browser or device sign-in</h3>
+    <div class="code">
+      <span class="lang">oauth method</span>
+      <pre>{
+  type: <span class="s">"oauth"</span>,
+  label: <span class="s">"Sign in with Acme"</span>,
+  async authorize(inputs) {
+    const d = await startDeviceCode()
+    return {
+      url: d.verification_uri,                    <span class="c">// magpie opens it</span>
+      instructions: `Enter the code ${d.user_code}`, <span class="c">// and shows this</span>
+      method: <span class="s">"auto"</span>,                              <span class="c">// "auto": callback() resolves on its own</span>
+      async callback() {                           <span class="c">// "code": callback(code), the code the user pastes</span>
+        const t = await pollForToken(d)
+        if (!t) return { type: <span class="s">"failed"</span>, error: <span class="s">"The code expired"</span> }
+        return { type: <span class="s">"success"</span>, refresh: t.refresh_token, access: t.access_token,
+                 expires: Date.now() + t.expires_in * 1000, accountId: t.email }
+      },
+    }
+  },
+}</pre>
+    </div>
+    <ul>
+      <li>A success with <code>refresh</code> is saved as <code>{type: "oauth", refresh, access, expires, …}</code>, with every other field you return kept beside them (<code>accountId</code>, <code>enterpriseUrl</code>, your own).</li>
+      <li>A success with <code>key</code> is saved as an API key.</li>
+      <li><code>provider: "other-id"</code> on the result saves the sign-in to another provider the plugin signs in to.</li>
+      <li><code>error</code> on a failure is magpie’s own field: the user sees why (up to 500 characters). Without it, they see only that the sign-in failed.</li>
+      <li><code>inputs</code> is passed only to a method with <code>prompts</code>. A method without prompts gets <code>undefined</code>, as OpenCode’s TUI calls it. An empty object is how OpenCode’s CLI calls, and some plugins then ask on the terminal.</li>
+    </ul>
+    <h3>Questions before signing in</h3>
+    <p>A method’s <code>prompts</code> are asked in order before <code>authorize</code>, each only when its condition holds:</p>
+    <div class="code">
+      <span class="lang">prompts</span>
+      <pre>prompts: [
+  { type: <span class="s">"select"</span>, key: <span class="s">"region"</span>, message: <span class="s">"Region"</span>,
+    options: [{ label: <span class="s">"Global"</span>, value: <span class="s">"global"</span> }, { label: <span class="s">"China"</span>, value: <span class="s">"cn"</span>, hint: <span class="s">"acme.cn"</span> }] },
+  { type: <span class="s">"text"</span>, key: <span class="s">"team"</span>, message: <span class="s">"Team id"</span>, placeholder: <span class="s">"t-…"</span>,
+    when: { key: <span class="s">"region"</span>, op: <span class="s">"eq"</span>, value: <span class="s">"global"</span> },        <span class="c">// or condition: (inputs) =&gt; boolean</span>
+    validate: (v) =&gt; (/^t-/.test(v) ? undefined : <span class="s">"Starts with t-"</span>) },
+]</pre>
+    </div>
+    <h3>Accounts</h3>
+    <ul>
+      <li><b>Where they are kept.</b> A provider can be signed in to more than once. The first account is kept under the provider’s id, as OpenCode keeps it. Others are kept under <code>id#xxxxxx</code>.</li>
+      <li><b>How the user tells them apart.</b> magpie names an account by <code>accountId</code>, else <code>metadata.email</code>, else <code>email</code>. Save one of them, an email where you have one.</li>
+      <li><b>Signing in again.</b> A new sign-in replaces an existing account when both have the same <code>accountId</code>. Where both also have a <code>uid</code> (the vendor’s own id, for vendors whose names can repeat), it must match too. Without an id, the same secret matches. Otherwise the sign-in becomes a new account.</li>
+      <li><b>Scope.</b> Every call magpie makes for an account runs in that account’s scope:
+        <ul>
+          <li><code>getAuth()</code> returns that account.</li>
+          <li><code>client.auth.set({ path: { id: "acme" }, body })</code> saves to that account.</li>
+        </ul>
+        So keep per-account state by the auth you were given, not in a module variable keyed by the provider.</li>
+      <li><b>Refreshing.</b> Give <code>auth.refresh</code> and magpie renews the token for you (see <a href="#renew">Renewing a sign-in</a>). Otherwise, when a token runs out, refresh it in <code>fetch</code> and save the whole object with <code>client.auth.set</code>. What you give replaces what was kept; nothing is merged.</li>
+    </ul>
+    <h3 id="renew">Renewing a sign-in</h3>
+    <p>From magpie 0.1.684, a plugin can leave renewing its tokens to magpie with <code>auth.refresh</code>, magpie’s own hook (OpenCode ignores it):</p>
+    <div class="code">
+      <span class="lang">auth hook</span>
+      <pre>auth: {
+  provider: <span class="s">"acme"</span>,
+  methods: [ … ],
+  <span class="c">// optional: how long before expires to renew (ms), 5 minutes by default</span>
+  refreshLead: 5 * 60 * 1000,
+  async refresh(auth, provider) {  <span class="c">// auth is the account's saved sign-in</span>
+    const t = await exchange(auth.refresh)
+    if (t.error === <span class="s">"invalid_grant"</span>)
+      throw Object.assign(new Error(<span class="s">"Acme refused the sign-in"</span>), { signIn: <span class="s">"expired"</span> })
+    return { access: t.access_token, refresh: t.refresh_token ?? auth.refresh,
+             expires: Date.now() + t.expires_in * 1000 }
+  },
+  loader: async (getAuth) =&gt; ({ … }),  <span class="c">// getAuth() already gives the renewed token</span>
+}</pre>
+    </div>
+    <ul>
+      <li><b>When it runs.</b> For an OAuth account whose <code>expires</code> is less than <code>refreshLead</code> away, before the account’s loader, <code>provider.models</code>, <code>auth.usage</code> or a request. An account with <code>expires</code> 0 or none is never renewed.</li>
+      <li><b>Once at a time.</b> Requests that find the token due wait for one renewal, so a vendor that spends a refresh token once never sees it twice. They wait up to 15 seconds; a renewal that takes longer is still saved when it ends.</li>
+      <li><b>What is saved.</b> The fields you return are kept over the account’s old ones (merged, unlike <code>client.auth.set</code>), and the account’s mark is cleared. Return nothing when there is nothing to renew.</li>
+      <li><b>When it fails.</b> The account is left as it was and the request goes on with the old token, for the vendor’s answer to tell. An error with <code>signIn: "expired"</code> marks the account (see <a href="#signin-state">Sign-in state</a>), and magpie doesn’t try again until it is signed in again. Any other error is tried again after 30 seconds.</li>
+      <li><b>OpenCode and older magpie.</b> They ignore the hook. Keep the check in your <code>fetch</code> too if the plugin runs there: under magpie it finds the token fresh and does nothing.</li>
+    </ul>
+
+    <h2 id="requests"><a class="anchor" href="#requests">Requests</a></h2>
+    <p><code>loader(getAuth, provider)</code> runs once per account and is run again after its sign-in changes. It returns what OpenCode would give the AI SDK:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Field</th><th>What magpie does with it</th></tr>
+      <tr><td><code>baseURL</code></td><td>Where requests go, ahead of the model’s and provider’s <code>api</code>.</td></tr>
+      <tr><td><code>apiKey</code></td><td>Sent as the AI SDK package sends it: <code>x-api-key</code> for Anthropic, <code>x-goog-api-key</code> for Google, <code>Authorization: Bearer</code> otherwise. For an API-key sign-in, it defaults to the saved key.</td></tr>
+      <tr><td><code>headers</code></td><td>Added to every request.</td></tr>
+      <tr><td><code>fetch</code></td><td>Makes the request. Without it, magpie’s host uses the standard <code>fetch</code>.</td></tr>
+    </table></div>
+    <p>The request your <code>fetch(input, init)</code> receives:</p>
+    <ul>
+      <li><code>input</code> is the full URL: the base plus the path for the model’s API.</li>
+      <li><code>init.method</code> is usually <code>POST</code>.</li>
+      <li><code>init.headers</code> are set in this order, each overriding the one before:
+        <ol>
+          <li>the key header from <code>apiKey</code>;</li>
+          <li>the loader’s <code>headers</code>;</li>
+          <li>the gateway’s request headers;</li>
+          <li>what <code>chat.headers</code> hooks add.</li>
+        </ol></li>
+      <li><code>init.body</code> is the JSON string in that API’s shape (bytes when it isn’t UTF-8 text). <code>model</code> in it is the API id, and <code>stream</code> is whatever the agent asked for.</li>
+      <li><code>init.signal</code> aborts when the agent gives up on the request.</li>
+    </ul>
+    <p>Return a <code>Response</code>. Its status, headers and body go back as they come, streamed chunk by chunk. If you rewrite a streaming body, drop <code>content-length</code> and <code>content-encoding</code> from the headers.</p>
+    <h3>Failures and failover</h3>
+    <ul>
+      <li>A non-2xx response is the vendor’s answer. The gateway handles it as it would any provider’s: a rate limit or a server error moves the request to the next account or model, and a 401 marks the account (see <a href="#signin-state">Sign-in state</a>).</li>
+      <li>A thrown error fails the request, and failover moves on.</li>
+      <li>Answer in the API’s own error shape where you can, so the agent shows the vendor’s message.</li>
+    </ul>
+    <h3>chat.headers</h3>
+    <p>OpenCode’s <code>chat.headers</code> hook runs for every request. Its <code>input.sessionID</code> is magpie’s conversation id, which stays the same across a conversation’s turns. Use it for a vendor’s session or cache header:</p>
+    <div class="code">
+      <span class="lang">chat.headers</span>
+      <pre><span class="s">"chat.headers"</span>: async (input, output) =&gt; {
+  if (input.model.providerID === <span class="s">"acme"</span>) output.headers[<span class="s">"x-acme-session"</span>] = input.sessionID
+}</pre>
+    </div>
+
+    <h2 id="signin-state"><a class="anchor" href="#signin-state">Sign-in state</a></h2>
+    <p>magpie marks an account whose sign-in the vendor refused. It shows the mark to the user and stops sending to the account until it works again. By default a 401 marks the account and a success clears the mark. A plugin can say more precisely what an answer means with the <code>X-Magpie-Sign-In</code> response header, which magpie removes before the answer goes on:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Value</th><th>Meaning</th></tr>
+      <tr><td><code>expired</code></td><td>The sign-in was refused, whatever the status (a vendor that answers 403 or 502 for it).</td></tr>
+      <tr><td><code>kept</code></td><td>Leave the account as it is (a 401 that is about something else).</td></tr>
+      <tr><td><code>renewed</code></td><td>The sign-in renewed: clear the mark, whatever the request then met.</td></tr>
+    </table></div>
+    <p>From <code>fetch</code> or <code>provider.models</code>, throw an error with <code>signIn: "expired"</code> on it for the same effect:</p>
+    <div class="code">
+      <span class="lang">index.mjs</span>
+      <pre>throw Object.assign(new Error(<span class="s">"Acme refused the sign-in; sign in again"</span>), { signIn: <span class="s">"expired"</span> })</pre>
+    </div>
+
+    <h2 id="usage"><a class="anchor" href="#usage">Usage</a></h2>
+    <p><code>auth.usage(getAuth, provider)</code> is magpie’s own hook. It says how much of an account’s allowance is used. It runs in the account’s scope, so a token it refreshes is saved to that account. magpie shows its answer on the account in <span class="ui">Providers</span>, in <code>magpie quota</code> and at <code>GET /v1/magpie/quotas</code> on the gateway. Every field is optional:</p>
+    <div class="code">
+      <span class="lang">usage result</span>
+      <pre>{
+  plan: <span class="s">"Pro"</span>,
+  user: <span class="s">"ada@example.com"</span>,     <span class="c">// the account as the vendor names it</span>
+  until: <span class="s">"2026-11-01T00:00:00Z"</span>, <span class="c">// the plan's end</span>
+  renew: <span class="s">"auto"</span>,                <span class="c">// or "off"</span>
+  balance: <span class="s">"$12.40"</span>,
+  error: <span class="s">""</span>,                    <span class="c">// shown in place of the windows</span>
+  windows: [{
+    name: <span class="s">"5 hours"</span>,
+    used: 37,                   <span class="c">// percent; past 100 when overspent</span>
+    resetsAt: <span class="s">"2026-10-03T18:00:00Z"</span>, <span class="c">// or resetSecs: 3600</span>
+    span: 18000,                <span class="c">// seconds the window runs</span>
+    display: <span class="s">"370 / 1000 credits"</span>,
+    model: <span class="s">"opus"</span>,              <span class="c">// counts only models whose ids hold this word</span>
+    models: [], notModels: [],  <span class="c">// or exactly these ids, or all but these</span>
+    aside: false,               <span class="c">// true: using it up doesn't stop the account</span>
+  }],
+  resets: { count: 2, until: <span class="s">"…"</span>, byWindow: false, fiveHour: 1, weekly: 1 }, <span class="c">// resets the account may spend</span>
+  signIn: <span class="s">"kept"</span>,               <span class="c">// as X-Magpie-Sign-In</span>
+}</pre>
+    </div>
+    <p>Times are ISO strings or epoch numbers, in seconds or in milliseconds. Without <code>signIn</code>, an <code>error</code> that says to sign in again marks the account, and a clean read clears the mark.</p>
+
+    <h2 id="input"><a class="anchor" href="#input">What a plugin is given</a></h2>
+    <p>magpie hands a plugin what OpenCode’s <code>PluginInput</code> has, as far as it has meaning without an OpenCode server:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Field</th><th>In magpie</th></tr>
+      <tr><td><code>client.auth.set</code> / <code>.remove</code></td><td>Saves or forgets the sign-in of the account in scope.</td></tr>
+      <tr><td><code>client.app.log</code></td><td>Writes to magpie’s log as <code>plugin [level]: [service] message</code>.</td></tr>
+      <tr><td><code>client.tui.showToast</code></td><td>Written to magpie’s log.</td></tr>
+      <tr><td><code>client.config.get</code></td><td>The config after every plugin’s <code>config</code> hook.</td></tr>
+      <tr><td>any other <code>client.*</code></td><td>Answers <code>{ data: undefined }</code>.</td></tr>
+      <tr><td><code>directory</code>, <code>worktree</code></td><td>magpie’s config folder, a place to keep files.</td></tr>
+      <tr><td><code>project</code></td><td><code>{ id: "magpie", worktree }</code>.</td></tr>
+      <tr><td><code>$</code></td><td>Bun’s shell.</td></tr>
+      <tr><td><code>serverUrl</code></td><td>A placeholder; no OpenCode server is behind it.</td></tr>
+    </table></div>
+    <p>The hooks magpie calls are <code>config</code>, <code>auth</code> (its methods, <code>loader</code> and <code>usage</code>), <code>provider.models</code> and <code>chat.headers</code>. A plugin’s other hooks (<code>tool</code>, <code>event</code>, <code>chat.params</code>, …) are not called. The agent runs its own tools.</p>
+
+    <h2 id="ids"><a class="anchor" href="#ids">Provider ids</a></h2>
+    <ul>
+      <li>Agents name a plugin’s model as <code>&lt;id&gt;/&lt;model&gt;</code>, where the id is the plugin’s <code>auth.provider</code>.</li>
+      <li>When the id is taken in magpie, by a built-in subscription, a preset (<code>google</code>, <code>openai</code>, <code>anthropic</code>, …) or <code>magpie</code> itself, the plugin’s provider is named <code>&lt;id&gt;-plugin</code>. Pick an id that is only yours.</li>
+      <li>The community’s plugins for magpie’s deprecated built-in subscriptions are the exception. They use the built-in’s id (<code>cursor</code>, <code>zed</code>, …) and take it over once the user moves onto the plugin, so agents keep working unchanged.</li>
+    </ul>
+
+    <h2 id="test"><a class="anchor" href="#test">Testing</a></h2>
+    <p>Run magpie in a sandbox, so your own magpie, its agents and sign-ins are never touched:</p>
+    <div class="code">
+      <span class="lang">Terminal</span>
+      <button class="copy" data-copy="t-cli">Copy</button>
+      <pre id="t-cli">sb=$(mktemp -d)
+m() { env HOME=$sb XDG_CONFIG_HOME=$sb/.config XDG_CACHE_HOME=$sb/.cache MAGPIE_ADDR=127.0.0.1:3499 magpie <span class="s">"$@"</span>; }
+m plugin add ./opencode-acme-auth &lt;/dev/null
+m plugin --json                     <span class="c"># what the plugin lists: methods, accounts, models, load errors</span>
+m plugin login acme                 <span class="c"># each method, each prompt</span>
+m provider test acme                <span class="c"># one tiny request per API</span>
+m provider test acme acme-coder     <span class="c"># or to the models named</span>
+m quota                             <span class="c"># the usage hook</span>
+m plugin logout acme</pre>
+    </div>
+    <ul>
+      <li>A plugin that fails to load says why in <code>magpie plugin</code>.</li>
+      <li>Hook errors and everything a plugin prints are in the output, as <code>plugin: …</code> lines.</li>
+      <li>For unit tests, run <code>bun test</code> against the functions you put on <code>_internal</code>.</li>
+      <li>The <a href="https://github.com/magpie-community/plugins">community repository</a> has a few scripts:
+        <ul>
+          <li><code>bun scripts/check.mjs</code> loads each package as magpie does and checks its hooks.</li>
+          <li><code>scripts/try.sh &lt;name&gt;</code> runs it in a sandbox like the one above.</li>
+        </ul></li>
+    </ul>
+
+    <h2 id="publish"><a class="anchor" href="#publish">Publishing and listing</a></h2>
+    <ul>
+      <li><b>npm.</b> Publish the package as usual. Users add it by name (<code>magpie plugin add opencode-acme-auth</code>), by a version (<code>…@0.2.0</code>), from git, or from a folder.</li>
+      <li><b>Search.</b> The search on <span class="ui">Plugins</span> asks npm for <code>&lt;query&gt; opencode</code>. It shows a package whose name or keywords hold <code>opencode</code> and one of <code>auth</code>, <code>plugin</code> or <code>provider</code>. Keywords like <code>["opencode", "opencode-plugin", "&lt;vendor&gt;"]</code> do it. It also asks for <code>keywords:pi-package &lt;query&gt;</code> and shows a pi package whose name or keywords mention <code>auth</code> or <code>provider</code>.</li>
+      <li><b>README.</b> A plugin’s page in magpie shows its npm README. Say what it signs in to, how, where the sign-in is kept, and which models it has.</li>
+      <li><b>The list.</b> <span class="ui">Plugins</span> suggests the plugins in <a href="https://github.com/magpie-community/plugins/blob/main/registry.json"><code>registry.json</code></a> of the community repository. magpie fetches it at most every six hours and builds in a copy for when it can’t. To be listed, open a pull request adding an entry:
+        <div class="code">
+          <span class="lang">registry.json</span>
+          <pre>{ <span class="s">"package"</span>: <span class="s">"opencode-acme-auth"</span>, <span class="s">"name"</span>: <span class="s">"Acme"</span>, <span class="s">"icon"</span>: <span class="s">"https://acme.example/icon.svg"</span>,
+  <span class="s">"providers"</span>: [<span class="s">"acme"</span>],
+  <span class="s">"summary"</span>: { <span class="s">"en"</span>: <span class="s">"Your Acme Coding Plan."</span>, <span class="s">"zh"</span>: <span class="s">"使用你的 Acme Coding Plan。"</span> } }</pre>
+        </div>
+        <code>MAGPIE_PLUGIN_MARKET=&lt;url&gt;</code> points magpie at another list, which is useful to check yours, and <code>off</code> keeps to the built-in copy.</li>
+      <li><b>The community packages.</b> To contribute one to <a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a>:
+        <ul>
+          <li>Put it under <code>packages/&lt;name&gt;</code>, named <code>@magpie-community/opencode-&lt;name&gt;-auth</code>, with no runtime dependencies unless one is really needed.</li>
+          <li>Pushing a version bump to <code>main</code> publishes it.</li>
+          <li>These packages update by themselves in every magpie.</li>
+        </ul></li>
+    </ul>
+
+    <h2 id="pi"><a class="anchor" href="#pi">pi packages</a></h2>
+    <p>magpie also runs <a href="https://github.com/earendil-works/pi">pi</a>’s packages. A pi extension that registers a provider with <code>pi.registerProvider</code> works in magpie as it does in pi, with nothing to change, and is added like any plugin (<code>magpie plugin add pi-antigravity</code>).</p>
+    <ul>
+      <li><b>What makes a package pi’s.</b> Its <code>package.json</code> has a <code>pi</code> manifest (<code>"pi": { "extensions": [...] }</code>), the <code>pi-package</code> keyword, or <code>@earendil-works/pi-coding-agent</code> (or the older <code>@mariozechner/pi-coding-agent</code>) among its <code>dependencies</code> or <code>peerDependencies</code>. A single file counts when it imports pi.</li>
+      <li><b>Loading.</b> magpie installs pi beside the package and loads it with pi’s own loader, in the same plugin host. The providers it registers become magpie providers, with the models pi lists for them (an account’s own list when pi can fetch one). Its commands, tools, renderers and event handlers are left alone.</li>
+      <li><b>Signing in.</b> An OAuth login runs as pi runs it: its questions (<code>onPrompt</code>) are asked in magpie’s sign-in, its page (<code>onAuth</code>) opens in the browser, and <code>refreshToken</code> renews it. The dialogs a package shows with <code>ctx.ui</code> (<code>select</code>, <code>confirm</code>, <code>input</code>, <code>editor</code>) and the terminal components it gives <code>ctx.ui.custom</code> are asked as magpie’s questions too. A provider that takes an API key gets a key field. Each sign-in is an account, so a pi provider can have several.</li>
+      <li><b>pi’s files.</b> pi’s settings, its <code>auth.json</code> (each provider’s first account, as pi keeps it) and the files a package writes are in <code>pi/</code> under magpie’s config directory, not the user’s <code>~/.pi</code>, unless <code>PI_CODING_AGENT_DIR</code> is set. magpie keeps the accounts in <code>plugin-auth.json</code>, like any plugin’s.</li>
+      <li><b>Requests.</b> A pi provider’s models take Anthropic Messages: the gateway translates what the agent sends, magpie streams it through pi, and the answer keeps its thinking, signatures and tool calls. A vendor error is passed on with its status, so failover works as with any plugin.</li>
+      <li><b>Ids.</b> A pi provider’s id follows the same rule as any plugin’s; see <a href="#ids">Provider ids</a>.</li>
+    </ul>
+
+    <h2 id="protocol"><a class="anchor" href="#protocol">The host protocol</a></h2>
+    <p>Writing a plugin doesn’t need this section. It is for people working on magpie itself, or debugging the host. magpie writes <code>{id, method, params}</code> to the host’s stdin, one per line. The host answers <code>{id, result}</code> or <code>{id, error: {message}}</code>.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Method</th><th>Does</th></tr>
+      <tr><td><code>init</code></td><td>Loads the plugins; runs their <code>config</code> hooks. Every other call waits for it.</td></tr>
+      <tr><td><code>providers</code></td><td>Each provider, its methods, accounts and each account’s models.</td></tr>
+      <tr><td><code>prompt</code>, <code>validate</code></td><td>A method’s next question; an answer checked.</td></tr>
+      <tr><td><code>authorize</code>, <code>callback</code>, <code>apiKey</code></td><td>Signing in.</td></tr>
+      <tr><td><code>load</code></td><td>The loader’s options for an account.</td></tr>
+      <tr><td><code>fetch</code></td><td>One request. It streams <code>{id, event: "head", status, headers}</code>, then <code>{id, event: "chunk", data}</code> (base64), then <code>{id, result: null}</code>. <code>{method: "abort", params: {id}}</code> cancels it.</td></tr>
+      <tr><td><code>usage</code>, <code>check</code></td><td>An account’s usage; an account tried as a request would.</td></tr>
+      <tr><td><code>import</code>, <code>take</code>, <code>signOut</code>, <code>reload</code></td><td>Accounts moved in and out, forgotten, their loaders run again.</td></tr>
+    </table></div>
+    <p>The host also sends events of its own: <code>log</code>, <code>toast</code>, <code>auth</code> (a sign-in saved or refreshed) and <code>signIn</code> (an account’s sign-in state, as above). The source is <a href="https://github.com/yetone/magpie/blob/main/internal/plugin/host.js"><code>internal/plugin/host.js</code></a>.</p>
+
+    <h2 id="faq"><a class="anchor" href="#faq">FAQ</a></h2>
+    <h3>Does my OpenCode plugin work in magpie unchanged?</h3>
+    <p>Yes, as long as it signs in and makes requests through <code>auth</code>, <code>config</code>, <code>provider</code> and <code>chat.headers</code>. What magpie adds (<code>auth.usage</code>, <code>auth.refresh</code>, <code>magpie.icon</code>, <code>maxConcurrency</code>, <code>free</code>, <code>rate</code>, <code>X-Magpie-Sign-In</code>) is ignored by OpenCode, so one package serves both.</p>
+    <h3>Does my pi package work in magpie?</h3>
+    <p>Yes, if it signs in and serves models through <code>pi.registerProvider</code>. magpie uses only the providers it registers; see <a href="#pi">pi packages</a>. Give it the <code>pi-package</code> keyword so the search finds it.</p>
+    <h3>Why is my provider called <code>…-plugin</code>?</h3>
+    <p>Its id is one magpie already has. See <a href="#ids">Provider ids</a>.</p>
+    <h3>Some of my helper functions run as plugins.</h3>
+    <p>Every function the entry module exports is called as a plugin. Export only the plugin function, or <code>export default { id, server }</code>.</p>
+    <h3>Can I use npm dependencies?</h3>
+    <p>Yes. They are installed with the plugin, but their install scripts aren’t run. Bun’s <code>fetch</code>, <code>crypto</code>, <code>fs</code> and <code>$</code> cover most needs.</p>
+    <h3>Can my plugin run the vendor’s CLI?</h3>
+    <p>Yes, with Bun’s <code>$</code> or <code>child_process</code>. Several community plugins sign in through the vendor’s own CLI. Expect it to be missing on some machines, and say how to install it in the error.</p>
+    <h3>What does a plugin see of the user’s work?</h3>
+    <p>Everything in the requests it makes: the conversation, the tools and their results. Send it only where the user asked it to go, and don’t log it.</p>
+    <h3>How do I make magpie see my edits?</h3>
+    <p>A <code>magpie</code> command in a terminal loads the folder as it is now. In the app, turn the plugin off and on in <span class="ui">Plugins</span>.</p>
+
+    <p style="margin-top:48px">Questions, or a plugin to share? Ask on <a href="https://discord.gg/vGSnD3ZKQF">Discord</a>, or open an issue in <a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a>.</p>
+  </article>
+</main>
+
+<footer><div class="wrap">
+  <span>© 2026 magpie · MIT</span>
+  <div class="links">
+    <a href="/">Home</a>
+    <a href="/docs/intent">Intent routing</a>
+    <a href="/docs/plugins">Plugins</a>
+    <a href="/docs/import">Add to magpie</a>
+    <a href="https://github.com/yetone/magpie">GitHub</a>
+    <a href="https://discord.gg/vGSnD3ZKQF">Discord</a>
+    <a href="https://github.com/yetone/magpie-releases/releases">Releases</a>
+  </div>
+</div></footer>
+
+<script>
+(() => {
+  const next = { system: "light", light: "dark", dark: "system" };
+  document.querySelectorAll("button.theme").forEach((b) => {
+    b.dataset.mode = themeMode();
+    b.title = "Theme: " + themeMode();
+    b.addEventListener("click", () => setTheme(next[themeMode()]));
+  });
+
+  document.querySelectorAll(".copy").forEach((b) => b.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
+      b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1400);
+    } catch {}
+  }));
+})();
+</script>
+<script src="/docs.js"></script>
+</body>
+</html>

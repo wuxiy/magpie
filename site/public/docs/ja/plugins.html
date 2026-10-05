@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>プラグインの作り方 · magpie ドキュメント</title>
+<meta name="description" content="magpie プラグインの書き方：magpie が呼び出す OpenCode プラグインのフック、magpie が動かす pi パッケージ、それをアカウント・モデル・リクエスト・使用量を備えたプロバイダにする仕組み、そしてテスト・公開・掲載の方法。">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#fafafa">
+<script>
+(() => {
+  let mode = "system";
+  try { mode = localStorage.getItem("theme") || "system"; } catch {}
+  const q = matchMedia("(prefers-color-scheme: dark)");
+  const apply = () => {
+    const t = mode === "system" ? (q.matches ? "dark" : "light") : mode;
+    document.documentElement.dataset.theme = t;
+    document.querySelector('meta[name="theme-color"]').content = t === "dark" ? "#0b0b0c" : "#fafafa";
+    document.querySelectorAll("button.theme").forEach((b) => { b.dataset.mode = mode; b.title = "Theme: " + mode; });
+  };
+  q.addEventListener("change", () => mode === "system" && apply());
+  window.setTheme = (m) => { mode = m; try { m === "system" ? localStorage.removeItem("theme") : localStorage.setItem("theme", m); } catch {} apply(); };
+  window.themeMode = () => mode;
+  apply();
+})();
+</script>
+<script>try{if(/Linux/.test(navigator.userAgent)&&!/Android/.test(navigator.userAgent)||localStorage.getItem("omarchy")||/[?&]omarchy=/.test(location.search))document.write('<script src="/omarchy.js"><\/script>')}catch(e){}</script>
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/img/icon-256.png">
+<link rel="alternate" hreflang="en" href="https://usemagpie.ai/docs/plugins">
+<link rel="alternate" hreflang="zh" href="https://usemagpie.ai/docs/zh/plugins">
+<link rel="alternate" hreflang="ja" href="https://usemagpie.ai/docs/ja/plugins">
+<link rel="stylesheet" href="/docs.css">
+<meta property="og:title" content="プラグインの作り方">
+<meta property="og:description" content="OpenCode プラグインか pi パッケージひとつで、どんなサービスも magpie のプロバイダにできます。">
+<meta property="og:image" content="https://usemagpie.ai/img/og.png">
+<meta property="og:url" content="https://usemagpie.ai/docs/ja/plugins">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="brand" href="/ja/"><img class="bird" src="/img/magpie-small.svg" alt="">magpie <small>ドキュメント</small></a>
+  <div class="links">
+    <a href="/ja/">ホーム</a>
+    <a href="/docs/ja/start">はじめに</a>
+    <a href="/docs/ja/intent">インテントルーティング</a>
+    <a href="/docs/ja/plugins">プラグイン</a>
+    <a href="/docs/ja/import">magpie に追加</a>
+    <a href="https://github.com/yetone/magpie-releases/releases">リリース</a>
+  </div>
+  <div class="langs">
+    <button class="icon-btn lang" type="button" aria-label="言語" title="言語" aria-haspopup="true" aria-expanded="false" aria-controls="langs"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c1.7 1.75 2.55 3.83 2.55 6.25S9.7 12.5 8 14.25M8 1.75C6.3 3.5 5.45 5.58 5.45 8S6.3 12.5 8 14.25"/></svg></button>
+    <div class="lang-menu" id="langs" hidden>
+      <a href="/docs/plugins" hreflang="en" lang="en">English</a>
+      <a href="/docs/zh/plugins" hreflang="zh" lang="zh">中文</a>
+      <a href="/docs/ja/plugins" hreflang="ja" lang="ja">日本語</a>
+    </div>
+  </div>
+  <a class="icon-btn" href="https://discord.gg/vGSnD3ZKQF" aria-label="magpie on Discord" title="Join us on Discord"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg></a>
+  <a class="icon-btn" href="https://github.com/yetone/magpie" aria-label="magpie on GitHub" title="Source on GitHub"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
+  <button class="icon-btn theme" type="button" aria-label="Theme" title="Theme: system"><svg class="i-system" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1.5"/><path d="M5.5 14h5M8 11.25V14"/></svg><svg class="i-light" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1"/></svg><svg class="i-dark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z"/></svg></button>
+  <a class="btn small" href="/#get">ダウンロード</a>
+</div></nav>
+
+<main class="wrap doc">
+  <aside class="toc">
+    <p>プラグイン</p>
+    <a href="#overview">概要</a>
+    <a href="#quick">5 分でプラグインを作る</a>
+    <a href="#run">magpie がプラグインを動かす仕組み</a>
+    <a href="#package">パッケージ</a>
+    <a href="#provider">プロバイダとモデル</a>
+    <a href="#signin">サインイン</a>
+    <a href="#requests">リクエスト</a>
+    <a href="#signin-state">サインイン状態</a>
+    <a href="#usage">使用量</a>
+    <a href="#input">プラグインに渡されるもの</a>
+    <a href="#ids">プロバイダ id</a>
+    <a href="#test">テスト</a>
+    <a href="#publish">公開と掲載</a>
+    <a href="#pi">pi パッケージ</a>
+    <a href="#protocol">ホストプロトコル</a>
+    <a href="#faq">よくある質問</a>
+  </aside>
+
+  <article>
+    <p class="eyebrow" id="overview">ドキュメント · プラグイン</p>
+    <h1>プラグインを書く</h1>
+    <p class="lede">プラグインはサービスにサインインし、そのサービスへのリクエストを送ります。magpie はそれを、すべてのエージェントが使えるプロバイダに変えます。複数アカウント、フェイルオーバー、使用量表示なども備わります。magpie は <a href="https://opencode.ai/docs/plugins/">OpenCode のプロバイダプラグイン</a>を動かすので、OpenCode 向けに書いたプラグインはそのままここで動きます。プロバイダを登録する <a href="https://github.com/earendil-works/pi">pi</a> のパッケージも動きます（<a href="#pi">pi パッケージ</a>を参照）。このページでは、プラグイン作者に必要なこと、つまり magpie が呼び出すフック、その戻り値を magpie がどう扱うか、そしてプラグインのテスト・公開・掲載の方法を説明します。</p>
+
+    <div class="callout"><b>ひとことで言うと。</b>プラグインは npm パッケージ、git リポジトリ、またはフォルダです。そのモジュールは OpenCode v1 プラグイン形式の async 関数をエクスポートします。magpie はすべてのプラグインをひとつの <a href="https://bun.sh">Bun</a> プロセス、つまり<em>プラグインホスト</em>に読み込みます。関数はフックを返します：
+      <ul>
+        <li><code>config</code> はプロバイダとそのデフォルトのモデルを宣言します。</li>
+        <li><code>auth</code> はサインイン方法と、各リクエストを送る <code>fetch</code> を持つ <code>loader</code> を提供します。</li>
+        <li><code>provider.models</code> はアカウントごとのモデルを列挙します。</li>
+        <li><code>auth.usage</code> はプランをどれだけ使ったかを返します。magpie 独自のフックで、OpenCode は無視します。</li>
+        <li><code>auth.refresh</code> はアカウントのトークンを期限切れ前に、一度にひとつずつ更新します。これも magpie 独自のフックです。</li>
+      </ul>
+      エージェントはどの API で送ってきても構いません。ゲートウェイはリクエストをモデルが話す API（chat completions、Responses、Anthropic Messages、Gemini）に変換し、プラグインの <code>fetch</code> に渡して、応答をストリームで返します。</div>
+
+    <h2 id="quick"><a class="anchor" href="#quick">5 分でプラグインを作る</a></h2>
+    <p>この例は架空のコーディングプラン Acme にサインインします。Acme は API キーを受け取り、OpenAI 互換のエンドポイントを持ち、アカウントごとのモデルと使用量を返します。実際のプラグインとの違いは主に、サインインの方法とリクエストへの署名の仕方です。この例はすべて magpie v0.1.676 と、Acme の API のローカルな代用品で実際に動かしています。</p>
+    <div class="code">
+      <span class="lang">package.json</span>
+      <button class="copy" data-copy="q-pkg">コピー</button>
+      <pre id="q-pkg">{
+  "name": "opencode-acme-auth",
+  "version": "0.1.0",
+  "description": "OpenCode provider plugin: Acme Coding Plan",
+  "type": "module",
+  "main": "./index.mjs",
+  "files": ["index.mjs", "README.md"],
+  "keywords": ["opencode", "opencode-plugin", "acme"],
+  "license": "MIT",
+  "magpie": { "maxConcurrency": 4 }
+}</pre>
+    </div>
+    <div class="code">
+      <span class="lang">index.mjs</span>
+      <button class="copy" data-copy="q-index">コピー</button>
+      <pre id="q-index">const PROVIDER = <span class="s">"acme"</span>
+const BASE = <span class="s">"https://api.acme.example/v1"</span>
+
+export const AcmeAuthPlugin = async ({ client }) =&gt; ({
+  <span class="c">// the provider and the models it has before anyone signs in</span>
+  config: async (cfg) =&gt; {
+    cfg.provider ??= {}
+    cfg.provider[PROVIDER] ??= {
+      name: <span class="s">"Acme"</span>,
+      npm: <span class="s">"@ai-sdk/openai-compatible"</span>, <span class="c">// chat completions</span>
+      api: BASE,
+      models: {
+        <span class="s">"acme-coder"</span>: { name: <span class="s">"Acme Coder"</span>, limit: { context: 200000, output: 32000 }, tool_call: true },
+      },
+    }
+  },
+
+  auth: {
+    provider: PROVIDER,
+    methods: [{ type: <span class="s">"api"</span>, label: <span class="s">"Acme API key"</span>, placeholder: <span class="s">"acme-…"</span> }],
+    <span class="c">// what every request of this account is sent with</span>
+    async loader(getAuth) {
+      const auth = await getAuth()
+      if (auth?.type !== <span class="s">"api"</span>) return {}
+      return {
+        baseURL: BASE,
+        async fetch(input, init) {
+          const headers = new Headers(init?.headers)
+          headers.set(<span class="s">"authorization"</span>, `Bearer ${auth.key}`)
+          headers.set(<span class="s">"x-acme-client"</span>, <span class="s">"opencode-acme-auth/0.1.0"</span>)
+          return fetch(input, { ...init, headers })
+        },
+      }
+    },
+    <span class="c">// magpie's own hook: how much of the plan is used</span>
+    async usage(getAuth) {
+      const auth = await getAuth()
+      const res = await fetch(`${BASE}/usage`, { headers: { authorization: `Bearer ${auth.key}` } })
+      if (!res.ok) return { error: `Acme answered ${res.status}`, windows: [] }
+      const u = await res.json()
+      return {
+        plan: u.plan,
+        windows: [{ name: <span class="s">"5 hours"</span>, used: u.percent, resetsAt: u.resets_at, span: 5 * 3600 }],
+      }
+    },
+  },
+
+  <span class="c">// the models this account has, asked of Acme</span>
+  provider: {
+    id: PROVIDER,
+    async models(provider, { auth } = {}) {
+      if (auth?.type !== <span class="s">"api"</span>) return provider.models
+      const res = await fetch(`${BASE}/models`, { headers: { authorization: `Bearer ${auth.key}` } })
+      if (!res.ok) return provider.models <span class="c">// magpie keeps the list it had</span>
+      const { data } = await res.json()
+      const base = provider.models[<span class="s">"acme-coder"</span>]
+      return Object.fromEntries(data.map((m) =&gt; [m.id, { ...base, id: m.id, name: m.name ?? m.id }]))
+    },
+  },
+})</pre>
+    </div>
+    <p>フォルダを magpie に追加し、サインインして試してみます：</p>
+    <div class="code">
+      <span class="lang">ターミナル</span>
+      <button class="copy" data-copy="q-cli">コピー</button>
+      <pre id="q-cli">magpie plugin add ./opencode-acme-auth   <span class="c"># a folder is loaded where it is; nothing is installed</span>
+magpie plugin login acme                 <span class="c"># asks for the key</span>
+magpie plugin                            <span class="c"># acme (Acme, 2 models)  signed in</span>
+magpie provider test acme                <span class="c"># ✓ chat  7 ms · acme-coder</span>
+magpie quota                             <span class="c"># acme · Pro · 5h 37% ↻59m</span></pre>
+    </div>
+    <p>これでエージェントは、ほかのプロバイダと同じように <code>acme/acme-coder</code> としてそのモデルを使えます。アプリでは <span class="ui">プラグイン</span> を開き、<span class="ui">プラグインを追加</span> をクリックしてフォルダを指定します。その後、プロバイダの行からサインインします。</p>
+    <div class="callout"><b>サンドボックスで試しましょう。</b>開発中のプラグインが普段使いの magpie に触れることがあってはいけません。<a href="#test">テスト</a>にあるように、専用の <code>HOME</code> で magpie を動かしてください。</div>
+
+    <h2 id="run"><a class="anchor" href="#run">magpie がプラグインを動かす仕組み</a></h2>
+    <ul>
+      <li><b>Bun。</b>magpie は最初にプラグインが追加されたときに Bun をダウンロードし、すべてのプラグインをその上で動かします。Bun は TypeScript をそのまま実行するので、エントリは <code>index.ts</code> でも構いません。</li>
+      <li><b>ひとつのホストプロセス。</b>有効なプラグインはすべて、ひとつの Bun プロセスに読み込まれます。このプロセスは最初に必要になったときに起動します。magpie とホストは stdin と stdout で、1 行にひとつの JSON メッセージをやり取りします。プラグインが出力するものは、<code>console.log</code> や <code>process.stdout</code> も含めてすべて stderr に送られ、magpie は <code>plugin: …</code> としてログに記録します。</li>
+      <li><b>インストール。</b>
+        <ul>
+          <li>npm パッケージは <code>bun add</code> でインストールされ、OpenCode と同じくインストールスクリプトは実行されません。<code>postinstall</code> でのビルドが必要な依存は動きません。</li>
+          <li>git リポジトリは Bun が取得します：<code>github:owner/repo[#ref]</code>、<code>git+https://…</code>、<code>owner/repo</code>。</li>
+          <li>フォルダやファイルへのパスは、その場所から読み込まれます。</li>
+        </ul></li>
+      <li><b>再起動。</b>プラグインの追加・削除・更新・有効化・無効化でホストが再起動します。古いホストでストリーム中の応答は先に最後まで流れます。ターミナルの <code>magpie</code> コマンドはそれぞれ専用のホストを起動するので、フォルダのプラグインは常にその時点の内容で読み込まれます。アプリでは、プラグインをオフにしてからオンにすると編集内容が読み込まれます。</li>
+      <li><b>プロキシ。</b>プラグインがプロバイダやアカウントのために行う fetch は、ユーザーがそのプロバイダやアカウントに設定したプロキシを経由します。設定がなければ magpie 自身のプロキシを経由します（設定が<em>直接接続</em>の場合を除く）。ループバックアドレスはプロキシを通りません。独自の <code>proxy</code> オプションを渡す fetch はそのままにされます。</li>
+      <li><b>更新。</b>
+        <ul>
+          <li>コミュニティのパッケージ（<code>@magpie-community/*</code>）は、magpie の起動から少し後に自動で更新され、その後は 6 時間ごとに更新されます。</li>
+          <li>そのほかのパッケージは、新しいバージョンがあると <span class="ui">プラグイン</span> にドットが表示され、ユーザーがクリックか <code>magpie plugin update</code> で更新します。</li>
+          <li>バージョンを固定した指定（<code>name@1.2.3</code>）はそのバージョンのままです。</li>
+        </ul></li>
+    </ul>
+    <p>magpie が設定フォルダ（<code>~/.config/magpie</code> または <code>$XDG_CONFIG_HOME/magpie</code>）に保存するもの：</p>
+    <div class="table-wrap"><table>
+      <tr><th>ファイル</th><th>内容</th></tr>
+      <tr><td><code>plugins.json</code></td><td>追加したプラグイン：<code>{"plugins": [{"spec", "off"?, "options"?}], "config"?}</code>。<code>options</code> はプラグインの第 2 引数で、OpenCode の <code>["name", {…}]</code> が渡すものと同じです。<code>config</code> はプラグインに渡される OpenCode の設定です。</td></tr>
+      <tr><td><code>plugins/</code></td><td>インストールされた npm と git のパッケージ。独立した Bun プロジェクトです。</td></tr>
+      <tr><td><code>plugin-auth.json</code></td><td>サインイン情報（モード 600）。OpenCode の <code>auth.json</code> と同じ形式なので、両者の間でサインインを移せます。</td></tr>
+      <tr><td><code>plugin-providers.json</code></td><td>プラグインが最後に列挙したプロバイダとモデル。magpie はこれを使い、プラグインに問い合わせずに起動できます。</td></tr>
+    </table></div>
+
+    <h2 id="package"><a class="anchor" href="#package">パッケージ</a></h2>
+    <h3>magpie がどこから読み込むか</h3>
+    <p>magpie はプラグインのサーバー側を OpenCode と同じ場所から探し、プラグインをエクスポートしている最初のファイルを読み込みます：</p>
+    <ol>
+      <li><code>package.json</code> の <code>exports["./server"]</code>、次に <code>main</code>、次に <code>exports["."]</code>（文字列なら <code>exports</code>）。</li>
+      <li>それがなければ <code>index.ts</code>、<code>index.tsx</code>、<code>index.js</code>、<code>index.mjs</code>、<code>index.cjs</code>。</li>
+    </ol>
+    <p>単一ファイルへのパスなら、そのファイルを読み込みます。</p>
+    <h3>モジュールがエクスポートするもの</h3>
+    <ul>
+      <li><code>export default { id, server }</code>（OpenCode v1）：<code>server</code> がプラグインです。</li>
+      <li>それ以外の場合、モジュールが<b>エクスポートするすべての関数</b>がプラグインとして呼び出されます。エクスポートされた <code>{ server }</code> オブジェクトも同様です。</li>
+    </ul>
+    <p>ですから、エントリファイルからヘルパー関数をエクスポートしないでください。テストに必要なものはオブジェクトにまとめましょう。コミュニティのプラグインは <code>export const _internal = { … }</code> としています。</p>
+    <h3>関数</h3>
+    <div class="code">
+      <span class="lang">形式</span>
+      <pre>async (input, options) =&gt; hooks
+<span class="c">// input:   { client, project, directory, worktree, serverUrl, $, experimental_workspace }</span>
+<span class="c">// options: the entry's "options" in plugins.json, else undefined</span>
+<span class="c">// hooks:   { config?, auth?, provider?, "chat.headers"? }</span></pre>
+    </div>
+    <p>複数の関数をエクスポートすれば、ひとつのプラグインで複数のプロバイダを返せます。それぞれのフックは独立しています。同じプロバイダに対して 2 つのプラグインが <code>auth</code> フックを持つ場合、OpenCode と同じく最後に読み込まれたものが勝ちます。</p>
+    <h3>package.json の magpie 用フィールド</h3>
+    <p>OpenCode は <code>magpie</code> オブジェクトを無視するので、OpenCode プラグインに追加しても安全です。</p>
+    <div class="table-wrap"><table>
+      <tr><th>フィールド</th><th>意味</th></tr>
+      <tr><td><code>magpie.icon</code></td><td>プロバイダの画像：<code>https://</code> URL または <code>data:image/…</code> URI、最大 1 MB。SVG、PNG など。</td></tr>
+      <tr><td><code>magpie.maxConcurrency</code></td><td>各アカウントが同時に受けるリクエスト数。1 から 1000 の整数。ユーザーがプロバイダに設定した上限が優先されます。</td></tr>
+    </table></div>
+    <p>同じフィールドは <code>auth</code> フックにも設定でき（<code>auth.icon</code>、<code>auth.maxConcurrency</code>）、そちらが <code>package.json</code> より優先されます。</p>
+
+    <h2 id="provider"><a class="anchor" href="#provider">プロバイダとモデル</a></h2>
+    <h3>プロバイダを宣言する</h3>
+    <p>プロバイダの id は <code>auth.provider</code> です。<a href="https://models.dev">models.dev</a> にその id があれば、magpie は OpenCode と同じくそのエントリから始めます。なければ <code>config</code> フックでプロバイダを宣言します。ユーザーが <code>plugins.json</code> で設定したプロバイダを上書きしないよう、<code>??=</code> を使ってください：</p>
+    <div class="code">
+      <span class="lang">config フック</span>
+      <pre>config: async (cfg) =&gt; {
+  cfg.provider ??= {}
+  cfg.provider[<span class="s">"acme"</span>] ??= {
+    name: <span class="s">"Acme"</span>,
+    npm: <span class="s">"@ai-sdk/anthropic"</span>,          <span class="c">// the API its models speak (table below)</span>
+    api: <span class="s">"https://api.acme.example/v1"</span>, <span class="c">// where requests go, unless the loader says otherwise</span>
+    models: {
+      <span class="s">"acme-large"</span>: {
+        name: <span class="s">"Acme Large"</span>,
+        id: <span class="s">"acme-large-2026-09"</span>,          <span class="c">// the id the API takes, when it isn't the key</span>
+        limit: { context: 400000, output: 64000 },
+        reasoning: true,
+        tool_call: true,
+        modalities: { input: [<span class="s">"text"</span>, <span class="s">"image"</span>] },
+        cost: { input: 3, output: 15, cache_read: 0.3 }, <span class="c">// US$ per million tokens; leave out for a plan</span>
+        variants: { low: {}, medium: {}, high: {} },        <span class="c">// reasoning levels</span>
+      },
+    },
+  }
+}</pre>
+    </div>
+    <p>モデルには、プロバイダとは別の API やアドレスを使うための <code>provider: { npm, api }</code>、<code>headers</code>、<code>options</code>、そして非表示にするための <code>disabled: true</code> も指定できます。</p>
+
+    <h3 id="apis">モデルが話す API</h3>
+    <p>モデルまたはプロバイダの <code>npm</code> で指定した AI SDK パッケージが API を決めます。それによって、あなたの <code>fetch</code> が受け取るリクエストの形が決まります。エージェントが何を送ってきても、magpie のゲートウェイがすでに変換済みです：</p>
+    <div class="table-wrap"><table>
+      <tr><th>npm</th><th>API</th><th>ベース以降のパス</th></tr>
+      <tr><td><code>@ai-sdk/anthropic</code>, <code>@ai-sdk/google-vertex/anthropic</code></td><td>Anthropic Messages</td><td><code>/messages</code></td></tr>
+      <tr><td><code>@ai-sdk/openai</code>, <code>@ai-sdk/azure</code></td><td>OpenAI Responses</td><td><code>/responses</code></td></tr>
+      <tr><td><code>@ai-sdk/google</code></td><td>Gemini</td><td><code>/models/&lt;id&gt;:streamGenerateContent?alt=sse</code></td></tr>
+      <tr><td><code>@ai-sdk/github-copilot</code></td><td>GPT-5 以降（gpt-5-mini を除く）は Responses、それ以外は chat completions</td><td><code>/responses</code> または <code>/chat/completions</code></td></tr>
+      <tr><td>それ以外すべて（<code>@ai-sdk/openai-compatible</code>, <code>xai</code>, <code>groq</code>, <code>deepseek</code>, …）</td><td>Chat completions</td><td><code>/chat/completions</code></td></tr>
+    </table></div>
+    <p>ベースは次の順で決まります：</p>
+    <ol>
+      <li>loader の <code>baseURL</code>；</li>
+      <li>モデルの <code>provider.api</code>；</li>
+      <li>プロバイダの <code>api</code>；</li>
+      <li>AI SDK パッケージ自身のデフォルト（<code>https://api.anthropic.com/v1</code>、<code>https://api.openai.com/v1</code>、…）。</li>
+    </ol>
+    <p>本文の <code>model</code> はモデルの API id です。<code>id</code> があればそれ、なければキーです。</p>
+
+    <h3>アカウントごとのモデル</h3>
+    <p>モデルがアカウントによって変わる場合は、<code>provider</code> フックを追加します：</p>
+    <div class="code">
+      <span class="lang">provider フック</span>
+      <pre>provider: {
+  id: <span class="s">"acme"</span>,
+  async models(provider, { auth }) {
+    <span class="c">// provider.models: what models.dev and the config hook give, keyed by id</span>
+    <span class="c">// auth: this account's sign-in, as plugin-auth.json keeps it</span>
+    return { <span class="s">"acme-large"</span>: { ...provider.models[<span class="s">"acme-large"</span>], name: <span class="s">"Acme Large"</span> } }
+  },
+}</pre>
+    </div>
+    <ul>
+      <li>magpie はこれをアカウントごとに 1 回、そのアカウントのスコープで、そのプロキシを通して呼び出します。各アカウントは自分に列挙されたモデルだけを扱うので、小さいプランのアカウントに、持っていないモデルが送られることはありません。</li>
+      <li>モデルは OpenCode の <code>Model</code> です：
+        <ul>
+          <li><code>id</code>、<code>name</code>；</li>
+          <li><code>api: {id, url, npm}</code>；</li>
+          <li><code>limit: {context, input?, output}</code>；</li>
+          <li><code>capabilities: {reasoning, toolcall, attachment, input: {text, image, …}}</code>；</li>
+          <li><code>cost: {input, output, cache: {read, write}}</code>；</li>
+          <li><code>variants</code>、<code>release_date</code>、<code>status</code>。</li>
+        </ul>
+        <code>provider.models</code> のモデルを展開していくつかのフィールドを変えるのが簡単です。<code>status</code> が <code>"deprecated"</code> のモデルは表示されません。</li>
+      <li>magpie は、OpenCode が無視する次のフィールドもモデルから読み取ります：
+        <ul>
+          <li><code>free: true</code>：プランの枠を消費せずに使えます。</li>
+          <li><code>rate</code>：1 リクエストが消費するクレジットの倍率。数値（<code>0.5</code>）でも、ベンダーの表記（<code>"x0.5"</code>）でも構いません。</li>
+          <li><code>rateWas</code>：現在実施中の割引の前の倍率。</li>
+        </ul>
+        モデル選択画面に表示されます。</li>
+      <li>モデルが推論する場合、<code>variants</code> のキーがそのモデルの推論レベルになります。</li>
+    </ul>
+    <h3>ベンダーに接続できないとき</h3>
+    <p>フックが次のいずれかをした場合、magpie は一覧を取得できなかった組み込みサブスクリプションと同じく、すでに持っている一覧を保持します：</p>
+    <ul>
+      <li>fetch が失敗した後、<code>provider.models</code> を変更せずに返す；</li>
+      <li>例外を投げる；</li>
+      <li><code>list[Symbol.for("magpie.fellBack")] = true</code> を付けた独自の一覧を返す。</li>
+    </ul>
+    <p>失敗の原因がサインインなら、<code>signIn: "expired"</code> を付けたエラーを投げてください。するとアカウントは再サインインが必要と記録されます（<a href="#signin-state">サインイン状態</a>を参照）。</p>
+
+    <h2 id="signin"><a class="anchor" href="#signin">サインイン</a></h2>
+    <p><code>auth</code> フックは <code>{ provider, methods, loader, usage?, refresh?, refreshLead?, icon?, maxConcurrency? }</code> です。各メソッドはユーザーが選べるサインイン方法です。アプリではメソッドがボタンになり、ターミナルでは <code>magpie plugin login &lt;id&gt; [&lt;method&gt;]</code> がどれを使うか尋ねます。</p>
+    <h3>API キー</h3>
+    <div class="code">
+      <span class="lang">api メソッド</span>
+      <pre>{ type: <span class="s">"api"</span>, label: <span class="s">"Acme API key"</span>, placeholder: <span class="s">"acme-…"</span> }</pre>
+    </div>
+    <ul>
+      <li><code>label</code> はキー入力欄の見出しです。「API key」とだけ書いたラベルは「Acme API key」と表示されます。</li>
+      <li><code>placeholder</code> は magpie 独自のフィールドで、入力欄の中のヒントです。</li>
+      <li><code>authorize</code> 関数がなければ、キーはそのまま <code>{type: "api", key, metadata?}</code> として保存されます。<code>prompts</code> への回答は <code>metadata</code> に入ります。</li>
+      <li><code>authorize(inputs)</code> があれば、プラグイン自身がキーを検証または交換します。戻り値は <code>{type: "success", key, metadata?}</code> または <code>{type: "failed", error?}</code> です。</li>
+    </ul>
+    <h3>ブラウザやデバイスでのサインイン</h3>
+    <div class="code">
+      <span class="lang">oauth メソッド</span>
+      <pre>{
+  type: <span class="s">"oauth"</span>,
+  label: <span class="s">"Sign in with Acme"</span>,
+  async authorize(inputs) {
+    const d = await startDeviceCode()
+    return {
+      url: d.verification_uri,                    <span class="c">// magpie opens it</span>
+      instructions: `Enter the code ${d.user_code}`, <span class="c">// and shows this</span>
+      method: <span class="s">"auto"</span>,                              <span class="c">// "auto": callback() resolves on its own</span>
+      async callback() {                           <span class="c">// "code": callback(code), the code the user pastes</span>
+        const t = await pollForToken(d)
+        if (!t) return { type: <span class="s">"failed"</span>, error: <span class="s">"The code expired"</span> }
+        return { type: <span class="s">"success"</span>, refresh: t.refresh_token, access: t.access_token,
+                 expires: Date.now() + t.expires_in * 1000, accountId: t.email }
+      },
+    }
+  },
+}</pre>
+    </div>
+    <ul>
+      <li><code>refresh</code> を含む成功は <code>{type: "oauth", refresh, access, expires, …}</code> として保存され、返したほかのフィールド（<code>accountId</code>、<code>enterpriseUrl</code>、独自のもの）もすべて一緒に保持されます。</li>
+      <li><code>key</code> を含む成功は API キーとして保存されます。</li>
+      <li>結果に <code>provider: "other-id"</code> を付けると、そのプラグインがサインインする別のプロバイダにサインイン情報を保存します。</li>
+      <li>失敗時の <code>error</code> は magpie 独自のフィールドで、ユーザーに理由（最大 500 文字）が表示されます。なければ、サインインに失敗したことだけが表示されます。</li>
+      <li><code>inputs</code> は <code>prompts</code> を持つメソッドにだけ渡されます。prompts のないメソッドには、OpenCode の TUI が呼ぶときと同じく <code>undefined</code> が渡ります。空のオブジェクトは OpenCode の CLI の呼び方で、その場合ターミナルで質問するプラグインもあります。</li>
+    </ul>
+    <h3>サインイン前の質問</h3>
+    <p>メソッドの <code>prompts</code> は <code>authorize</code> の前に順番に尋ねられます。それぞれ条件を満たすときだけです：</p>
+    <div class="code">
+      <span class="lang">prompts</span>
+      <pre>prompts: [
+  { type: <span class="s">"select"</span>, key: <span class="s">"region"</span>, message: <span class="s">"Region"</span>,
+    options: [{ label: <span class="s">"Global"</span>, value: <span class="s">"global"</span> }, { label: <span class="s">"China"</span>, value: <span class="s">"cn"</span>, hint: <span class="s">"acme.cn"</span> }] },
+  { type: <span class="s">"text"</span>, key: <span class="s">"team"</span>, message: <span class="s">"Team id"</span>, placeholder: <span class="s">"t-…"</span>,
+    when: { key: <span class="s">"region"</span>, op: <span class="s">"eq"</span>, value: <span class="s">"global"</span> },        <span class="c">// or condition: (inputs) =&gt; boolean</span>
+    validate: (v) =&gt; (/^t-/.test(v) ? undefined : <span class="s">"Starts with t-"</span>) },
+]</pre>
+    </div>
+    <h3>アカウント</h3>
+    <ul>
+      <li><b>保存場所。</b>ひとつのプロバイダに複数回サインインできます。最初のアカウントは OpenCode と同じくプロバイダの id で保存されます。それ以外は <code>id#xxxxxx</code> で保存されます。</li>
+      <li><b>ユーザーが見分ける方法。</b>magpie はアカウントを <code>accountId</code>、なければ <code>metadata.email</code>、なければ <code>email</code> で名付けます。どれかを保存してください。メールアドレスがあればそれが最適です。</li>
+      <li><b>再サインイン。</b>新しいサインインは、既存のアカウントと <code>accountId</code> が同じならそれを置き換えます。両方に <code>uid</code>（名前が重複しうるベンダーでの、ベンダー自身の id）もある場合は、それも一致する必要があります。id がなければ、同じシークレットで一致を判断します。それ以外は新しいアカウントになります。</li>
+      <li><b>スコープ。</b>magpie があるアカウントのために行う呼び出しは、すべてそのアカウントのスコープで実行されます：
+        <ul>
+          <li><code>getAuth()</code> はそのアカウントを返します。</li>
+          <li><code>client.auth.set({ path: { id: "acme" }, body })</code> はそのアカウントに保存します。</li>
+        </ul>
+        ですから、アカウントごとの状態は渡された auth に紐づけて保持し、プロバイダをキーにしたモジュール変数には置かないでください。</li>
+      <li><b>リフレッシュ。</b><code>auth.refresh</code> を提供すれば、magpie がトークンを更新します（<a href="#renew">サインインの更新</a>を参照）。そうでなければ、トークンが切れたときに <code>fetch</code> の中でリフレッシュし、<code>client.auth.set</code> でオブジェクト全体を保存してください。渡したものが保存内容を置き換え、マージはされません。</li>
+    </ul>
+    <h3 id="renew">サインインの更新</h3>
+    <p>magpie 0.1.684 以降、プラグインは magpie 独自のフック <code>auth.refresh</code> でトークンの更新を magpie に任せられます（OpenCode はこれを無視します）：</p>
+    <div class="code">
+      <span class="lang">auth フック</span>
+      <pre>auth: {
+  provider: <span class="s">"acme"</span>,
+  methods: [ … ],
+  <span class="c">// optional: how long before expires to renew (ms), 5 minutes by default</span>
+  refreshLead: 5 * 60 * 1000,
+  async refresh(auth, provider) {  <span class="c">// auth is the account's saved sign-in</span>
+    const t = await exchange(auth.refresh)
+    if (t.error === <span class="s">"invalid_grant"</span>)
+      throw Object.assign(new Error(<span class="s">"Acme refused the sign-in"</span>), { signIn: <span class="s">"expired"</span> })
+    return { access: t.access_token, refresh: t.refresh_token ?? auth.refresh,
+             expires: Date.now() + t.expires_in * 1000 }
+  },
+  loader: async (getAuth) =&gt; ({ … }),  <span class="c">// getAuth() already gives the renewed token</span>
+}</pre>
+    </div>
+    <ul>
+      <li><b>実行されるタイミング。</b><code>expires</code> までの残りが <code>refreshLead</code> 未満の OAuth アカウントについて、そのアカウントの loader、<code>provider.models</code>、<code>auth.usage</code>、またはリクエストの前に実行されます。<code>expires</code> が 0 またはないアカウントは更新されません。</li>
+      <li><b>一度にひとつ。</b>トークンの更新が必要だと気づいたリクエストは、ひとつの更新を待ちます。リフレッシュトークンを一度しか使えないベンダーに、同じトークンが二度送られることはありません。待つのは最大 15 秒で、それより長くかかった更新も終わった時点で保存されます。</li>
+      <li><b>保存されるもの。</b>返したフィールドはアカウントの古いフィールドの上に保持され（<code>client.auth.set</code> と違ってマージされます）、アカウントの記録は消去されます。更新するものがなければ何も返さないでください。</li>
+      <li><b>失敗したとき。</b>アカウントはそのままで、リクエストは古いトークンで送られ、結果はベンダーの応答次第になります。<code>signIn: "expired"</code> を付けたエラーはアカウントに記録を付け（<a href="#signin-state">サインイン状態</a>を参照）、再サインインされるまで magpie は再試行しません。それ以外のエラーは 30 秒後に再試行されます。</li>
+      <li><b>OpenCode と古い magpie。</b>どちらもこのフックを無視します。プラグインがそちらでも動くなら、<code>fetch</code> 内のチェックも残してください。magpie 上ではトークンが新しいので何もしません。</li>
+    </ul>
+
+    <h2 id="requests"><a class="anchor" href="#requests">リクエスト</a></h2>
+    <p><code>loader(getAuth, provider)</code> はアカウントごとに 1 回実行され、サインインが変わると再実行されます。OpenCode が AI SDK に渡すものを返します：</p>
+    <div class="table-wrap"><table>
+      <tr><th>フィールド</th><th>magpie での扱い</th></tr>
+      <tr><td><code>baseURL</code></td><td>リクエストの送り先。モデルやプロバイダの <code>api</code> より優先されます。</td></tr>
+      <tr><td><code>apiKey</code></td><td>AI SDK パッケージと同じ方法で送られます：Anthropic なら <code>x-api-key</code>、Google なら <code>x-goog-api-key</code>、それ以外は <code>Authorization: Bearer</code>。API キーでのサインインでは、保存されたキーがデフォルトです。</td></tr>
+      <tr><td><code>headers</code></td><td>すべてのリクエストに追加されます。</td></tr>
+      <tr><td><code>fetch</code></td><td>リクエストを送ります。なければ magpie のホストは標準の <code>fetch</code> を使います。</td></tr>
+    </table></div>
+    <p>あなたの <code>fetch(input, init)</code> が受け取るリクエスト：</p>
+    <ul>
+      <li><code>input</code> は完全な URL です：ベースに、モデルの API のパスを足したものです。</li>
+      <li><code>init.method</code> は通常 <code>POST</code> です。</li>
+      <li><code>init.headers</code> は次の順に設定され、後のものが前のものを上書きします：
+        <ol>
+          <li><code>apiKey</code> によるキーのヘッダー；</li>
+          <li>loader の <code>headers</code>；</li>
+          <li>ゲートウェイのリクエストヘッダー；</li>
+          <li><code>chat.headers</code> フックが追加するもの。</li>
+        </ol></li>
+      <li><code>init.body</code> はその API の形式の JSON 文字列です（UTF-8 テキストでなければバイト列）。中の <code>model</code> は API id で、<code>stream</code> はエージェントが要求したとおりです。</li>
+      <li><code>init.signal</code> はエージェントがリクエストを諦めると中断されます。</li>
+    </ul>
+    <p><code>Response</code> を返してください。そのステータス、ヘッダー、本文はそのまま、チャンクごとにストリームで返されます。ストリーミングの本文を書き換える場合は、ヘッダーから <code>content-length</code> と <code>content-encoding</code> を取り除いてください。</p>
+    <h3>失敗とフェイルオーバー</h3>
+    <ul>
+      <li>2xx 以外の応答はベンダーの応答です。ゲートウェイはほかのプロバイダと同じように扱います：レート制限やサーバーエラーならリクエストを次のアカウントやモデルに移し、401 ならアカウントに記録を付けます（<a href="#signin-state">サインイン状態</a>を参照）。</li>
+      <li>例外を投げるとリクエストは失敗し、フェイルオーバーが次に進みます。</li>
+      <li>可能なら API 自身のエラー形式で応答してください。エージェントがベンダーのメッセージを表示できます。</li>
+    </ul>
+    <h3>chat.headers</h3>
+    <p>OpenCode の <code>chat.headers</code> フックはリクエストごとに実行されます。その <code>input.sessionID</code> は magpie の会話 id で、会話のターンをまたいで同じままです。ベンダーのセッションヘッダーやキャッシュヘッダーに使ってください：</p>
+    <div class="code">
+      <span class="lang">chat.headers</span>
+      <pre><span class="s">"chat.headers"</span>: async (input, output) =&gt; {
+  if (input.model.providerID === <span class="s">"acme"</span>) output.headers[<span class="s">"x-acme-session"</span>] = input.sessionID
+}</pre>
+    </div>
+
+    <h2 id="signin-state"><a class="anchor" href="#signin-state">サインイン状態</a></h2>
+    <p>magpie は、ベンダーにサインインを拒否されたアカウントに記録を付けます。その記録をユーザーに表示し、再び使えるようになるまでそのアカウントには送信しません。デフォルトでは 401 で記録が付き、成功すると消えます。プラグインは <code>X-Magpie-Sign-In</code> レスポンスヘッダーで、応答の意味をより正確に伝えられます。このヘッダーは応答が先に渡される前に magpie が取り除きます：</p>
+    <div class="table-wrap"><table>
+      <tr><th>値</th><th>意味</th></tr>
+      <tr><td><code>expired</code></td><td>ステータスにかかわらず、サインインが拒否された（そのために 403 や 502 を返すベンダー）。</td></tr>
+      <tr><td><code>kept</code></td><td>アカウントをそのままにする（別の理由による 401）。</td></tr>
+      <tr><td><code>renewed</code></td><td>サインインが更新された：リクエストがその後どうなっても記録を消す。</td></tr>
+    </table></div>
+    <p><code>fetch</code> や <code>provider.models</code> から <code>signIn: "expired"</code> を付けたエラーを投げても同じ効果があります：</p>
+    <div class="code">
+      <span class="lang">index.mjs</span>
+      <pre>throw Object.assign(new Error(<span class="s">"Acme refused the sign-in; sign in again"</span>), { signIn: <span class="s">"expired"</span> })</pre>
+    </div>
+
+    <h2 id="usage"><a class="anchor" href="#usage">使用量</a></h2>
+    <p><code>auth.usage(getAuth, provider)</code> は magpie 独自のフックです。アカウントの枠をどれだけ使ったかを返します。アカウントのスコープで実行されるので、ここでリフレッシュしたトークンはそのアカウントに保存されます。magpie はその結果を <span class="ui">プロバイダ</span> のアカウント、<code>magpie quota</code>、ゲートウェイの <code>GET /v1/magpie/quotas</code> に表示します。フィールドはすべて省略可能です：</p>
+    <div class="code">
+      <span class="lang">usage の戻り値</span>
+      <pre>{
+  plan: <span class="s">"Pro"</span>,
+  user: <span class="s">"ada@example.com"</span>,     <span class="c">// the account as the vendor names it</span>
+  until: <span class="s">"2026-11-01T00:00:00Z"</span>, <span class="c">// the plan's end</span>
+  renew: <span class="s">"auto"</span>,                <span class="c">// or "off"</span>
+  balance: <span class="s">"$12.40"</span>,
+  error: <span class="s">""</span>,                    <span class="c">// shown in place of the windows</span>
+  windows: [{
+    name: <span class="s">"5 hours"</span>,
+    used: 37,                   <span class="c">// percent; past 100 when overspent</span>
+    resetsAt: <span class="s">"2026-10-03T18:00:00Z"</span>, <span class="c">// or resetSecs: 3600</span>
+    span: 18000,                <span class="c">// seconds the window runs</span>
+    display: <span class="s">"370 / 1000 credits"</span>,
+    model: <span class="s">"opus"</span>,              <span class="c">// counts only models whose ids hold this word</span>
+    models: [], notModels: [],  <span class="c">// or exactly these ids, or all but these</span>
+    aside: false,               <span class="c">// true: using it up doesn't stop the account</span>
+  }],
+  resets: { count: 2, until: <span class="s">"…"</span>, byWindow: false, fiveHour: 1, weekly: 1 }, <span class="c">// resets the account may spend</span>
+  signIn: <span class="s">"kept"</span>,               <span class="c">// as X-Magpie-Sign-In</span>
+}</pre>
+    </div>
+    <p>時刻は ISO 文字列か、秒またはミリ秒のエポック数値です。<code>signIn</code> がない場合、再サインインを求める <code>error</code> はアカウントに記録を付け、問題なく読み取れれば記録は消えます。</p>
+
+    <h2 id="input"><a class="anchor" href="#input">プラグインに渡されるもの</a></h2>
+    <p>magpie は OpenCode の <code>PluginInput</code> の内容を、OpenCode サーバーなしで意味をなす範囲でプラグインに渡します：</p>
+    <div class="table-wrap"><table>
+      <tr><th>フィールド</th><th>magpie では</th></tr>
+      <tr><td><code>client.auth.set</code> / <code>.remove</code></td><td>スコープ内のアカウントのサインインを保存または削除します。</td></tr>
+      <tr><td><code>client.app.log</code></td><td>magpie のログに <code>plugin [level]: [service] message</code> として書き込みます。</td></tr>
+      <tr><td><code>client.tui.showToast</code></td><td>magpie のログに書き込まれます。</td></tr>
+      <tr><td><code>client.config.get</code></td><td>すべてのプラグインの <code>config</code> フックを経た後の設定。</td></tr>
+      <tr><td>そのほかの <code>client.*</code></td><td><code>{ data: undefined }</code> を返します。</td></tr>
+      <tr><td><code>directory</code>, <code>worktree</code></td><td>magpie の設定フォルダ。ファイルの保存場所に使えます。</td></tr>
+      <tr><td><code>project</code></td><td><code>{ id: "magpie", worktree }</code>。</td></tr>
+      <tr><td><code>$</code></td><td>Bun のシェル。</td></tr>
+      <tr><td><code>serverUrl</code></td><td>プレースホルダーです。背後に OpenCode サーバーはありません。</td></tr>
+    </table></div>
+    <p>magpie が呼び出すフックは <code>config</code>、<code>auth</code>（そのメソッド、<code>loader</code>、<code>usage</code>）、<code>provider.models</code>、<code>chat.headers</code> です。プラグインのほかのフック（<code>tool</code>、<code>event</code>、<code>chat.params</code>、…）は呼び出されません。ツールはエージェント自身が実行します。</p>
+
+    <h2 id="ids"><a class="anchor" href="#ids">プロバイダ id</a></h2>
+    <ul>
+      <li>エージェントはプラグインのモデルを <code>&lt;id&gt;/&lt;model&gt;</code> と呼びます。id はプラグインの <code>auth.provider</code> です。</li>
+      <li>その id が magpie ですでに使われている場合（組み込みサブスクリプション、プリセット（<code>google</code>、<code>openai</code>、<code>anthropic</code>、…）、<code>magpie</code> 自身）、プラグインのプロバイダは <code>&lt;id&gt;-plugin</code> という名前になります。自分だけの id を選んでください。</li>
+      <li>例外は、magpie の非推奨の組み込みサブスクリプション向けのコミュニティプラグインです。これらは組み込みの id（<code>cursor</code>、<code>zed</code>、…）を使い、ユーザーがプラグインに移行するとそれを引き継ぐので、エージェントは変更なしで動き続けます。</li>
+    </ul>
+
+    <h2 id="test"><a class="anchor" href="#test">テスト</a></h2>
+    <p>magpie はサンドボックスで動かしましょう。普段の magpie、そのエージェントやサインインに触れずに済みます：</p>
+    <div class="code">
+      <span class="lang">ターミナル</span>
+      <button class="copy" data-copy="t-cli">コピー</button>
+      <pre id="t-cli">sb=$(mktemp -d)
+m() { env HOME=$sb XDG_CONFIG_HOME=$sb/.config XDG_CACHE_HOME=$sb/.cache MAGPIE_ADDR=127.0.0.1:3499 magpie <span class="s">"$@"</span>; }
+m plugin add ./opencode-acme-auth &lt;/dev/null
+m plugin --json                     <span class="c"># what the plugin lists: methods, accounts, models, load errors</span>
+m plugin login acme                 <span class="c"># each method, each prompt</span>
+m provider test acme                <span class="c"># one tiny request per API</span>
+m provider test acme acme-coder     <span class="c"># or to the models named</span>
+m quota                             <span class="c"># the usage hook</span>
+m plugin logout acme</pre>
+    </div>
+    <ul>
+      <li>読み込みに失敗したプラグインは、<code>magpie plugin</code> に理由が表示されます。</li>
+      <li>フックのエラーとプラグインが出力したものはすべて、<code>plugin: …</code> の行として出力に含まれます。</li>
+      <li>ユニットテストには、<code>_internal</code> に置いた関数に対して <code>bun test</code> を実行してください。</li>
+      <li><a href="https://github.com/magpie-community/plugins">コミュニティリポジトリ</a>にはいくつかスクリプトがあります：
+        <ul>
+          <li><code>bun scripts/check.mjs</code> は各パッケージを magpie と同じように読み込み、フックをチェックします。</li>
+          <li><code>scripts/try.sh &lt;name&gt;</code> は上のようなサンドボックスで実行します。</li>
+        </ul></li>
+    </ul>
+
+    <h2 id="publish"><a class="anchor" href="#publish">公開と掲載</a></h2>
+    <ul>
+      <li><b>npm。</b>パッケージを通常どおり公開します。ユーザーは名前（<code>magpie plugin add opencode-acme-auth</code>）、バージョン（<code>…@0.2.0</code>）、git、フォルダから追加できます。</li>
+      <li><b>検索。</b><span class="ui">プラグイン</span> の検索は npm に <code>&lt;query&gt; opencode</code> を問い合わせます。名前かキーワードに <code>opencode</code> と、<code>auth</code>、<code>plugin</code>、<code>provider</code> のいずれかを含むパッケージが表示されます。<code>["opencode", "opencode-plugin", "&lt;vendor&gt;"]</code> のようなキーワードで条件を満たせます。あわせて <code>keywords:pi-package &lt;query&gt;</code> も問い合わせ、名前かキーワードに <code>auth</code> か <code>provider</code> を含む pi パッケージを表示します。</li>
+      <li><b>README。</b>magpie のプラグインページには npm の README が表示されます。何にサインインするのか、どうやって、サインイン情報をどこに保存するのか、どのモデルがあるのかを書いてください。</li>
+      <li><b>一覧。</b><span class="ui">プラグイン</span> は、コミュニティリポジトリの <a href="https://github.com/magpie-community/plugins/blob/main/registry.json"><code>registry.json</code></a> にあるプラグインをおすすめします。magpie は最大で 6 時間ごとにこれを取得し、取得できないときのためのコピーを内蔵しています。掲載してほしい場合は、項目を追加するプルリクエストを送ってください：
+        <div class="code">
+          <span class="lang">registry.json</span>
+          <pre>{ <span class="s">"package"</span>: <span class="s">"opencode-acme-auth"</span>, <span class="s">"name"</span>: <span class="s">"Acme"</span>, <span class="s">"icon"</span>: <span class="s">"https://acme.example/icon.svg"</span>,
+  <span class="s">"providers"</span>: [<span class="s">"acme"</span>],
+  <span class="s">"summary"</span>: { <span class="s">"en"</span>: <span class="s">"Your Acme Coding Plan."</span>, <span class="s">"zh"</span>: <span class="s">"使用你的 Acme Coding Plan。"</span> } }</pre>
+        </div>
+        <code>MAGPIE_PLUGIN_MARKET=&lt;url&gt;</code> は magpie に別の一覧を参照させます（自分の一覧の確認に便利です）。<code>off</code> にすると内蔵のコピーだけを使います。</li>
+      <li><b>コミュニティのパッケージ。</b><a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a> に貢献するには：
+        <ul>
+          <li><code>packages/&lt;name&gt;</code> に置き、名前は <code>@magpie-community/opencode-&lt;name&gt;-auth</code> とします。本当に必要でない限り、ランタイムの依存は持たせないでください。</li>
+          <li>バージョンを上げて <code>main</code> にプッシュすると公開されます。</li>
+          <li>これらのパッケージは、どの magpie でも自動で更新されます。</li>
+        </ul></li>
+    </ul>
+
+    <h2 id="pi"><a class="anchor" href="#pi">pi パッケージ</a></h2>
+    <p>magpie は <a href="https://github.com/earendil-works/pi">pi</a> のパッケージも動かします。<code>pi.registerProvider</code> でプロバイダを登録する pi 拡張は、何も変えずに pi と同じように magpie で動き、ほかのプラグインと同じ方法で追加できます（<code>magpie plugin add pi-antigravity</code>）。</p>
+    <ul>
+      <li><b>pi のパッケージとみなす条件。</b><code>package.json</code> に <code>pi</code> マニフェスト（<code>"pi": { "extensions": [...] }</code>）があるか、<code>pi-package</code> キーワードがあるか、<code>dependencies</code> か <code>peerDependencies</code> に <code>@earendil-works/pi-coding-agent</code>（または旧名の <code>@mariozechner/pi-coding-agent</code>）があること。単体のファイルは pi を import していれば該当します。</li>
+      <li><b>読み込み。</b>magpie はパッケージの隣に pi をインストールし、pi 自身のローダーで同じプラグインホストに読み込みます。登録されたプロバイダは magpie のプロバイダになり、モデルは pi がそれぞれに挙げるもの（pi がアカウントごとの一覧を取得できるときはその一覧）です。コマンド、ツール、レンダラー、イベントハンドラは使いません。</li>
+      <li><b>サインイン。</b>OAuth のログインは pi と同じように進みます。質問（<code>onPrompt</code>）は magpie のサインインの中で聞かれ、ページ（<code>onAuth</code>）はブラウザで開き、<code>refreshToken</code> で更新されます。パッケージが <code>ctx.ui</code> で出すダイアログ（<code>select</code>、<code>confirm</code>、<code>input</code>、<code>editor</code>）や <code>ctx.ui.custom</code> に渡すターミナルコンポーネントも、magpie の質問として表示されます。API キーを受け付けるプロバイダにはキーの入力欄が出ます。サインインごとにアカウントになるので、pi のプロバイダも複数アカウントを持てます。</li>
+      <li><b>pi のファイル。</b>pi の設定、<code>auth.json</code>（pi と同じ形で各プロバイダの最初のアカウント）、パッケージが書くファイルは、magpie の設定ディレクトリの <code>pi/</code> に置かれ、<code>PI_CODING_AGENT_DIR</code> を設定しない限りユーザーの <code>~/.pi</code> には触れません。アカウント自体はほかのプラグインと同じく <code>plugin-auth.json</code> に保存されます。</li>
+      <li><b>リクエスト。</b>pi のプロバイダのモデルは Anthropic Messages を受け取ります。ゲートウェイがエージェントのリクエストを変換し、magpie が pi を通してストリーミングし、応答の思考・署名・ツール呼び出しはそのまま保たれます。ベンダーのエラーはステータス付きで返るので、フェイルオーバーもほかのプラグインと同じく働きます。</li>
+      <li><b>id。</b>pi のプロバイダの id もほかのプラグインと同じ規則です。<a href="#ids">プロバイダ id</a> を参照してください。</li>
+    </ul>
+
+    <h2 id="protocol"><a class="anchor" href="#protocol">ホストプロトコル</a></h2>
+    <p>プラグインを書くのにこの節は不要です。magpie 自体の開発や、ホストのデバッグをする人向けです。magpie はホストの stdin に <code>{id, method, params}</code> を 1 行にひとつずつ書き込みます。ホストは <code>{id, result}</code> または <code>{id, error: {message}}</code> で応答します。</p>
+    <div class="table-wrap"><table>
+      <tr><th>メソッド</th><th>動作</th></tr>
+      <tr><td><code>init</code></td><td>プラグインを読み込み、その <code>config</code> フックを実行します。ほかのすべての呼び出しはこれを待ちます。</td></tr>
+      <tr><td><code>providers</code></td><td>各プロバイダとそのメソッド、アカウント、アカウントごとのモデル。</td></tr>
+      <tr><td><code>prompt</code>, <code>validate</code></td><td>メソッドの次の質問、回答のチェック。</td></tr>
+      <tr><td><code>authorize</code>, <code>callback</code>, <code>apiKey</code></td><td>サインイン。</td></tr>
+      <tr><td><code>load</code></td><td>アカウントに対する loader のオプション。</td></tr>
+      <tr><td><code>fetch</code></td><td>1 件のリクエスト。<code>{id, event: "head", status, headers}</code>、次に <code>{id, event: "chunk", data}</code>（base64）、最後に <code>{id, result: null}</code> をストリームで返します。<code>{method: "abort", params: {id}}</code> で取り消せます。</td></tr>
+      <tr><td><code>usage</code>, <code>check</code></td><td>アカウントの使用量、リクエストと同じ方法でのアカウントの確認。</td></tr>
+      <tr><td><code>import</code>, <code>take</code>, <code>signOut</code>, <code>reload</code></td><td>アカウントの取り込みと取り出し、削除、loader の再実行。</td></tr>
+    </table></div>
+    <p>ホストは独自のイベントも送ります：<code>log</code>、<code>toast</code>、<code>auth</code>（サインインが保存またはリフレッシュされた）、<code>signIn</code>（アカウントのサインイン状態、前述のとおり）。ソースは <a href="https://github.com/yetone/magpie/blob/main/internal/plugin/host.js"><code>internal/plugin/host.js</code></a> です。</p>
+
+    <h2 id="faq"><a class="anchor" href="#faq">よくある質問</a></h2>
+    <h3>OpenCode のプラグインは magpie でそのまま動きますか？</h3>
+    <p>はい。<code>auth</code>、<code>config</code>、<code>provider</code>、<code>chat.headers</code> を通してサインインとリクエストを行っていれば動きます。magpie が追加するもの（<code>auth.usage</code>、<code>auth.refresh</code>、<code>magpie.icon</code>、<code>maxConcurrency</code>、<code>free</code>、<code>rate</code>、<code>X-Magpie-Sign-In</code>）は OpenCode が無視するので、ひとつのパッケージで両方に対応できます。</p>
+    <h3>pi のパッケージは magpie で動きますか？</h3>
+    <p>はい。<code>pi.registerProvider</code> でサインインとモデルを提供していれば動きます。magpie が使うのは登録されたプロバイダだけです。<a href="#pi">pi パッケージ</a>を参照してください。<code>pi-package</code> キーワードを付ければ検索で見つかります。</p>
+    <h3>プロバイダの名前が <code>…-plugin</code> になるのはなぜですか？</h3>
+    <p>その id が magpie ですでに使われているからです。<a href="#ids">プロバイダ id</a>を参照してください。</p>
+    <h3>ヘルパー関数の一部がプラグインとして実行されます。</h3>
+    <p>エントリモジュールがエクスポートする関数はすべてプラグインとして呼び出されます。プラグイン関数だけをエクスポートするか、<code>export default { id, server }</code> を使ってください。</p>
+    <h3>npm の依存を使えますか？</h3>
+    <p>はい。プラグインと一緒にインストールされますが、インストールスクリプトは実行されません。Bun の <code>fetch</code>、<code>crypto</code>、<code>fs</code>、<code>$</code> でたいていは足ります。</p>
+    <h3>プラグインからベンダーの CLI を実行できますか？</h3>
+    <p>はい。Bun の <code>$</code> か <code>child_process</code> を使います。いくつかのコミュニティプラグインはベンダー自身の CLI でサインインします。CLI が入っていないマシンもあると想定し、エラーでインストール方法を伝えてください。</p>
+    <h3>プラグインにはユーザーの作業のどこまでが見えますか？</h3>
+    <p>プラグインが送るリクエストに含まれるものすべて、つまり会話、ツールとその結果です。ユーザーが指定した送り先にだけ送り、ログには残さないでください。</p>
+    <h3>編集内容を magpie に反映させるには？</h3>
+    <p>ターミナルの <code>magpie</code> コマンドは、フォルダをその時点の内容で読み込みます。アプリでは、<span class="ui">プラグイン</span> でプラグインをオフにしてからオンにしてください。</p>
+
+    <p style="margin-top:48px">質問や、共有したいプラグインがありますか？ <a href="https://discord.gg/vGSnD3ZKQF">Discord</a> で聞くか、<a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a> に issue を立ててください。</p>
+  </article>
+</main>
+
+<footer><div class="wrap">
+  <span>© 2026 magpie · MIT</span>
+  <div class="links">
+    <a href="/ja/">ホーム</a>
+    <a href="/docs/ja/intent">インテントルーティング</a>
+    <a href="/docs/ja/plugins">プラグイン</a>
+    <a href="/docs/ja/import">magpie に追加</a>
+    <a href="https://github.com/yetone/magpie">GitHub</a>
+    <a href="https://discord.gg/vGSnD3ZKQF">Discord</a>
+    <a href="https://github.com/yetone/magpie-releases/releases">リリース</a>
+  </div>
+</div></footer>
+
+<script>
+(() => {
+  const next = { system: "light", light: "dark", dark: "system" };
+  document.querySelectorAll("button.theme").forEach((b) => {
+    b.dataset.mode = themeMode();
+    b.title = "Theme: " + themeMode();
+    b.addEventListener("click", () => setTheme(next[themeMode()]));
+  });
+
+  document.querySelectorAll(".copy").forEach((b) => b.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
+      b.textContent = "コピーしました"; setTimeout(() => (b.textContent = "コピー"), 1400);
+    } catch {}
+  }));
+})();
+</script>
+<script src="/docs.js"></script>
+</body>
+</html>
