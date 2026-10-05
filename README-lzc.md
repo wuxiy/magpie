@@ -44,6 +44,8 @@ agent  ── https://magpie.<域名>/v1beta/… ────► 3425 网关（G
   `/config/magpie/settings.json` 种子为 `{"lan": true}`（即"在局域网共享"），
   这使得到达网关的非本机请求**必须**携带有效的 `sk-magpie-key-…`，
   否则 401。用户在界面 Gateway → Gateway keys 里创建 key 发给 agent。
+  注意 lzc-ingress 对 `upstreams.location` 是**精确匹配**：`/v1` 只命中
+  字面 `/v1`，子路径要走带尾斜杠的 `/v1/`，所以清单里两种都配了。
 - **持久化**：`/lzcapp/var/config` 挂载到容器的 `/config`（与上游 Docker 的
   volume 布局一致：HOME、XDG 目录、登录态、缓存都在里面）。
 - agent 的 base URL：OpenAI 系 `https://<域名>/v1`，Anthropic/Gemini 系
@@ -77,11 +79,11 @@ lpk 相关文件都在独立路径/文件名下，正常情况下合并无冲突
    并预拉取各基础镜像的 `linux/amd64` 变体，例如
    `docker pull --platform linux/amd64 golang:1.26-alpine`）。
 
-当前 `lzc-build.yml` 里镜像用的是 `builder: local`：镜像在本地 Docker 用
-buildx 按 `linux/amd64`（一般盒子的架构）构建后全量内嵌进 lpk，**不需要**
-盒子上的懒猫开发者工具。若盒子是 arm64，或要产出可上架的包，把
-`builder` 改成 `remote`——那需要在盒子上安装**懒猫开发者工具**，
-镜像会在盒子上按其实际架构构建。
+当前 `lzc-build.yml` 里镜像是 `builder: remote`：镜像在盒子的懒猫开发者工具
+里按盒子实际架构构建（cywu 盒子是 x86_64）。本地没装开发者工具时可以临时
+切成 `builder: local`——用本地 Docker 的 buildx 按 `linux/amd64` 构建后全量
+内嵌，完全离线于盒子；注意本地模式架构固定为 amd64，且 `lpk install` 仍需要
+盒子上的开发者工具（推镜像走它的通道）。
 
 ```sh
 mkdir -p release

@@ -32,11 +32,19 @@ application:
     # the browser UI and its /api (everything not matched below)
     - /=http://magpie:3430
   upstreams:
-    # agent API: keep the full path (the gateway serves /v1/... natively)
+    # agent API: keep the full path (the gateway serves /v1/... natively).
+    # Both the exact path and the trailing-slash form: lzc-ingress matches
+    # upstream locations exactly, and the slash form covers subpaths.
     - location: /v1
       backend: http://magpie:3425
       disable_trim_location: true
+    - location: /v1/
+      backend: http://magpie:3425
+      disable_trim_location: true
     - location: /v1beta
+      backend: http://magpie:3425
+      disable_trim_location: true
+    - location: /v1beta/
       backend: http://magpie:3425
       disable_trim_location: true
   public_path:

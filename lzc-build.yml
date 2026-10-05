@@ -8,7 +8,6 @@ images:
     # is the repo so the Go build stage copies the synced source in
     dockerfile: lzc/gen/Dockerfile
     context: .
-    # build with the local docker (buildx, target linux/amd64 - the typical
-    # box arch) instead of on the box's Lazycat Developer Tools; switch to
-    # `remote` for store-style builds once the dev tools app is installed
-    builder: local
+    # build on the box's Lazycat Developer Tools, matching its real arch;
+    # `local` builds with the local docker instead (buildx, linux/amd64)
+    builder: remote
