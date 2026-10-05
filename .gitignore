@@ -6,3 +6,7 @@
 /rsrc_windows_*.syso
 /magpie-dev-backend
 /magpie-dev.new
+
+# lpk 打包产物与缓存
+/release/
+/.lzc-cli-cache/

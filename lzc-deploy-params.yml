@@ -1,0 +1,9 @@
+params:
+  - id: public_url
+    type: string
+    name: 对外访问地址
+    description: >-
+      其他设备访问本应用时使用的完整基础 URL（如 https://magpie.你的域名），
+      会作为 MAGPIE_PUBLIC_URL 传给 magpie，仅影响界面里展示的 agent 连接示例。
+      留空则自动使用 https://<应用域名>。
+    optional: true

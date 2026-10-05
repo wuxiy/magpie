@@ -1,0 +1,14 @@
+buildscript: lzc/build.sh
+manifest: lzc-manifest.yml
+pkgout: release/
+icon: lzc/icon.png
+images:
+  magpie:
+    # generated from the upstream Dockerfile by the buildscript; the context
+    # is the repo so the Go build stage copies the synced source in
+    dockerfile: lzc/gen/Dockerfile
+    context: .
+    # build with the local docker (buildx, target linux/amd64 - the typical
+    # box arch) instead of on the box's Lazycat Developer Tools; switch to
+    # `remote` for store-style builds once the dev tools app is installed
+    builder: local

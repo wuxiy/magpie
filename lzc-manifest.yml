@@ -1,0 +1,87 @@
+# Magpie on Lazycat (LPK V2).
+#
+# Layout: one `magpie` service (image built from the upstream Dockerfile,
+# default command switched to `magpie web`) that listens on
+#   - 3425: the agent gateway (OpenAI / Anthropic / Gemini compatible API)
+#   - 3430: the browser UI (its own /api + static page, behind a web key)
+# The default `application` container only routes:
+#   /v1, /v1beta -> gateway  (public_path: agents authenticate with a magpie
+#                            gateway key; "share on LAN" is seeded on in
+#                            settings.json so a key is ALWAYS required)
+#   everything else -> web UI (behind Lazycat's forced login; a request
+#                            inject also adds the web-key cookie so the box
+#                            login alone is enough to open the UI)
+usage: |
+  打开即可使用，浏览器界面已接入懒猫微服账号登录（无需 magpie 自己的密钥）。
+
+  让其他设备上的 agent（Claude Code、Codex、OpenCode 等）使用这个网关：
+
+  1. 在界面里 Gateway → Gateway keys 创建一个 key（lan 共享已默认开启）。
+  2. agent 侧的 base URL 填：
+     - OpenAI 系（含 Codex/OpenCode 等）: https://{{ .S.AppDomain }}/v1
+     - Anthropic 系（Claude Code 等）: https://{{ .S.AppDomain }}
+     - Gemini 系: https://{{ .S.AppDomain }}
+  3. API key 填第 1 步创建的网关 key。
+
+  若浏览器界面提示需要 key（自动登录注入未生效时），在地址后加
+  ?k=20539eb40e9f323543e3a1e33f4bbba2 再打开一次即可。
+
+application:
+  subdomain: magpie
+  routes:
+    # the browser UI and its /api (everything not matched below)
+    - /=http://magpie:3430
+  upstreams:
+    # agent API: keep the full path (the gateway serves /v1/... natively)
+    - location: /v1
+      backend: http://magpie:3425
+      disable_trim_location: true
+    - location: /v1beta
+      backend: http://magpie:3425
+      disable_trim_location: true
+  public_path:
+    # agents call these with a magpie gateway key; no browser login possible
+    - /v1
+    - /v1beta
+  injects:
+    # sign the browser into magpie web: its guard wants the cookie
+    # "magpie_web_<port>" carrying MAGPIE_WEB_KEY, so the Lazycat account
+    # login stays the only thing a user needs. Keep the key in sync with
+    # services.magpie.environment.
+    - id: magpie-web-autologin
+      on: request
+      when:
+        - "/*"
+      unless:
+        - "/v1*"
+        - "/v1beta*"
+      do: |
+        ctx.headers.set("Cookie", "magpie_web_3430=20539eb40e9f323543e3a1e33f4bbba2");
+
+services:
+  magpie:
+    image: embed:magpie
+    environment:
+      - MAGPIE_ADDR=0.0.0.0:3425
+      # fixed web key: trades the run's random key for one that survives
+      # restarts; the request inject above signs browsers in with it
+      - MAGPIE_WEB_KEY=20539eb40e9f323543e3a1e33f4bbba2
+      # what the UI shows agents as the address to connect to
+      - MAGPIE_PUBLIC_URL={{ if .U.public_url }}{{ .U.public_url }}{{ else }}https://{{ .S.AppDomain }}{{ end }}
+    binds:
+      - /lzcapp/var/config:/config
+    # runs as root before the entrypoint: seed "share on LAN" so requests
+    # arriving through the ingress (not loopback for magpie) always need a
+    # real gateway key, then hand /config to the image's nonroot user 65532
+    setup_script: |
+      mkdir -p /config/magpie
+      if [ ! -f /config/magpie/settings.json ]; then
+        printf '{"lan": true}\n' > /config/magpie/settings.json
+      fi
+      chown 65532:65532 /config /config/magpie /config/magpie/settings.json
+    healthcheck:
+      test: ["CMD", "/magpie", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

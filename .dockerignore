@@ -7,3 +7,6 @@ build
 magpie.app
 /*.md
 .DS_Store
+# lpk 打包产物与生成文件
+release
+lzc/gen
