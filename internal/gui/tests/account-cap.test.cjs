@@ -90,7 +90,7 @@ function serve(lang, posts, use = usage, alone = false) {
 
 const words = {
   en: { direct: "At its cap · Codex still uses it", directWhy: /refused with a usage-cap error until it renews.*\nCodex is signed in to this account and asks its vendor itself, not through magpie/s, opus: "Opus week at its cap · back in 3h", opusWhy: /^Opus week is at 90%, past this account's 70% cap, so magpie sends the requests it counts to the other accounts until it renews; other models still use this account/, none: "No cap", cap: (n) => `Cap ${n}%`, held: "At its cap · back in 3h", other: "Other…", menu: "Usage cap" },
-  zh: { direct: "已达上限 · Codex 仍在使用", directWhy: /经过 magpie 的请求会返回.*\nCodex 登录的是这个账号，它自己直接向厂商发请求/s, opus: "Opus week已达上限 · 3 小时后恢复", opusWhy: /^Opus week已用 90%，超过该账号 70% 的上限.*其他模型仍会使用这个账号/, none: "不设上限", cap: (n) => `上限 ${n}%`, held: "已达上限 · 3 小时后恢复", other: "其他…", menu: "用量上限" },
+  zh: { direct: "已达上限 · Codex 仍在使用", directWhy: /经 magpie 的请求会返回.*\nCodex 登录此账号并直接向厂商发请求/s, opus: "Opus week已达上限 · 3 小时后恢复", opusWhy: /^Opus week已用 90%，超过该账号的 70% 上限.*其他模型仍用此账号/, none: "不设上限", cap: (n) => `上限 ${n}%`, held: "已达上限 · 3 小时后恢复", other: "其他…", menu: "用量上限" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -208,7 +208,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const note = row(page, "me@example.com").locator(".acap-held");
       assert.equal(await note.textContent(), w.direct);
       assert.match(await note.getAttribute("title"), w.directWhy);
-      assert.match(await pill(page, "me@example.com").getAttribute("title"), w.directWhy.source.includes("Codex is") ? /\n\nCodex is signed in to this account/ : /\n\nCodex 登录的是这个账号/);
+      assert.match(await pill(page, "me@example.com").getAttribute("title"), w.directWhy.source.includes("Codex is") ? /\n\nCodex is signed in to this account/ : /\n\nCodex 登录此账号/);
       assert.notEqual(await note.evaluate((e) => getComputedStyle(e).color), await row(page, "me@example.com").locator(".n").evaluate((e) => getComputedStyle(e).color), "a warning, not plain text");
       // the spare, off, has no pill note of its own
       assert.equal(await row(page, "Spare@Example.com").locator(".acap-held").count(), 0);
@@ -224,7 +224,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     test(`${engine} ${lang}: with another account on, the pill and the note don't say the agent goes past the cap`, async (t) => {
       const { page } = await open(t, "codex");
       assert.equal(await row(page, "me@example.com").locator(".acap-direct").count(), 0);
-      assert.doesNotMatch(await pill(page, "me@example.com").getAttribute("title"), /Codex is signed in|Codex 登录的是/);
+      assert.doesNotMatch(await pill(page, "me@example.com").getAttribute("title"), /Codex is signed in|Codex 登录此账号/);
     });
 
     test(`${engine} ${lang}: a window of one model past the cap holds the account for that model, and says so`, async (t) => {

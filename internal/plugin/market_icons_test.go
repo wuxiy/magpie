@@ -16,6 +16,10 @@ func TestMarketIconsAreBundled(t *testing.T) {
 	}
 	names := map[string]string{}
 	for _, x := range l {
+		// a middleware's card may go without: it has no provider's logo
+		if x.Icon == "" && x.Kind == "middleware" {
+			continue
+		}
 		names[x.Icon] = x.Package
 	}
 	for k, ic := range otherIcons {

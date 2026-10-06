@@ -7,8 +7,15 @@ const { chromium, webkit } = require("playwright");
 const assets = path.resolve(__dirname, "../assets");
 const now = new Date();
 const day = [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((n) => String(n).padStart(2, "0")).join("-");
+// a time as the gateway writes it: local, with its offset, so its date is
+// the local day its history keeps it under (a UTC time is a day off for
+// the hours between the two midnights)
+const stamp = (d) => {
+  const o = -d.getTimezoneOffset(), p = (n) => String(Math.floor(Math.abs(n))).padStart(2, "0");
+  return new Date(d.getTime() + o * 60e3).toISOString().slice(0, 19) + (o < 0 ? "-" : "+") + p(o / 60) + ":" + p(o % 60);
+};
 function req(id, agent, session, cost, priced = true) {
-  const time = new Date(now.getTime() - (10 - id) * 60e3).toISOString();
+  const time = stamp(new Date(now.getTime() - (10 - id) * 60e3));
   const seat = { id: "relay", provider: "relay", name: "Relay", who: "Test account", kind: "account", model: id === 1 ? "model-a" : "model-b" };
   return { id, seq: id, time, agent, session, model: `relay/${seat.model}`, provider: "relay", cost, priced,
     order: [seat], tries: [{ id: seat.id, model: seat.model, start: time, done: true, status: 200, ms: 4500, effort: "medium" }],
@@ -65,7 +72,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.match(await group.locator(".summary").textContent(), lang === "zh" ? /3 个请求.*6.0k/ : /3 requests.*6.0k/);
       assert.equal(await group.locator(".cost").textContent(), "≈$0.030+", "partial totals must be marked");
       assert.equal(await page.locator("button.rt-session").filter({ hasText: "Claude Code" }).locator(".cost").textContent(), "≈$0.000", "zero price is known");
-      assert.equal(await page.locator("div.rt-session .cost").textContent(), "—", "legacy requests are unknown");
+      assert.equal(await page.locator("div.rt-session .cost").isVisible(), false, "unknown cost is omitted for legacy requests");
       assert.equal(await page.locator(".rt-req").count(), 6);
 
       await group.click();
@@ -184,6 +191,52 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 }
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
+  for (const lang of ["en", "zh"]) {
+    test(`${engine} ${lang}: background suggestion groups explain their purpose without renaming mixed chats`, async (t) => {
+      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+      const page = await browser.newPage({ viewport: { width: 1100, height: 800 }, reducedMotion: "reduce" });
+      page.setDefaultTimeout(5000);
+      const errors = [], feed = {};
+      const fixture = [
+        { ...req(1, "codex", "suggestions-a", 0.01), kind: "ambient_suggestion_safety" },
+        { ...req(2, "codex", "suggestions-a", 0.02), kind: "ambient_suggestions" },
+        { ...req(3, "codex", "safety-only", 0.03), kind: "ambient_suggestion_safety" },
+        { ...req(4, "codex", "generation-only", 0.04), kind: "ambient_suggestions" },
+        { ...req(5, "codex", "named-suggestions", 0.05), kind: "ambient_suggestions", sessionTitle: "Named suggestions" },
+        req(6, "codex", "mixed", 0.06),
+        { ...req(7, "codex", "mixed", 0.07), kind: "ambient_suggestions" },
+        { ...req(8, "codex", "named-chat", 0.08), sessionTitle: "Chat title" },
+        { ...req(9, "codex", "named-chat", 0.09), kind: "ambient_suggestion_safety" },
+        { ...req(10, "claude", "other-agent", 0.1), kind: "ambient_suggestions" },
+        { ...req(11, "codex", "", 0.11), kind: "ambient_suggestions" },
+      ];
+      await page.route("**/*", serve(lang, feed, fixture));
+      page.on("pageerror", (e) => errors.push(e.message));
+      t.after(async () => { feed.next?.([]); await browser.close(); });
+      await page.goto("http://magpie.test/?view=routing");
+      await page.locator(".rt-group-by button").nth(1).click();
+      await page.locator(".rt-session").nth(7).waitFor();
+      const group = (id) => page.locator(`button.rt-session:has(.nm[title$="${id}"])`);
+      const name = lang === "zh" ? "后台提示词建议" : "Background prompt suggestions";
+      for (const id of ["suggestions-a", "safety-only", "generation-only"]) {
+        assert.equal(await group(id).locator(".nm").textContent(), `Codex · ${name}`);
+        const tooltip = await group(id).locator(".nm").getAttribute("title");
+        assert.match(tooltip, lang === "zh" ? /后台.*提示词建议.*安全检查/ : /suggested prompts.*in the background.*checked them for safety/);
+        assert(tooltip.endsWith((lang === "zh" ? "会话 ID" : "Session id") + ": " + id), "tooltip retains the group's own session ID");
+      }
+      assert.equal(await group("suggestions-a").locator(".cost").textContent(), "≈$0.030");
+      assert.equal(await group("named-suggestions").locator(".nm").textContent(), "Codex · Named suggestions");
+      assert.equal(await group("mixed").locator(".nm").textContent(), "Codex · mixed");
+      assert.equal(await group("named-chat").locator(".nm").textContent(), "Codex · Chat title");
+      assert.equal(await group("other-agent").locator(".nm").textContent(), "Claude Code · other-agent");
+      assert.equal(await page.locator("div.rt-session .nm").textContent(), lang === "zh" ? "未提供会话标识" : "No session ID");
+      assert.equal(await page.locator(".rt-session").count(), 8, "suggestion workers retain separate session groups");
+      assert.deepEqual(errors, []);
+    });
+  }
+}
+
+for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   test(`${engine}: title helpers belong to the named parent, including totals and title-first delivery`, async (t) => {
     const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
     const page = await browser.newPage();
@@ -281,7 +334,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.match(await group("Codex · partial").locator(".summary").textContent(), lang === "zh" ? /^1 个请求/ : /^1 request ·/);
       assert.equal(await group("Codex · mixed").locator(".cost").textContent(), "≈$0.000+", "a free request plus an unknown request is a partial zero estimate");
       assert.match(await group("Codex · mixed").locator(".summary").textContent(), lang === "zh" ? /^2 个请求/ : /^2 requests ·/);
-      assert.equal(await group("Claude Code · unknown").locator(".cost").textContent(), "—", "all unknown stays unknown");
+      assert.equal(await group("Claude Code · unknown").locator(".cost").isVisible(), false, "all unknown costs are omitted");
       await page.evaluate(() => { currency = "cny"; fx = { rate: 7, at: null, stale: false }; renderCosts(); });
       assert.equal(await group("Codex · mixed").locator(".cost").textContent(), "≈¥0.000+");
       assert.equal(await page.locator(".rt-req").filter({ hasText: "model-a" }).locator(".cost").textContent(), "≈¥0.000+");
@@ -378,8 +431,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const page = await browser.newPage({ viewport: { width: 1100, height: 800 }, reducedMotion: "reduce" });
         page.setDefaultTimeout(10000);
         const errors = [], titleRequests = [];
-        const fixture = Array.from({ length: 2000 }, (_, i) => ({ ...req(i + 1, mixed && i < 800 ? "claude" : "codex", `chat-${i + 1}`, 0.01), time: now.toISOString() }));
-        const extra = { ...req(2001, "codex", "opened-chat", 0.01), time: now.toISOString() };
+        const fixture = Array.from({ length: 2000 }, (_, i) => ({ ...req(i + 1, mixed && i < 800 ? "claude" : "codex", `chat-${i + 1}`, 0.01), time: stamp(now) }));
+        const extra = { ...req(2001, "codex", "opened-chat", 0.01), time: stamp(now) };
         const feed = { titleRequests, route: extra, names: ({ ids }) => ({ names: Object.fromEntries(ids.map((id) => [id, `Applied ${id}`])) }) };
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang, feed, fixture));

@@ -277,6 +277,20 @@ func almaCaps(m catalog.Model) map[string]any {
 	if n := maxTokens(m); n > 0 {
 		caps["maxOutputTokens"] = n
 	}
+	// what a call costs, as magpie's usage pages count it: Alma prices a
+	// model by models.dev's id too, so it counted every one of magpie's at
+	// $0, "unpriced" (#919). Its pricing is USD per million tokens, as
+	// magpie's is, with one cache write price: the 5-minute one.
+	if p := m.Price; p != nil {
+		pr := map[string]any{"input": p.Input, "output": p.Output}
+		if p.CacheRead > 0 {
+			pr["cacheRead"] = p.CacheRead
+		}
+		if p.CacheWrite > 0 {
+			pr["cacheWrite"] = p.CacheWrite
+		}
+		caps["pricing"] = pr
+	}
 	return caps
 }
 

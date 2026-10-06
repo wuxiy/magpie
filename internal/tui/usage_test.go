@@ -58,6 +58,13 @@ func TestQuotaLines(t *testing.T) {
 	if !strings.HasSuffix(got[1], "↺ 2 resets until "+provider.ResetClock(expires, now)) || !strings.HasSuffix(got[2], "↺ 1 reset") {
 		t.Errorf("resets:\n%s", plain(got))
 	}
+	// a ChatGPT account's credits are told beside its windows, not in
+	// their place
+	credits := []provider.SubscriptionQuota{qs[0]}
+	credits[0].Balance = "1.2K credits"
+	if got := plain(quotaLines(credits, true, false, 200, now)); !strings.Contains(got, "64% used") || !strings.Contains(got, "99% used") || !strings.Contains(got, "1.2K credits left") {
+		t.Errorf("credits:\n%s", got)
+	}
 	if quotaLines(nil, false, false, 80, now) != nil {
 		t.Error("not asked yet: want nothing")
 	}
@@ -132,5 +139,22 @@ func TestUsagePageShowsCallsNotThroughMagpie(t *testing.T) {
 	}
 	if strings.Contains(own, usage.UnknownProvider) {
 		t.Fatalf("the unknown provider's id is shown:\n%s", own)
+	}
+}
+
+// A Codex account set not to spend its credits says so beside them.
+func TestQuotaLinesCreditsNotSpent(t *testing.T) {
+	home(t)
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	qs := []provider.SubscriptionQuota{{Provider: "codex", Name: "Codex", User: "me@example.com", Balance: "1.2K credits",
+		Windows: []provider.QuotaWindow{{Name: "5 hours", Used: 100}}}}
+	if got := strings.Join(quotaLines(qs, true, false, 200, now), "\n"); strings.Contains(got, "not spent") {
+		t.Errorf("spends them by default:\n%s", got)
+	}
+	if err := provider.SetCodexCredits("Me@example.com", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(quotaLines(qs, true, false, 200, now), "\n"); !strings.Contains(got, "1.2K credits left · not spent") {
+		t.Errorf("set not to:\n%s", got)
 	}
 }

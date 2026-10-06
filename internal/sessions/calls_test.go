@@ -107,12 +107,12 @@ func TestCallsClaude(t *testing.T) {
 
 	cs := Calls(time.Time{})
 	want := []Call{
-		{Time: callT0.Add(11 * time.Second), Agent: "claude", Session: "sess1", Model: "claude-haiku-4-5-20251001", Tokens: Tokens{11, 12, 13, 14}, RequestID: "req_s1", Cwd: "/work/app"},
-		{Time: callT0.Add(10 * time.Second), Agent: "claude-desktop", Session: "sess-d", Model: "claude-sonnet-5-5", Tokens: Tokens{1, 2, 3, 4}, RequestID: "req_m4", Cwd: "/work/app", Millis: 1000},
+		{Time: callT0.Add(11 * time.Second), Agent: "claude", Session: "sess1", Model: "claude-haiku-4-5-20251001", Tokens: Tokens{11, 12, 13, 14, 0}, RequestID: "req_s1", Cwd: "/work/app"},
+		{Time: callT0.Add(10 * time.Second), Agent: "claude-desktop", Session: "sess-d", Model: "claude-sonnet-5-5", Tokens: Tokens{1, 2, 3, 4, 0}, RequestID: "req_m4", Cwd: "/work/app", Millis: 1000},
 		{Time: callT0.Add(9 * time.Second), Agent: "claude", Session: "sess1", Error: "unknown", ErrorText: "API Error: " + strings.Repeat("é", 389), Cwd: "/work/app"},
 		{Time: callT0.Add(8 * time.Second), Agent: "claude", Session: "sess1", Error: "rate_limit", ErrorText: "You've hit your session limit · resets 3:40am", RequestID: "req_err", Cwd: "/work/app"},
-		{Time: callT0.Add(5 * time.Second), Agent: "claude", Session: "sess1", Model: "claude-opus-5-5", Tokens: Tokens{100, 55, 5000, 1000}, RequestID: "req_m1", Cwd: "/work/app", Millis: 5000},
-		{Time: callT0.Add(4 * time.Second), Agent: "claude", Session: "sess1", Model: "claude-haiku-4-5-20251001", Tokens: Tokens{7, 8, 0, 0}, RequestID: "req_m2", Cwd: "/work/app", Millis: 1000},
+		{Time: callT0.Add(5 * time.Second), Agent: "claude", Session: "sess1", Model: "claude-opus-5-5", Tokens: Tokens{100, 55, 5000, 1000, 0}, RequestID: "req_m1", Cwd: "/work/app", Millis: 5000},
+		{Time: callT0.Add(4 * time.Second), Agent: "claude", Session: "sess1", Model: "claude-haiku-4-5-20251001", Tokens: Tokens{7, 8, 0, 0, 0}, RequestID: "req_m2", Cwd: "/work/app", Millis: 1000},
 	}
 	if len(cs) != len(want) {
 		t.Fatalf("want %d calls, got %d: %+v", len(want), len(cs), cs)
@@ -140,7 +140,7 @@ func TestCallsCowork(t *testing.T) {
 		t.Fatalf("want 3 calls, got %d: %+v", len(cs), cs)
 	}
 	if cs[0].Agent != "claude-desktop" || cs[0].Model != "claude-haiku-4-5-20251001" || cs[0].Session != "cw1" ||
-		cs[1].Agent != "claude-desktop" || cs[1].Tokens != (Tokens{5, 6, 7, 8}) ||
+		cs[1].Agent != "claude-desktop" || cs[1].Tokens != (Tokens{5, 6, 7, 8, 0}) ||
 		cs[2].Agent != "claude" {
 		t.Fatalf("calls: %+v", cs)
 	}
@@ -211,13 +211,13 @@ func TestCallsCodex(t *testing.T) {
 
 	cs := Calls(time.Time{})
 	want := []Call{
-		{Time: callT0.Add(200 * time.Second), Agent: "codex", Session: "0190cccc-1111-7222-8333-444455556666", Tokens: Tokens{6, 3, 4, 0}},
-		{Time: callT0.Add(103 * time.Second), Agent: "codex", Session: "thread-2", Model: "gpt-6-astra", Tokens: Tokens{500, 20, 0, 0}, Reasoning: 5, Effort: "medium", Cwd: "/work/it", Millis: 1000},
-		{Time: callT0.Add(102 * time.Second), Agent: "codex", Session: "thread-2", Model: "gpt-6-astra", Tokens: Tokens{100, 100, 3900, 0}, Reasoning: 30, Effort: "medium", Cwd: "/work/it", Millis: 1000},
+		{Time: callT0.Add(200 * time.Second), Agent: "codex", Session: "0190cccc-1111-7222-8333-444455556666", Tokens: Tokens{6, 3, 4, 0, 0}},
+		{Time: callT0.Add(103 * time.Second), Agent: "codex", Session: "thread-2", Model: "gpt-6-astra", Tokens: Tokens{500, 20, 0, 0, 0}, Reasoning: 5, Effort: "medium", Cwd: "/work/it", Millis: 1000},
+		{Time: callT0.Add(102 * time.Second), Agent: "codex", Session: "thread-2", Model: "gpt-6-astra", Tokens: Tokens{100, 100, 3900, 0, 0}, Reasoning: 30, Effort: "medium", Cwd: "/work/it", Millis: 1000},
 		// input_tokens holds the cache write as well as the read (#589): 2500 - 2000 - 300
-		{Time: callT0.Add(12 * time.Second), Agent: "codex", Session: "sess-x", Model: "gpt-6-luna", Tokens: Tokens{200, 150, 2000, 300}, Reasoning: 40, Effort: "low", Cwd: "/work/it", Millis: 1000},
-		{Time: callT0.Add(11 * time.Second), Agent: "codex", Session: "sess-x", Model: "gpt-6-luna", Tokens: Tokens{1000, 100, 1000, 0}, Reasoning: 40, Effort: "low", Cwd: "/work/it", Millis: 1000},
-		{Time: callT0.Add(2 * time.Second), Agent: "codex", Session: "sess-x", Model: "gpt-6-astra", Tokens: Tokens{400, 50, 600, 0}, Reasoning: 20, Effort: "high", Cwd: "/work/it", TTFT: 700, Millis: 5000},
+		{Time: callT0.Add(12 * time.Second), Agent: "codex", Session: "sess-x", Model: "gpt-6-luna", Tokens: Tokens{200, 150, 2000, 300, 0}, Reasoning: 40, Effort: "low", Cwd: "/work/it", Millis: 1000},
+		{Time: callT0.Add(11 * time.Second), Agent: "codex", Session: "sess-x", Model: "gpt-6-luna", Tokens: Tokens{1000, 100, 1000, 0, 0}, Reasoning: 40, Effort: "low", Cwd: "/work/it", Millis: 1000},
+		{Time: callT0.Add(2 * time.Second), Agent: "codex", Session: "sess-x", Model: "gpt-6-astra", Tokens: Tokens{400, 50, 600, 0, 0}, Reasoning: 20, Effort: "high", Cwd: "/work/it", TTFT: 700, Millis: 5000},
 	}
 	if len(cs) != len(want) {
 		t.Fatalf("want %d calls, got %d: %+v", len(want), len(cs), cs)
@@ -310,7 +310,7 @@ func TestCallsIncremental(t *testing.T) {
 	if len(claude) != 3 || claude[0].Tokens.Input != 3 || claude[1].Tokens != (Tokens{Input: 2, Output: 9}) || claude[2].Tokens.Input != 1 {
 		t.Fatalf("claude: %+v", claude)
 	}
-	if len(codex) != 2 || codex[0].Tokens != (Tokens{100, 30, 100, 0}) || codex[1].Tokens != (Tokens{50, 10, 50, 0}) {
+	if len(codex) != 2 || codex[0].Tokens != (Tokens{100, 30, 100, 0, 0}) || codex[1].Tokens != (Tokens{50, 10, 50, 0, 0}) {
 		t.Fatalf("codex: %+v", codex)
 	}
 

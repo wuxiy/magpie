@@ -242,7 +242,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // on Windows, in Chinese: winget, PowerShell, a new terminal
       const win = await open("zh", { agents: [], clis: {}, installs: noNode("winget", WINGET) }, '#agentsInstall .ag-install-row[data-id="pi"]');
       const wnote = await win.locator("#agentsInstall .ag-install-note").textContent();
-      assert.match(wnote, /^本机没有找到 Node\.js，所以 npm 命令会先用 winget 装好 Node\.js/);
+      assert.match(wnote, /^本机未找到 Node\.js，npm 命令会先用 winget 安装它/);
       assert.match(wnote, /PowerShell/);
       assert.match(wnote, /新终端/);
       assert.equal(await win.locator('#agentsInstall .ag-install-row[data-id="pi"] .ag-install-via').textContent(), "Node.js + npm");
@@ -259,7 +259,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(await head.textContent(), "安装其他 Agent（2）");
       await wheelTo(page, "#agentsInstall .ag-install-head");
       await head.click();
-      assert.match(await page.locator("#agentsInstall .ag-install-note").textContent(), /在终端里运行/);
+      assert.match(await page.locator("#agentsInstall .ag-install-note").textContent(), /在终端运行/);
       assert.equal(await page.locator('#agentsInstall .ag-install-row[data-id="claude"] .ag-install-via').first().textContent(), "安装脚本");
       if (process.env.ARTIFACT_DIR) {
         await fs.mkdir(process.env.ARTIFACT_DIR, { recursive: true });

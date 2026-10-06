@@ -151,8 +151,10 @@ type mcpFile struct {
 	// reads, with what couldn't be moved from it.
 	Extra []string
 	// WSL: the agent runs in a WSL distro, where a Windows program isn't
-	// one it can start
-	WSL bool
+	// one it can start, but for magpie's own (side); Distro is its name and
+	// Home its $HOME as the distro spells it
+	WSL          bool
+	Distro, Home string
 }
 
 // files are every file the servers are written into.
@@ -184,10 +186,8 @@ func (f *mcpFile) supports(s *Server) error {
 	if f.Format == fmtDsh && s.Name != "" && !dshServerName.MatchString(s.Name) {
 		return errDshName
 	}
-	if f.WSL && !s.Remote() && windowsPath.MatchString(s.Command) {
-		return fmt.Errorf("it runs a Windows program (%s), which an agent in WSL can't start: give it a command WSL has", s.Command)
-	}
-	return nil
+	_, err := f.side(s)
+	return err
 }
 
 // windowsPath is a program named as Windows names one: C:/…, a path with a

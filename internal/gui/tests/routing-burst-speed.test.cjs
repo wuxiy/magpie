@@ -51,7 +51,7 @@ function serve(lang) {
 
 const want = {
   en: { first: /first token in 24 s/, speed: /tok\/s/, normal: /· 100 tok\/s/, slow: /· 50 tok\/s/ },
-  zh: { first: /24 秒 后出首个 token/, speed: /token\/秒/, normal: /· 100 token\/秒/, slow: /· 50 token\/秒/ },
+  zh: { first: /24 秒 后首响/, speed: /token\/秒/, normal: /· 100 token\/秒/, slow: /· 50 token\/秒/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -66,11 +66,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.route("**/*", serve(lang));
       t.after(() => browser.close());
       await page.goto("http://magpie.test/?view=routing");
-      await page.locator(".rt-day").nth(1).click();
+      await page.locator(".rt-days .rt-day").nth(1).click();
       await page.locator(".rt-req").nth(timing.length - 1).waitFor();
 
       const story = async (i) => {
         const row = page.locator(".rt-req").nth(i);
+        // Taller metric rows need the list scrolled first, with real input
+        // so the page's script-scroll protection keeps the same position.
+        const rb = await row.boundingBox(), lb = await page.locator(".rt-reqs").boundingBox();
+        if (rb.y + rb.height > lb.y + lb.height) {
+          await page.locator(".rt-reqs").hover();
+          await page.mouse.wheel(0, rb.y + rb.height - lb.y - lb.height + 6);
+          await page.waitForTimeout(200);
+        }
         const was = await row.evaluate((e) => e.getBoundingClientRect().top);
         const scrolled = await page.evaluate(() => [scrollX, scrollY, document.scrollingElement.scrollTop]);
         await row.click();

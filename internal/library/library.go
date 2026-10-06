@@ -35,6 +35,11 @@ type Library struct {
 	// SkillGroups are the groups the user made of some skills on the
 	// page, each shown as a group of its own (#791)
 	SkillGroups []*SkillGroup `json:"skillGroups,omitempty"`
+	// CopySkills gives the agents copies of their skills rather than links
+	// to the library's, and SkillHow is an agent's own way over it, link or
+	// copy (#896, skill_how.go)
+	CopySkills bool              `json:"copySkills,omitempty"`
+	SkillHow   map[string]string `json:"skillHow,omitempty"`
 	// kept is where a change put what it kept aside before the sync, for
 	// the sync to keep the agents' files beside it
 	kept *backups

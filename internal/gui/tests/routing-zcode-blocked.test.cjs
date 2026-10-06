@@ -57,7 +57,7 @@ function serve(lang) {
 
 const want = {
   en: { said: "It said: " + vendor, hint },
-  zh: { said: "原话：" + vendor, hint: "ZCode 体验套餐仍拒绝了这个请求（magpie 已按 ZCode 客户端的方式发送）；可能是网络拦截了这个 IP，或 ZCode 又加了新的校验。请改用有 GLM Coding Plan 的账号，或在这个分组里加上其他供应商" },
+  zh: { said: "原话：" + vendor, hint: "ZCode 体验套餐仍拒绝了此请求（已按 ZCode 客户端方式发送）；可能是此 IP 被网络拦截，或 ZCode 新增了校验。请改用有 GLM Coding Plan 的账号，或在此分组中加入其他供应商" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -78,7 +78,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await browser.close();
       });
       await page.goto("http://magpie.test/?view=routing");
-      await page.locator(".rt-day").nth(1).click();
+      await page.locator(".rt-days .rt-day").nth(1).click();
       await page.locator(".rt-req").nth(errs.length - 1).waitFor();
 
       const steps = async () => page.locator(".rt-steps li").evaluateAll((ls) => ls.map((l) => [l.className, l.textContent]));

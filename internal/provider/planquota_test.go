@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -226,13 +227,18 @@ func TestPlanQuotas(t *testing.T) {
 	for _, v := range agentenv.Vars {
 		t.Setenv(v, "")
 	}
+	var unavailable atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if unavailable.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		key := r.Header.Get("Authorization")
 		switch r.Header.Get("X-Host") + r.URL.Path + " " + key {
 		case "open.bigmodel.cn/api/monitor/usage/quota/limit glm-a":
-			w.Write([]byte(`{"success":true,"data":{"level":"pro","limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":20}]}}`))
+			w.Write([]byte(`{"success":true,"data":{"level":"pro","limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":20,"nextResetTime":4102444800000}]}}`))
 		case "open.bigmodel.cn/api/monitor/usage/quota/limit glm-b":
-			w.Write([]byte(`{"success":true,"data":{"level":"lite","limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":90}]}}`))
+			w.Write([]byte(`{"success":true,"data":{"level":"lite","limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":90,"nextResetTime":4102444800000}]}}`))
 		case "open.bigmodel.cn/api/monitor/usage/quota/limit glm-payg":
 			w.Write([]byte(`{"success":true,"data":{"limits":[]}}`))
 		case "bigmodel.cn/api/monitor/usage/quota/limit glm-payg":
@@ -295,6 +301,35 @@ func TestPlanQuotas(t *testing.T) {
 	}
 	if q := got["go/"]; q.Name != "OpenCode Go" || len(q.Windows) != 1 || q.Windows[0].Name != "5 hours" {
 		t.Errorf("go: %+v", q)
+	}
+	// The custom GLM provider is recognized by its endpoint, not its id
+	// or key labels, and the provenance survives PlanQuotas' cache.
+	reset := time.UnixMilli(4102444800000)
+	sub := SubscriptionQuota{Provider: "zcode", User: "me@example.com",
+		Windows: []QuotaWindow{{Span: 5 * time.Hour, ResetsAt: &reset}}}
+	for _, q := range got {
+		if hidden := len(notShown([]SubscriptionQuota{q}, []SubscriptionQuota{sub})) == 0; hidden != (q.Provider == "glm") {
+			t.Errorf("%s/%s: hidden=%v", q.Provider, q.User, hidden)
+		}
+	}
+	if qs := notShown(PlanQuotas(context.Background()), []SubscriptionQuota{sub}); len(qs) != 2 {
+		t.Fatalf("cached plans after deduplication: %+v", qs)
+	}
+	// A restart loses the in-memory provenance; a failed read restores
+	// the old windows from disk and must still recognize the GLM source.
+	unavailable.Store(true)
+	planQuotaCache.Lock()
+	planQuotaCache.data = nil
+	planQuotaCache.Unlock()
+	lastQuotas.Lock()
+	lastQuotas.m, lastQuotas.loaded = nil, false
+	lastQuotas.Unlock()
+	qs := PlanQuotas(context.Background())
+	if len(qs) != 4 {
+		t.Fatalf("restored plans: %+v", qs)
+	}
+	if kept := notShown(qs, []SubscriptionQuota{sub}); len(kept) != 2 {
+		t.Fatalf("restored plans after deduplication: %+v", kept)
 	}
 }
 

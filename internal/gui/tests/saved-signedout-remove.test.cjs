@@ -53,7 +53,7 @@ const words = {
   zh: {
     line: "Claude Code 保存的账号没有提供出来。", remove: "移除", cancel: "取消",
     ask: "移除 Claude Code 保存的 2 个账号？",
-    says: "magpie 会移除它保存的 banned@example.com, other@example.com。Claude Code 自己的文件和登录，以及账号本身，都保持原样。",
+    says: "移除 magpie 保存的 banned@example.com, other@example.com。Claude Code 自己的文件、登录和账号本身均不受影响。",
     done: "已移除 banned@example.com, other@example.com",
   },
 };

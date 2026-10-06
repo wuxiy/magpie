@@ -114,7 +114,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     test(`${engine} ${lang}: a signed-in account's rate opens as it is and is saved`, async (t) => {
       const { page, errors, posts } = await open(t, "Codex");
       assert.equal(await box(page).inputValue(), "0.8");
-      await box(page).fill("1.5");
+      // a comma for the decimal point, as some keyboards type it
+      await box(page).fill("1,5");
       const saved = await save(page, posts);
       assert.equal(saved.body.id, "codex");
       assert.equal(saved.body.priceRate, 1.5);

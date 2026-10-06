@@ -79,7 +79,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.route("**/*", server(lang, posts));
       await page.goto("http://magpie.test/");
       await page.locator('button[data-view="library"]').click();
-      await page.locator("#view-library .lib-row").first().waitFor();
+      await page.locator("#view-library .lib-body:not(.lib-skel) .lib-row").first().waitFor();
       return page;
     };
 

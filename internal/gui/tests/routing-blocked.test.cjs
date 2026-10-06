@@ -55,7 +55,7 @@ function serve(lang) {
 
 const want = {
   en: { said: "It said: " + vendor, hint },
-  zh: { said: "原话：" + vendor, hint: "供应商的网络防火墙拦截了来自这个 IP 的请求；请稍等一会儿，或换个网络或代理" },
+  zh: { said: "原话：" + vendor, hint: "供应商的网络防火墙拦截了此 IP 的请求；请稍后再试，或更换网络或代理" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -76,7 +76,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await browser.close();
       });
       await page.goto("http://magpie.test/?view=routing");
-      await page.locator(".rt-day").nth(1).click();
+      await page.locator(".rt-days .rt-day").nth(1).click();
       await page.locator(".rt-req").nth(errs.length - 1).waitFor();
 
       const steps = async () => page.locator(".rt-steps li").evaluateAll((ls) => ls.map((l) => [l.className, l.textContent]));

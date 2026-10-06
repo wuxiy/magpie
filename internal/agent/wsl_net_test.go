@@ -130,7 +130,7 @@ func TestWSLReprobedAfterStop(t *testing.T) {
 	}
 	look := func() distro {
 		wsl.Lock()
-		wsl.at = time.Time{}
+		wsl.at, wsl.runAt = time.Time{}, time.Time{}
 		wsl.Unlock()
 		ds := wslDistros()
 		if len(ds) != 1 {

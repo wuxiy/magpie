@@ -106,3 +106,51 @@ func TestAlmaToldReasoning(t *testing.T) {
 		t.Fatalf("glm-4.6 synced: %v", c)
 	}
 }
+
+// Alma is told what each of magpie's models costs, at the price magpie's
+// own usage pages count it at: Alma looks a model's price up by its id on
+// models.dev and found none for magpie's, so its usage page counted every
+// call through magpie at $0, "unpriced" (#919). A model magpie has no price
+// for says nothing of it.
+func TestAlmaToldPricing(t *testing.T) {
+	syncHome(t)
+	if err := provider.Save(provider.Provider{ID: "think", Name: "Think", Chat: "https://example.test/v1", Key: "key",
+		Models: []string{"priced", "unpriced"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.SetModelPrice("think/priced", &catalog.Price{Input: 2, Output: 8, CacheRead: 0.5, CacheWrite: 2.5}); err != nil {
+		t.Fatal(err)
+	}
+	f := startAlma(t)
+	a := alma()
+	if err := os.MkdirAll(a.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Apply("model", "magpie/think/priced"); err != nil {
+		t.Fatal(err)
+	}
+	var mine map[string]any
+	for _, p := range f.providers {
+		if p["name"] == "magpie" {
+			mine = p
+		}
+	}
+	pricing := func(id string) any {
+		t.Helper()
+		av, _ := mine["availableModels"].([]any)
+		for _, m := range av {
+			if o := m.(map[string]any); o["id"] == id {
+				c, _ := o["capabilityOverrides"].(map[string]any)
+				return c["pricing"]
+			}
+		}
+		t.Fatalf("%s not in %v", id, av)
+		return nil
+	}
+	if b, _ := json.Marshal(pricing("think/priced")); string(b) != `{"cacheRead":0.5,"cacheWrite":2.5,"input":2,"output":8}` {
+		t.Fatalf("priced: %s", b)
+	}
+	if p := pricing("think/unpriced"); p != nil {
+		t.Fatalf("unpriced: %v", p)
+	}
+}

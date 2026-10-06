@@ -98,6 +98,7 @@ func backupRoutes(mux *http.ServeMux, w Windows) {
 		// and davsync ends a request that stops moving
 		ctx := r.Context()
 		var err error
+		var brought []string
 		switch r.PathValue("action") {
 		case "save": // and sync at once, so a wrong address or password shows now
 			var c davsync.Config
@@ -115,6 +116,15 @@ func backupRoutes(mux *http.ServeMux, w Windows) {
 			err = davsync.Off()
 		case "dismiss":
 			err = davsync.Dismiss()
+		case "auto": // how often it syncs by itself, or never (#847)
+			var in struct{ Minutes int }
+			if err = json.NewDecoder(r.Body).Decode(&in); err == nil {
+				err = davsync.SetAuto(in.Minutes)
+			}
+		case "restore": // the server's setup over this computer's, which is kept
+			brought, err = davsync.Restore(ctx)
+		case "undo":
+			_, err = davsync.Undo()
 		case "reveal":
 			err = w.OpenFolder(filepath.Join(settings.Dir(), "sync"))
 		default:
@@ -128,6 +138,13 @@ func backupRoutes(mux *http.ServeMux, w Windows) {
 			v.Error = err.Error()
 		case err != nil:
 			fail(rw, err)
+			return
+		}
+		if r.PathValue("action") == "restore" { // and what it brought in: nothing when it was the same
+			writeJSON(rw, struct {
+				davsync.View
+				Brought []string `json:"brought"`
+			}{v, brought})
 			return
 		}
 		writeJSON(rw, v)

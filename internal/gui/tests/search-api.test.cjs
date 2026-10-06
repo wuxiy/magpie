@@ -129,7 +129,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(await tavily.locator("button.search-eye").innerText(), w.show);
       await click(tavily.locator("button.search-copy", { hasText: w.copy }));
       await page.waitForFunction(() => document.querySelector("#searchList .row.search-api .sub")?.innerText === "tvly…abcd");
-      await page.waitForFunction(() => document.querySelector("#status")?.textContent);
+      // #status may still hold Brave's refusal, so wait for the copy itself
+      for (let i = 0; i < 100 && !posted.some((p) => p.copied); i++) await page.waitForTimeout(50);
       assert.deepEqual(posted.slice(sent), [{ asked: "tavily" }, { asked: "tavily" }, { copied: "tvly-dev-0123456789abcd" }]);
       assert.equal(await tavily.locator(".sub").innerText(), "tvly…abcd", "copying shows nothing");
       posted.splice(sent);

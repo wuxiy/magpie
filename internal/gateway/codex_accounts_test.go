@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yetone/magpie/internal/access"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -186,6 +187,180 @@ func TestCodexPausedOwnAccountPassedOver(t *testing.T) {
 	codexPost(t, `{"model":"gpt-5.5","stream":true,"input":"ping"}`)
 	if len(tried) == 0 || tried[0] != "acct-1" {
 		t.Fatalf("resumed, tried %v", tried)
+	}
+}
+
+// A gateway key held to some accounts (#905) holds Codex's own models
+// too: asked for by its bare native name — the request Codex would relay
+// to its own sign-in when that one account is all that is on — the turn
+// goes through routing instead, which holds it to the key's accounts: a
+// key held to an account that is gone (signed out, its id kept) is
+// refused with nothing asked, and one held to the account in use spends
+// it alone, asked for the model Codex asked for.
+func TestGatewayKeyAccountsHoldCodexOwnModel(t *testing.T) {
+	codexSignedIn(t, "spare@example.com")
+	// spare off: an id the key keeps, matching no account (#905), with
+	// me the only account on
+	if err := provider.SetLoginOn("codex", "spare@example.com", false); err != nil {
+		t.Fatal(err)
+	}
+	var heads []http.Header
+	var models []string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		heads = append(heads, r.Header.Clone())
+		models = append(models, modelOf(b))
+		io.WriteString(w, sse(
+			`data: {"type":"response.created","response":{"id":"r1","model":"gpt-5.5"}}`,
+			`data: {"type":"response.output_text.delta","delta":"from `+r.Header.Get("chatgpt-account-id")+`"}`,
+			`data: {"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":7,"output_tokens":1}}}`))
+	}))
+	t.Cleanup(up.Close)
+	was := provider.CodexBase
+	provider.CodexBase = up.URL + "/backend-api/codex"
+	t.Cleanup(func() { provider.CodexBase = was })
+
+	s := New()
+	keys, secrets := newCaller(t, "Held", "Free")
+	setAccounts := func(t *testing.T, id string, as ...string) {
+		t.Helper()
+		if _, err := access.Update("accounts-key", access.Change{Key: id, Accounts: as}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	post := func(secret string) (int, string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(`{"model":"gpt-5.5","stream":true,"input":"ping"}`))
+		req.Header.Set("Authorization", "Bearer "+secret)
+		s.Handler().ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	// the key's account is gone: refused, nothing asked of OpenAI
+	setAccounts(t, keys[0].ID, "codex/spare@example.com")
+	code, body := post(secrets[0])
+	var e struct {
+		Error struct{ Message, Type string }
+	}
+	json.Unmarshal([]byte(body), &e)
+	if code != 403 || e.Error.Type != "permission_error" || !strings.Contains(e.Error.Message, `"Held"`) || !strings.Contains(e.Error.Message, "is not allowed to use the accounts behind") {
+		t.Fatalf("held to a gone account: %d %s", code, body)
+	}
+	if len(heads) != 0 {
+		t.Fatalf("a held-out native model reached OpenAI: %v", heads)
+	}
+	// the account in use is the key's: served, by it alone, the model
+	// Codex asked for
+	setAccounts(t, keys[0].ID, "codex/me@example.com")
+	code, body = post(secrets[0])
+	if code != 200 || !strings.Contains(body, "from acct-1") {
+		t.Fatalf("held to the account in use: %d %s", code, body)
+	}
+	if len(heads) != 1 || heads[0].Get("chatgpt-account-id") != "acct-1" || models[0] != "gpt-5.5" {
+		t.Fatalf("asked %v of %v", models, heads)
+	}
+	// a key that names no account relays as it always did
+	code, body = post(secrets[1])
+	if code != 200 || len(heads) != 2 {
+		t.Fatalf("a free key: %d %s, %d upstream requests", code, body, len(heads))
+	}
+}
+
+// A gateway key held to some models (#882) holds Codex's own models too,
+// asked for by their bare native names: the turn goes through routing,
+// which names them codex/<model> as the catalog does, and one the key
+// doesn't list is refused with nothing asked; one it does is served.
+func TestGatewayKeyModelsHoldCodexOwnModel(t *testing.T) {
+	codexSignedIn(t)
+	var heads []http.Header
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		heads = append(heads, r.Header.Clone())
+		io.WriteString(w, sse(
+			`data: {"type":"response.created","response":{"id":"r1","model":"gpt-5.5"}}`,
+			`data: {"type":"response.output_text.delta","delta":"from `+r.Header.Get("chatgpt-account-id")+`"}`,
+			`data: {"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":7,"output_tokens":1}}}`))
+	}))
+	t.Cleanup(up.Close)
+	was := provider.CodexBase
+	provider.CodexBase = up.URL + "/backend-api/codex"
+	t.Cleanup(func() { provider.CodexBase = was })
+
+	s := New()
+	keys, secrets := newCaller(t, "Held")
+	setModels := func(t *testing.T, id string, ms ...string) {
+		t.Helper()
+		if _, err := access.Update("models-key", access.Change{Key: id, Models: ms}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	post := func(secret string) (int, string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(`{"model":"gpt-5.5","stream":true,"input":"ping"}`))
+		req.Header.Set("Authorization", "Bearer "+secret)
+		s.Handler().ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	// the key's models are another provider's: Codex's own asked by its
+	// bare name is not one of them, and is refused with nothing asked
+	setModels(t, keys[0].ID, "relay/m1")
+	code, body := post(secrets[0])
+	var e struct {
+		Error struct{ Message, Type string }
+	}
+	json.Unmarshal([]byte(body), &e)
+	if code != 403 || e.Error.Type != "permission_error" || !strings.Contains(e.Error.Message, `"Held"`) || !strings.Contains(e.Error.Message, "may not use codex/gpt-5.5") || !strings.Contains(e.Error.Message, "relay/m1") {
+		t.Fatalf("a native model the key doesn't list: %d %s", code, body)
+	}
+	if len(heads) != 0 {
+		t.Fatalf("a native model the key doesn't list reached OpenAI: %v", heads)
+	}
+	// one it does list, by the name the catalog gives it: served
+	setModels(t, keys[0].ID, "codex/gpt-5.5")
+	code, body = post(secrets[0])
+	if code != 200 || !strings.Contains(body, "from acct-1") {
+		t.Fatalf("a native model the key lists: %d %s", code, body)
+	}
+	if len(heads) != 1 || heads[0].Get("chatgpt-account-id") != "acct-1" {
+		t.Fatalf("asked %v", heads)
+	}
+}
+
+// With the one account on and no cap, no pin, Codex's own model is
+// relayed as it came for a key no hold is set on (a follow-up to #932:
+// only a held key is served through its holds).
+func TestCodexOwnModelRelayedForAFreeKey(t *testing.T) {
+	codexSignedIn(t)
+	var asked []string
+	var heads []http.Header
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		asked = append(asked, strings.TrimPrefix(r.URL.Path, "/backend-api/codex")+" "+modelOf(b))
+		heads = append(heads, r.Header.Clone())
+		io.WriteString(w, sse(
+			`data: {"type":"response.created","response":{"id":"r1","model":"gpt-5.5"}}`,
+			`data: {"type":"response.output_text.delta","delta":"pong"}`,
+			`data: {"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":7,"output_tokens":1}}}`))
+	}))
+	t.Cleanup(up.Close)
+	was := provider.CodexBase
+	provider.CodexBase = up.URL + "/backend-api/codex"
+	t.Cleanup(func() { provider.CodexBase = was })
+
+	s := New()
+	_, secrets := newCaller(t, "Free")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(`{"model":"gpt-5.5","stream":true,"input":"ping"}`))
+	req.Header.Set("Authorization", "Bearer "+secrets[0])
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "pong") {
+		t.Fatalf("a free key's own model: %d %s", rec.Code, rec.Body.String())
+	}
+	// relayed as it came: the path Codex sent, the bare model it asked
+	// for, one request
+	if len(asked) != 1 || asked[0] != "/responses gpt-5.5" || len(heads) != 1 {
+		t.Fatalf("relayed %v", asked)
 	}
 }
 

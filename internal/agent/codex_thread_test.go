@@ -84,7 +84,8 @@ func TestCodexProviderKeepsOwnBaseURL(t *testing.T) {
 
 // A Codex that an older magpie made its provider, with no base URL, gets
 // magpie's at the next sync; a provider set up by hand with a catalog of
-// the user's own is not touched.
+// the user's own keeps its keys, and only the table it names comes back
+// (Codex loads no config while it is missing).
 func TestCodexSyncAddsBaseURLToProvider(t *testing.T) {
 	home, read := codexHome(t, "", "")
 	cx := codex(home)
@@ -116,7 +117,7 @@ func TestCodexSyncAddsBaseURLToProvider(t *testing.T) {
 	if err := codex(home).Sync(); err != nil {
 		t.Fatal(err)
 	}
-	if cfg = read(); cfg != mine {
+	if cfg = read(); !strings.HasPrefix(cfg, mine) || strings.Contains(cfg, "openai_base_url") || !strings.Contains(cfg, "[model_providers.magpie]") {
 		t.Fatalf("hand-made provider changed:\n%s", cfg)
 	}
 }

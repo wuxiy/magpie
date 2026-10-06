@@ -68,7 +68,7 @@ function server(lang, asked) {
 
 const L = {
   en: { section: "From plugins", how: "How do you sign in to FakeCo?", next: "Next", code: "Code", finish: "Finish sign-in", key: "FakeCo API key", signIn: "Sign in", add: "Add another FakeCo account", first: "Make first", note: "The gateway uses the first. Tick more" },
-  zh: { section: "来自插件", how: "用哪种方式登录 FakeCo？", next: "下一步", code: "验证码", finish: "完成登录", key: "FakeCo API Key", signIn: "登录", add: "添加另一个 FakeCo 账号", first: "设为首选", note: "网关优先用第一个账号。多勾选几个" },
+  zh: { section: "来自插件", how: "用哪种方式登录 FakeCo？", next: "下一步", code: "验证码", finish: "完成登录", key: "FakeCo API Key", signIn: "登录", add: "添加另一个 FakeCo 账号", first: "设为首选", note: "网关优先用第一个账号；勾选多个时" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

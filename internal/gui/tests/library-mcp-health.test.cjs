@@ -76,7 +76,7 @@ const words = {
   zh: {
     checking: "检查中…",
     files: ["12 个工具", "已启动并列出了它的工具"],
-    linear: ["需要登录", "服务器要求登录 — 打开它，在 magpie 里登录一次即可"],
+    linear: ["需要登录", "服务器要求登录：打开它，在 magpie 中登录一次"],
     fetch: ["无法启动：找不到 uvx", "无法启动：magpie 的 PATH 里没有 uvx"],
     github: ["已退出（1）", "列出工具前就退出了，退出码 1\nError: GITHUB_PERSONAL_ACCESS_TOKEN is not set"],
     slow: ["无响应", "15 秒内没有响应"],
@@ -105,7 +105,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.route("http://magpie.test/**", server(lang, checks));
         await page.goto("http://magpie.test/");
         await page.locator('button[data-view="library"]').click();
-        await page.locator("#view-library .lib-row").first().waitFor();
+        await page.locator("#view-library .lib-body:not(.lib-skel) .lib-row").first().waitFor();
         const status = (name) => page.locator(`#view-library .lib-health[data-server="${name}"]`);
 
         // every server asked for at once, each showing it's being checked

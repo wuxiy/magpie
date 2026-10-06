@@ -56,8 +56,8 @@ function serve(lang) {
 const want = {
   en: { again: "answered 429: its week is used up and nobody else could take the request, so one of me@example.com's Codex resets was used by itself and the request is asked again, before any of the reply reaches Codex.",
     first: "Its week was used up, so one of me@example.com's Codex resets was used by itself first." },
-  zh: { again: "返回 429：本周额度已用完，且没有其他账号能接这个请求，于是自动使用了 me@example.com 的一张 Codex 重置卡并重新发送请求，此时 Codex 尚未收到任何回复。",
-    first: "本周额度已用完，所以先自动使用了 me@example.com 的一张 Codex 重置卡。" },
+  zh: { again: "返回 429：本周额度已用完且无其他账号可接手，已自动使用 me@example.com 的一张 Codex 重置卡并重发请求，Codex 尚未收到任何回复。",
+    first: "本周额度已用完，已先自动使用 me@example.com 的一张 Codex 重置卡。" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -78,7 +78,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await browser.close();
       });
       await page.goto("http://magpie.test/?view=routing");
-      await page.locator(".rt-day").nth(1).click();
+      await page.locator(".rt-days .rt-day").nth(1).click();
       await page.locator(".rt-req").nth(routes.length - 1).waitFor();
       const steps = async () => page.locator(".rt-steps li").evaluateAll((ls) => ls.map((l) => l.textContent));
 

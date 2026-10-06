@@ -16,6 +16,9 @@ func TestBunIsGivenTheSystemsRoots(t *testing.T) {
 	old := systemCAFile
 	t.Cleanup(func() { systemCAFile = old })
 	systemCAFile = func() string { return "/cache/bun/system-ca-abc.pem" }
+	// one the environment sets already is the user's and wins (below);
+	// the ambient one a shell may have isn't this test's
+	t.Setenv("NODE_EXTRA_CA_CERTS", "")
 
 	cmd := bunCommand(context.Background(), "bun", t.TempDir(), "add", "x")
 	if !slices.Contains(cmd.Env, "NODE_EXTRA_CA_CERTS=/cache/bun/system-ca-abc.pem") {

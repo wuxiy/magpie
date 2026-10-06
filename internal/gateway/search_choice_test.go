@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/settings"
 )
@@ -20,6 +21,9 @@ func TestSearcherChosen(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	setHome(t, t.TempDir()) // no signed-in agent searches
+	// no models.dev catalog either: the lists' models go by their ids
+	catalog.Reset()
+	t.Cleanup(catalog.Reset)
 	lists := func(ids ...string) string {
 		var b strings.Builder
 		for i, id := range ids {

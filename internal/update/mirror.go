@@ -2,6 +2,7 @@ package update
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -99,6 +100,46 @@ func mirrored(prefix, raw string) string {
 func githubHost(h string) bool {
 	h = strings.ToLower(h)
 	return h == "github.com" || strings.HasSuffix(h, ".github.com") || strings.HasSuffix(h, ".githubusercontent.com")
+}
+
+// MirrorError is a download that failed through a mirror: the mirror
+// didn't answer, answered with something other than the file, or sent a
+// file whose hash isn't the feed's (never installed). Downloading from
+// GitHub itself may still work, which the GUI offers.
+type MirrorError struct {
+	Mirror string // the prefix the download went through
+	Err    error
+}
+
+func (e *MirrorError) Error() string {
+	if strings.Contains(e.Err.Error(), e.Mirror) {
+		return e.Err.Error()
+	}
+	return "through the mirror " + e.Mirror + ": " + e.Err.Error()
+}
+
+func (e *MirrorError) Unwrap() error { return e.Err }
+
+// MirrorOf is the mirror a download error came through, "" when it is no
+// mirror's.
+func MirrorOf(err error) string {
+	var m *MirrorError
+	if errors.As(err, &m) {
+		return m.Mirror
+	}
+	return ""
+}
+
+// CheckMirrorURL is CheckMirror for one typed into Settings: a full
+// https:// address (a download over http would be read by anyone between,
+// though the checksum still guards what is installed).
+func CheckMirrorURL(prefix string) error {
+	prefix = strings.TrimSpace(prefix)
+	u, err := url.Parse(prefix)
+	if err != nil || u.Scheme != "https" || u.Host == "" || strings.ContainsAny(prefix, " \t") {
+		return errors.New("a mirror is a full https:// address, like https://mirror.example/")
+	}
+	return nil
 }
 
 // Mirror is the mirror downloads under ctx go through, "" for none.

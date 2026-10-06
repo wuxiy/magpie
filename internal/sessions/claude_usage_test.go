@@ -34,7 +34,7 @@ func TestClaudeUsageNonAdjacentReplay(t *testing.T) {
 		t.Run(fmt.Sprint("fast=", fast), func(t *testing.T) {
 			s := &state{}
 			at := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
-			a, b := Tokens{10, 2, 30, 4}, Tokens{20, 4, 60, 8}
+			a, b := Tokens{10, 2, 30, 4, 0}, Tokens{20, 4, 60, 8, 0}
 			claudeLine(s, claudeUsageLine(at, "a", "req-a", "m", a, "", fast), true)
 			claudeLine(s, claudeUsageLine(at.Add(time.Second), "b", "req-b", "m", b, "", fast), true)
 			claudeLine(s, claudeUsageLine(at.Add(48*time.Hour), "a", "req-a", "m", a, "", fast), true)
@@ -55,7 +55,7 @@ func TestClaudeUsageRevisionAndTools(t *testing.T) {
 		t.Run(fmt.Sprint("fast=", fast), func(t *testing.T) {
 			s := &state{}
 			at := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
-			old, updated := Tokens{10, 1, 30, 4}, Tokens{10, 7, 30, 4}
+			old, updated := Tokens{10, 1, 30, 4, 0}, Tokens{10, 7, 30, 4, 0}
 			tool := `[{"type":"tool_use","id":"tool-1","name":"Read","input":{"requestId":"not-the-response"}}]`
 			newTool := `[{"type":"tool_use","id":"tool-2","name":"Skill","input":{"skill":"review"}}]`
 			line := func(d time.Duration, model string, tok Tokens, tools string) []byte {
@@ -64,7 +64,7 @@ func TestClaudeUsageRevisionAndTools(t *testing.T) {
 			claudeLine(s, line(0, "m", old, tool), true)
 			claudeLine(s, line(time.Second, "m", updated, newTool), true)
 			claudeLine(s, line(2*time.Second, "m", old, tool), true)
-			claudeLine(s, line(time.Millisecond, "m", Tokens{10, 99, 30, 4}, tool), true)
+			claudeLine(s, line(time.Millisecond, "m", Tokens{10, 99, 30, 4, 0}, tool), true)
 			if s.Models["m"] != updated || claudeUsageReplies(s) != 1 {
 				t.Fatalf("old replay undid newer usage: %+v", s)
 			}
@@ -73,7 +73,7 @@ func TestClaudeUsageRevisionAndTools(t *testing.T) {
 				t.Fatalf("tools=%v skills=%v", d.Tools, d.Skills)
 			}
 			// A genuinely newer correction can reduce tokens and change model.
-			correction := Tokens{8, 5, 20, 0}
+			correction := Tokens{8, 5, 20, 0, 0}
 			claudeLine(s, line(48*time.Hour, "m2", correction, ""), true)
 			if !s.Models["m"].zero() || s.Models["m2"] != correction || d.Replies != 1 {
 				t.Fatalf("correction failed: %+v", s)
@@ -91,7 +91,7 @@ func TestClaudeUsageRevisionAndTools(t *testing.T) {
 
 func TestClaudeUsageIdentity(t *testing.T) {
 	at := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
-	tok := Tokens{3, 4, 5, 6}
+	tok := Tokens{3, 4, 5, 6, 0}
 	cases := []struct {
 		name       string
 		identities [][2]string
@@ -130,7 +130,7 @@ func TestClaudeUsageIdentity(t *testing.T) {
 func TestClaudeUsageMissingToolIdentityAndSubagent(t *testing.T) {
 	s := &state{}
 	at := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
-	tok := Tokens{3, 4, 5, 6}
+	tok := Tokens{3, 4, 5, 6, 0}
 	content := `[{"type":"tool_use","name":"Read","input":{}}]`
 	for i := range 2 {
 		claudeLine(s, claudeUsageLine(at.Add(time.Duration(i)*time.Second), "a", "r", "m", tok, content, true), false)
@@ -156,7 +156,7 @@ func TestClaudeToolRevisionRejectsReplayedName(t *testing.T) {
 func TestClaudeCallReplayKeepsCompletionWithoutUUID(t *testing.T) {
 	st := &callFile{Agent: "claude"}
 	at := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
-	tok := Tokens{3, 4, 5, 6}
+	tok := Tokens{3, 4, 5, 6, 0}
 	content := `[{"type":"text","text":"original block"}]`
 	claudeCallLine(st, claudeUsageLine(at, "a", "ra", "m", tok, content, true))
 	claudeCallLine(st, claudeUsageLine(at.Add(time.Second), "b", "rb", "m", tok, "", true))
@@ -171,7 +171,7 @@ func TestClaudeRepeatedBlockRejectsZeroedHistoricalSnapshot(t *testing.T) {
 		t.Run(fmt.Sprint("fast=", fast), func(t *testing.T) {
 			s, calls := &state{}, &callFile{Agent: "claude"}
 			at := time.Date(2026, 9, 25, 3, 0, 0, 0, time.UTC)
-			tokens := Tokens{69, 31852, 185103, 998}
+			tokens := Tokens{69, 31852, 185103, 998, 0}
 			// Two blocks report the same whole-message usage. Historical
 			// copies later retain both original timestamps but zero usage.
 			for i, usage := range []Tokens{tokens, tokens, {}, {}} {
@@ -188,7 +188,7 @@ func TestClaudeRepeatedBlockRejectsZeroedHistoricalSnapshot(t *testing.T) {
 
 func TestClaudeUsageResumeEquivalence(t *testing.T) {
 	at := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
-	old, updated := Tokens{10, 1, 30, 4}, Tokens{10, 7, 30, 4}
+	old, updated := Tokens{10, 1, 30, 4, 0}, Tokens{10, 7, 30, 4, 0}
 	tool := `[{"type":"tool_use","id":"tool-1","name":"Read","input":{}}]`
 	lines := [][]byte{
 		claudeUsageLine(at, "a", "", "m", old, tool, true),

@@ -498,6 +498,9 @@ func endpointAsk(pr provider.PresetDef, crumbs []string, now string, then func(s
 		}}
 }
 
+// listError is provider.Provider.ListError; tests stand in for it.
+var listError = provider.Provider.ListError
+
 func (m model) viewProviders() string {
 	var b strings.Builder
 	b.WriteString(m.header())
@@ -511,7 +514,7 @@ func (m model) viewProviders() string {
 		}
 		return b.String()
 	}
-	type row struct{ name, id, key, models, note string }
+	type row struct{ name, id, key, models, note, warn string }
 	var rows []row
 	var w [4]int
 	for _, p := range m.provs {
@@ -540,6 +543,12 @@ func (m model) viewProviders() string {
 			notes = append(notes, "groups only")
 		}
 		r.note = strings.Join(notes, " · ")
+		// a plugin's account showing its defaults alone says why, as the
+		// app's editor does (gnayiab on X: Cursor in WSL's TUI had Auto
+		// alone and nothing said)
+		if e := listError(p); e != "" {
+			r.warn = "couldn't list its models: " + e
+		}
 		for i, s := range []string{r.name, r.id, r.key, r.models} {
 			w[i] = max(w[i], lipgloss.Width(s))
 		}
@@ -560,7 +569,14 @@ func (m model) viewProviders() string {
 		if strings.HasPrefix(r.key, "○") {
 			key = sBad.Render(padRight(r.key, w[2]))
 		}
-		b.WriteString(pad + marker + name + "  " + sFaint.Render(padRight(r.id, w[1])) + "  " + key + "  " + sText.Render(padRight(r.models, w[3])) + "  " + sMuted.Render(r.note) + "\n")
+		line := pad + marker + name + "  " + sFaint.Render(padRight(r.id, w[1])) + "  " + key + "  " + sText.Render(padRight(r.models, w[3])) + "  " + sMuted.Render(r.note)
+		if r.warn != "" {
+			if r.note != "" {
+				line += sMuted.Render(" · ")
+			}
+			line += sBad.Render(r.warn)
+		}
+		b.WriteString(line + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -598,6 +614,8 @@ var (
 	hasTrae      = provider.HasTrae
 	checkinMM    = provider.CheckInMiniMax
 	hasMiniMax   = provider.HasMiniMax
+	checkinQd    = provider.CheckInQoder
+	hasQoder     = provider.HasQoder
 )
 
 // checkinCmd presses WorkBuddy's daily check-in (签到) now for every
@@ -605,7 +623,8 @@ var (
 // as the app's Usage card's "Check in now" and magpie accounts checkin do:
 // the built-in's or the plugin's (akic404 on Discord: the TUI had no way
 // to); and Trae CN's (每日签到) for each Trae CN account (#694), and
-// MiniMax Code's for each MiniMax Code (China) account (#811). It says
+// MiniMax Code's for each MiniMax Code account (#811), and Qoder's daily
+// credits for each Qoder account. It says
 // how each account stands: the credits and streak, in
 // already today, or why not. A shared magpie's accounts are checked in
 // on that magpie, from its own app, TUI or CLI.
@@ -638,8 +657,16 @@ func checkinCmd() tea.Msg {
 			parts = append(parts, checkinWords(r))
 		}
 	}
+	if hasQoder() {
+		for _, r := range checkinQd(ctx) {
+			if r.Outcome == provider.CheckinFailed {
+				failed++
+			}
+			parts = append(parts, checkinWords(r))
+		}
+	}
 	if len(parts) == 0 {
-		return checkinMsg{text: "no WorkBuddy (China), Trae CN or MiniMax Code account is signed in · only they have the daily check-in"}
+		return checkinMsg{text: "no WorkBuddy (China), Trae CN, MiniMax Code or Qoder account is signed in · only they have the daily check-in"}
 	}
 	return checkinMsg{text: strings.Join(parts, "; "), ok: failed == 0}
 }
@@ -656,6 +683,10 @@ func checkinWords(r provider.WorkBuddyCheckin) string {
 		who = "MiniMax Code"
 	case r.By == "minimax":
 		who = "MiniMax Code " + who
+	case r.By == "qoder" && who == "":
+		who = "Qoder"
+	case r.By == "qoder":
+		who = "Qoder " + who
 	case who == "":
 		who = "WorkBuddy"
 	}
@@ -959,7 +990,7 @@ func quotaLines(qs []provider.SubscriptionQuota, asked, left bool, width int, no
 			ci = "   " + ci
 		}
 		switch {
-		case q.Balance != "":
+		case q.Balance != "" && len(q.Windows) == 0:
 			out = append(out, line+"  "+sText.Render(q.Balance)+sMuted.Render(" left")+ci)
 			continue
 		case q.Error != "":
@@ -970,10 +1001,18 @@ func quotaLines(qs []provider.SubscriptionQuota, asked, left bool, width int, no
 			continue
 		}
 		// the windows follow the name, those that don't fit on lines below
-		// it, and a Codex account's resets after them
+		// it, then the credits a ChatGPT account holds beside them and a
+		// Codex account's resets
 		var cells []string
 		for _, w := range provider.PooledWindows(q.Windows) {
 			cells = append(cells, quotaCell(w, left, now))
+		}
+		if q.Balance != "" {
+			c := sText.Render(q.Balance) + sMuted.Render(" left")
+			if q.Provider == "codex" && q.User != "" && !provider.CodexCredits(q.User) {
+				c += sFaint.Render(" · not spent") // held once a window is used up
+			}
+			cells = append(cells, c)
 		}
 		if ci != "" {
 			cells = append(cells, ci[3:])

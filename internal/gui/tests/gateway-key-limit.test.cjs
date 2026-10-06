@@ -43,7 +43,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.match(await row("server").locator(".key-limit").textContent(), w.refused);
       assert.match(await row("server").locator(".key-limit").textContent(), /\$5\.20/);
       assert.equal(await row("server").locator(".amodels.limit.spent").count(), 1);
-      assert.match(await row("server").locator(".key-limit").getAttribute("title"), zh ? /3 次调用没有已知价格/ : /3 calls without a known price/);
+      assert.match(await row("server").locator(".key-limit").getAttribute("title"), zh ? /3 次调用无价格/ : /3 calls without a known price/);
       assert.equal(await row("work").locator(".key-limit").count(), 0, "a key without a limit says nothing under its row");
       // nothing about it is drawn with a coloured left border
       for (const sel of [".key-limit", ".amodels.limit"]) {

@@ -56,13 +56,13 @@ func TestStatsByDay(t *testing.T) {
 	// Claude Code on the 20th: the session and its subagent, in its folder;
 	// Codex on the 20th and, picked up again, on the 23rd. The session's own
 	// file was at work 10:00:00–10:05:00, every pause under five minutes.
-	if got, sec := usageOn(s, "2026-09-20", "/work/app"); got != (Tokens{1110, 170, 5200, 1000}) || sec != 300 {
+	if got, sec := usageOn(s, "2026-09-20", "/work/app"); got != (Tokens{1110, 170, 5200, 1000, 0}) || sec != 300 {
 		t.Fatalf("claude on the 20th: %+v, %ds active", got, sec)
 	}
-	if got, _ := usageOn(s, "2026-09-20", "/work/it's"); got != (Tokens{8000, 500, 14000, 0}) {
+	if got, _ := usageOn(s, "2026-09-20", "/work/it's"); got != (Tokens{8000, 500, 14000, 0, 0}) {
 		t.Fatalf("codex on the 20th: %+v", got)
 	}
-	if got, _ := usageOn(s, "2026-09-23", "/work/it's"); got != (Tokens{2000, 100, 6000, 0}) {
+	if got, _ := usageOn(s, "2026-09-23", "/work/it's"); got != (Tokens{2000, 100, 6000, 0, 0}) {
 		t.Fatalf("codex on the 23rd: %+v", got)
 	}
 	// the days add up to the sessions' totals
@@ -114,13 +114,13 @@ func TestStatsMidnight(t *testing.T) {
 			t.Fatalf("%s, the 21st: %+v %ds, want %+v %ds", when, got, sec, d21, a21)
 		}
 	}
-	check("before midnight", Tokens{300, 30, 20, 0}, Tokens{}, 180, 0)
+	check("before midnight", Tokens{300, 30, 20, 0, 0}, Tokens{}, 180, 0)
 
 	// read on from where it was left: m2 moves to the 21st, counted once
 	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
 	f.WriteString(rest)
 	f.Close()
-	after20, after21 := Tokens{100, 10, 10, 0}, Tokens{1400, 145, 30, 0}
+	after20, after21 := Tokens{100, 10, 10, 0, 0}, Tokens{1400, 145, 30, 0, 0}
 	check("read on", after20, after21, 180, 240)
 
 	// the same from the start, and from the parse kept on disk
@@ -145,7 +145,7 @@ func TestSum(t *testing.T) {
 		t.Fatalf("days %+v", r.Days)
 	}
 	// only Codex's pick-up on the 23rd is in the last 7 days
-	if r.Tokens != (Tokens{2000, 100, 6000, 0}) || r.DaysUsed != 1 || r.Days[1].Spent() != 2100 {
+	if r.Tokens != (Tokens{2000, 100, 6000, 0, 0}) || r.DaysUsed != 1 || r.Days[1].Spent() != 2100 {
 		t.Fatalf("%+v", r)
 	}
 	if len(r.Models) != 1 || r.Models[0].Name != "gpt-6-astra" || len(r.Folders) != 1 || r.Folders[0].Name != "/work/it's" {
@@ -154,7 +154,7 @@ func TestSum(t *testing.T) {
 
 	all := statsAt(0, statsNow)
 	app := all.Sum("", "/work/app")
-	if app.Tokens != (Tokens{1110, 170, 5200, 1000}) || app.Active != 300 || len(app.Folders) != 2 {
+	if app.Tokens != (Tokens{1110, 170, 5200, 1000, 0}) || app.Active != 300 || len(app.Folders) != 2 {
 		t.Fatalf("app: %+v", app)
 	}
 	opus := all.Sum("claude-opus-5-5", "")
@@ -212,7 +212,7 @@ func TestStatsHoursAndSessions(t *testing.T) {
 	}
 	x := find(s)
 	if x == nil || x.Agent != "claude" || x.Cwd != "/work/night" || x.Active != 420 ||
-		x.Tokens != (Tokens{700, 70, 30, 0}) || !x.Priced || x.Cost <= 0 ||
+		x.Tokens != (Tokens{700, 70, 30, 0, 0}) || !x.Priced || x.Cost <= 0 ||
 		len(x.Models) != 1 || len(x.Days) != 2 || x.Days[0] != 0 || x.Days[1] != 1 {
 		t.Fatalf("summary %+v", x)
 	}
@@ -221,7 +221,7 @@ func TestStatsHoursAndSessions(t *testing.T) {
 	}
 	// a range counts only its own days
 	day := statsAt(1, time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC))
-	if x := find(day); x == nil || x.Tokens != (Tokens{400, 40, 10, 0}) || x.Active != 240 || len(x.Days) != 1 || x.Days[0] != 0 {
+	if x := find(day); x == nil || x.Tokens != (Tokens{400, 40, 10, 0, 0}) || x.Active != 240 || len(x.Days) != 1 || x.Days[0] != 0 {
 		t.Fatalf("the 21st alone: %+v", x)
 	}
 	if len(day.Sessions) != 1 {
@@ -229,7 +229,7 @@ func TestStatsHoursAndSessions(t *testing.T) {
 	}
 
 	// Get reads a session by its key, as Find does past the listed ones
-	if g, ok := Get(key); !ok || g.Cwd != "/work/night" || g.Tokens != (Tokens{700, 70, 30, 0}) {
+	if g, ok := Get(key); !ok || g.Cwd != "/work/night" || g.Tokens != (Tokens{700, 70, 30, 0, 0}) {
 		t.Fatalf("get %+v %v", g, ok)
 	}
 	if _, ok := Get("claude:nope"); ok {

@@ -42,7 +42,7 @@ function serve(lang) {
 
 const words = {
   en: { why: "Agents see it: none are picked", hint: "To show them none, tick Only through routing groups" },
-  zh: { why: "Agent 能看到它：没有勾选任何模型时", hint: "不想让 Agent 看到任何模型，就勾选「只通过路由分组使用」" },
+  zh: { why: "Agent 能看到它：没有勾选任何模型时", hint: "要隐藏全部模型，勾选「只通过路由分组使用」" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

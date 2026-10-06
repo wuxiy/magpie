@@ -42,6 +42,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -175,6 +176,10 @@ func cline(home string) *Agent {
 			return syncJSON(models, "providers."+clineSlot, func() any { return clineModels(get(slot + ".settings.model")) })
 		},
 		Notice: func() string {
+			if runtime.GOOS == "windows" {
+				// Running can't tell the desktop app from the CLI there
+				return "Cline reads its provider as a session starts — open sessions keep the model they have; new ones use this. Reload VS Code's window for its extension; Cline's desktop app keeps the model picked in its own composer — pick magpie's there."
+			}
 			if Running(`Cline\.app/`, `(^|/)cline-app( |$)`) {
 				return "Cline's desktop app keeps the model and effort picked in its own composer — pick magpie's there; this sets Cline's CLI and VS Code extension."
 			}

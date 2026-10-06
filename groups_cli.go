@@ -507,7 +507,7 @@ func findGroup(ref string) (provider.Group, error) {
 // newGroupID is the id a new group gets, as the Routing view makes it:
 // its name's, else "group", numbered past one taken.
 func newGroupID(name string) string {
-	base := provider.Slug(name)
+	base := provider.GroupSlug(name)
 	if base == "" {
 		base = "group"
 	}
@@ -671,8 +671,8 @@ func setGroup(ref string, pairs []string) (provider.Group, error) {
 	}
 	pruneRules(&g)
 	to := strings.ToLower(strings.TrimSpace(g.ID))
-	if to != from && (to == "" || to != provider.Slug(to)) {
-		return g, fmt.Errorf("a group's id must be lowercase letters, digits and dashes, not %q", g.ID)
+	if to != from && (to == "" || to != provider.GroupSlug(to)) {
+		return g, fmt.Errorf("a group's id must be lowercase letters, digits, dots and dashes, not %q", g.ID)
 	}
 	g.ID = from
 	if err := provider.SaveGroup(g); err != nil { // one magpie found is the user's now

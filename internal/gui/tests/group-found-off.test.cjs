@@ -28,7 +28,7 @@ const groups = (on, moved) => ({ models, pools: [], deciders: [], found: on, gro
 const words = {
   en: { label: "Find groups on their own", onHint: "becomes a group of them", offHint: "only the groups you made or changed",
     moved: "Claude Code moved to a/m", back: "Found groups are on" },
-  zh: { label: "自动创建路由组", onHint: "会自动组成一个路由组", offHint: "只列出、只提供你自己建的或改过的组",
+  zh: { label: "自动创建路由组", onHint: "会自动成组", offHint: "只列出和提供你新建或改过的组",
     moved: "Claude Code 已改用 a/m", back: "已开启自动创建路由组" },
 };
 
@@ -93,7 +93,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const s = document.querySelector(".rt-gsec");
         return [...s.children].map((c) => c.className);
       });
-      assert.deepEqual(order.slice(0, 3), ["row-head", "rt-gfound", "list rt-groups"]);
+      // (the names in agents' lists, for every group, between them)
+      assert.deepEqual(order.slice(0, 4), ["row-head", "rt-gfound", "rt-gnames", "list rt-groups"]);
       const border = await sw.evaluate((e) => { const c = getComputedStyle(e); return c.borderLeftWidth !== c.borderRightWidth || c.borderLeftColor !== c.borderRightColor; });
       assert.equal(border, false, "no left-border accent");
 

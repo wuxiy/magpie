@@ -17,9 +17,9 @@ const sessions = usage.map((u, i) => ({
   last: date + "T08:00:00Z", start: date + "T07:00:00Z", models: [u], unpriced: 0,
 }));
 const state = {
-  agents: [{ id: "fixture", name: "Fixture", path: "/test/config.toml", fields: [{
+  agents: [{ id: "fixture", name: "Fixture", path: "/test/config.toml", wired: true, fields: [{
     key: "model", label: "model", value: "model-01",
-    options: usage.map(u => ({ value: u.model, label: u.model })),
+    options: usage.map(u => ({ value: u.model, label: u.model, ref: u.model })),
   }] }],
   profiles: [], settings: { lang: "en", theme: "light" },
 };
@@ -38,6 +38,10 @@ async function serve(route) {
   if (url.pathname === "/api/agents/cli") return json({ agents: {}, pending: false });
   if (url.pathname === "/api/groups") return json({ groups: [] });
   if (url.pathname === "/api/gateway/trace") return json({ mine: false, now: date, totals: { requests: 0, rerouted: 0, errors: 0 } });
+  if (url.pathname === "/api/plugins/updates") return json({ waiting: [] });
+  if (url.pathname === "/api/usage/quotas" || url.pathname === "/api/usage/quotas/history" || url.pathname === "/api/agents/install") return json([]);
+  if (url.pathname === "/api/whatsnew") return json({});
+  if (url.pathname === "/api/upstream") return json({ vendors: [], providers: {} });
   assert(!url.pathname.startsWith("/api/"), "Unexpected API: " + url.pathname);
   const file = path.join(assets, url.pathname === "/" ? "index.html" : url.pathname);
   const contentType = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png" }[path.extname(file)];

@@ -97,7 +97,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.route("http://magpie.test/**", server(lang, theme, posts, { flaky }));
       await page.goto("http://magpie.test/");
       await page.locator('button[data-view="library"]').click();
-      await page.locator("#view-library .lib-row").first().waitFor();
+      await page.locator("#view-library .lib-body:not(.lib-skel) .lib-row").first().waitFor();
       return page;
     };
     // every row inside the list and its own box: the label on one line, the
@@ -152,7 +152,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.locator("#view-library .lib-tabs .opt").first().click();
         await card.waitFor();
         await page.locator("#view-library .lib-tabs .opt").nth(2).click();
-        await page.locator("#view-library .lib-row").first().waitFor();
+        await page.locator("#view-library .lib-body:not(.lib-skel) .lib-row").first().waitFor();
 
         const again = card.getByRole("button", { name: words[lang].again });
         const before = await page.evaluate(() => document.querySelector("#view-library").scrollTop);

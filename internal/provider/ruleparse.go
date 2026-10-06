@@ -6,6 +6,7 @@ package provider
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,10 +23,14 @@ func ParseTokens(v string) (int, error) {
 		mul, s = 1e6, strings.TrimSuffix(s, "m")
 	}
 	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || f < 0 {
+	if err != nil || f < 0 || math.IsNaN(f) || math.IsInf(f, 0) {
 		return 0, fmt.Errorf("tokens %q is not a length (200000, 200k, 1m)", v)
 	}
-	return int(f * mul), nil
+	n := f * mul
+	if n >= float64(math.MaxInt) {
+		return 0, fmt.Errorf("tokens %q is not a length (200000, 200k, 1m)", v)
+	}
+	return int(n), nil
 }
 
 // ParseDays reads days of the week: "mon-fri", "sat,sun", "mon,wed-fri";

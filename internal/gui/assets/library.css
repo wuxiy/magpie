@@ -73,6 +73,8 @@ body.window .lib-head { top: -2px; margin: -2px -16px 0; padding: 8px 16px 4px; 
 /* a long name, link or description breaks anywhere rather than pushing
    the row wider than the list (#257) */
 .lib-row .who { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+/* and beside a hand of many agents' chips it keeps room to be read (#936) */
+.lib-row.with-agents > .who { min-width: min(140px, 32%); }
 /* a server's or skill's picture sits level with the top of its name */
 .lib-row > .lib-logo, .lib-row > .lib-glyph { align-self: flex-start; margin-top: 1px; }
 .lib-row .name.mono, .lib-pick .name.mono { font: 500 12.5px var(--code); }
@@ -208,9 +210,29 @@ input.lib-setname:focus { border-color: var(--accent); box-shadow: 0 0 0 3px col
    paint; a chip with the focus shows the focus ring instead */
 .lib-row > .lib-agents .lib-ag:not(:focus-visible) { outline: 1.5px solid var(--card); outline-offset: 0; }
 .lib-row > .lib-agents .lib-ag + .lib-ag { margin-left: -7px; }
+/* With many agents the chips close up, each further under the one before
+   (#936), so the hand stays in about half the row and the name beside it
+   keeps its room: --lib-stack is how far a chip goes under the one before,
+   -7px while they fit, --lib-fan the same fanned out, 3px while they fit;
+   the spacer before them is the difference. A WebKit without container
+   units keeps -7px and 3px. */
+@supports (width: 1cqw) {
+  .lib-row.with-agents { container-type: inline-size; }
+  .lib-row > .lib-agents {
+    --lib-n: var(--lib-agent-count, 1);
+    --lib-gap: calc((48cqw - 60px - var(--lib-n) * 24px) / max(1, var(--lib-n) - 1));
+    --lib-stack: clamp(-19px, var(--lib-gap), -7px);
+    --lib-fan: clamp(var(--lib-stack), var(--lib-gap), 3px);
+  }
+  .lib-row > .lib-agents::before { width: max(0px, calc((var(--lib-n) - 1) * (var(--lib-fan) - var(--lib-stack)))); }
+  .lib-row > .lib-agents .lib-ag + .lib-ag { margin-left: var(--lib-stack); }
+}
 .lib-row > .lib-agents .lib-ag.on { border-color: var(--line); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
 .lib-row > .lib-agents .lib-ag.via { border-style: dashed; }
 .lib-row > .lib-agents:hover .lib-ag[data-agent] + .lib-ag[data-agent], .lib-row > .lib-agents:focus-within .lib-ag[data-agent] + .lib-ag[data-agent] { margin-left: 3px; }
+@supports (width: 1cqw) {
+  .lib-row > .lib-agents:hover .lib-ag[data-agent] + .lib-ag[data-agent], .lib-row > .lib-agents:focus-within .lib-ag[data-agent] + .lib-ag[data-agent] { margin-left: var(--lib-fan); }
+}
 .lib-row > .lib-agents:hover .lib-ag, .lib-row > .lib-agents:focus-within .lib-ag { box-shadow: none; }
 .lib-row > .lib-agents:hover .lib-ag:not(:focus-visible), .lib-row > .lib-agents:focus-within .lib-ag:not(:focus-visible) { outline-color: transparent; }
 .lib-row > .lib-agents .lib-ag:hover { background: var(--pill); z-index: 1; }
@@ -300,6 +322,13 @@ input.lib-setname:focus { border-color: var(--accent); box-shadow: 0 0 0 3px col
 .lib-byagent-row .name { display: flex; align-items: center; gap: 6px; }
 .lib-byagent-row .lib-updall { height: 24px; padding: 0 9px; font-size: 12px; flex: none; }
 .lib-byagent-row .lib-updall:disabled { color: var(--faint); cursor: default; }
+/* how the agents are given their skills (#896) */
+.lib-skillhow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 14px; }
+.lib-skillhow .label { font-size: 12px; color: var(--fg-2); }
+.lib-skillhow .segs { align-self: center; }
+.lib-skillhow .lib-updall { height: 24px; padding: 0 9px; font-size: 12px; }
+.lib-skillhow .note { font-size: 11px; color: var(--faint); line-height: 1.45; min-width: 0; flex: 1 0 100%; margin-top: -4px; }
+.lib-how-row .segs { flex: none; align-self: center; }
 .lib-reader { grid-template-columns: minmax(0, 1fr); }
 .lib-md { margin: 0; max-height: min(60vh, 520px); overflow: auto; font: 12px/1.6 var(--code); color: var(--fg-2); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--card-2); border-radius: 8px; padding: 12px 14px; user-select: text; -webkit-user-select: text; }
 .lib-reader .bar .lib-path { max-width: 70%; }
@@ -433,6 +462,12 @@ input.lib-setname:focus { border-color: var(--accent); box-shadow: 0 0 0 3px col
 /* the library's skills: a card for each GitHub repository they came from,
    and one for those on this computer, folded to its heading line */
 .lib-groups { display: flex; flex-direction: column; gap: 8px; }
+/* a group's head is its card's title, not one more skill (#936): shaded,
+   its repository in bold, its chips cut out of the shade */
+.lib-row.lib-grouphead { background: var(--card-2); }
+.lib-row.lib-grouphead.click:hover { background: color-mix(in srgb, var(--card-2) 70%, var(--pill)); }
+.lib-grouphead .name, .lib-grouphead .name.mono { font-weight: 600; }
+.lib-grouphead > .lib-agents .lib-ag:not(:focus-visible) { outline-color: var(--card-2); }
 .lib-grouphead .sub { font-size: 11px; }
 .lib-grouphead > .lib-logo, .lib-grouphead > .lib-glyph { align-self: center; margin-top: 0; }
 .lib-grouphead .lib-updall { height: 24px; padding: 0 9px; font-size: 12px; }
@@ -489,3 +524,13 @@ input.lib-setname:focus { border-color: var(--accent); box-shadow: 0 0 0 3px col
 .lib-subhead > .lib-agents { margin-left: auto; }
 .lib-pickbar .lib-groupname { flex: 1 1 140px; min-width: 100px; max-width: 240px; margin: 0; }
 .lib-grouphead .lib-grouprename-in { height: 24px; margin: 0; max-width: 260px; font-weight: 500; }
+
+/* Safari before 15.4 has no :focus-visible and drops the chips' rings
+   above: there they go by :focus */
+@supports not selector(:focus-visible) {
+  .lib-row > .lib-agents .lib-ag:not(:focus) { outline: 1.5px solid var(--card); outline-offset: 0; }
+  .lib-row > .lib-agents:hover .lib-ag:not(:focus), .lib-row > .lib-agents:focus-within .lib-ag:not(:focus) { outline-color: transparent; }
+  .lib-row.click:hover > .lib-agents .lib-ag:not(:focus) { outline-color: var(--card-2); }
+  .lib-row.click:hover > .lib-agents:hover .lib-ag:not(:focus) { outline-color: transparent; }
+  .lib-grouphead > .lib-agents .lib-ag:not(:focus) { outline-color: var(--card-2); }
+}

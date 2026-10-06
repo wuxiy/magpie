@@ -53,6 +53,9 @@
   /* the cost stays; the title keeps the room the tokens took (#752) */
   .row.sm-sess .num { display: none; }
   .row.sm-sess .cost { min-width: 0; }
+  /* five gaps of 12px left a 420px window's title 90px once the list
+     scrolled and its scrollbar took 10px */
+  .row.sess.sm-sess { gap: 8px; }
 }
 @media (max-width: 420px) {
   .sm-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
@@ -61,3 +64,13 @@
   .sm-filter { width: 100%; min-width: 0; }
   .sm-trash-btn { grid-column: 2; justify-self: end; }
 }
+/* Codex sessions made with another provider, hidden from Codex's history (#887) */
+.row.sm-provider { gap: 10px; min-height: 40px; padding: 8px 11px; height: auto; }
+.sm-provider-text { min-width: 0; font-size: 12px; color: var(--fg-2); line-height: 1.45; }
+.sm-provider .grow { flex: 1; }
+.sm-provider .text { flex: none; display: inline-flex; align-items: center; gap: 5px; }
+.sm-prov { display: inline-block; padding: 0 5px; border-radius: 4px; background: var(--pill); color: var(--muted); font-family: var(--code); font-size: 10.5px; line-height: 16px; }
+.sm-provider-list li label { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
+.sm-provider-list li .name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-provider-list li .note { flex: none; font-size: 11px; color: var(--faint); }
+.sm-provider-list { max-height: min(300px, 45vh); overflow-y: auto; }

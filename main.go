@@ -37,10 +37,11 @@ const usage = `magpie — one place to pick every agent's model
   magpie tray                     start in the menu bar only
   magpie panel                    open the menu bar icon's quick panel, or close it
   magpie autostart [on|off]       open magpie (in the menu bar) when you log in, or say whether it does
-  magpie tui                      the same thing, in the terminal
-  magpie web [--addr host:port] [--lan] [--no-open]
+  magpie tui                      the same thing, in the terminal (serves the gateway while open when no magpie does)
+  magpie web [--addr host:port] [--lan] [--no-open] [--gateway]
                                   the app's window in a browser, with the gateway (no desktop needed: WSL, a server over SSH)
                                   a new key each run; MAGPIE_WEB_KEY (16+ letters, digits, - . _ ~) keeps one, signed in for 400 days
+                                  --gateway: gateway mode, no Agents, Sessions or Library (on by itself with no agents here; Settings › General turns it off)
   magpie ls                       list detected agents and their settings
   magpie <agent>                  show one agent
   magpie <agent> <model>          set an agent's model   e.g. magpie claude deepseek/deepseek-chat
@@ -92,6 +93,7 @@ const usage = `magpie — one place to pick every agent's model
   magpie healthcheck              exit 0 when the gateway answers (a container's HEALTHCHECK)
   magpie gateway-key list|add <name>|rotate <id>|remove <id>   manage the keys clients use to call a shared gateway
   magpie gateway-key limit <id> [off|day|week|month --tokens N --cost USD --cache-reads]   a key's own limit, and what it used
+  magpie gateway-key models <id> [all|<provider>/<model>|<provider>/* ...]   the models a key may use, every one unless it names some
   magpie mcp image                the image and video generation MCP server an agent is given from the library (stdio)
   magpie usage [today|7d|30d|all] tokens and cost per agent, model and subscription account (30d)
   magpie usage --csv [--account <name>] [today|7d|30d|all]   every request as CSV (or one account's): the model asked for, sent and served, tokens, cost, time, status, account
@@ -190,6 +192,9 @@ func run(args []string) error {
 		// (agent.DisconnectPreview)
 		return agent.DryRun(args[1])
 	}
+	// started by an update, the magpie it replaces goes first: the moves
+	// below write the files it may still be writing
+	update.AwaitPredecessor()
 	makeDirs()
 	settings.Migrate()
 	// the providers and settings read once for every agent's fields, which

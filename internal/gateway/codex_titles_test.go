@@ -275,7 +275,7 @@ func TestTitleJSONFillsTheSchema(t *testing.T) {
 	for in, want := range map[string]string{
 		"Fix login bug": `{"description":"Fix login bug","title":"Fix login bug"}`,
 		`{"title":"Fix login","description":"The login form rejects valid passwords"}`: `{"description":"The login form rejects valid passwords","title":"Fix login"}`,
-		"Fix the login bug that rejects every valid password on mobile": `{"description":"Fix the login bug that rejects every valid password on mobile","title":"Fix the login bug that rejects every"}`,
+		"Fix the login bug that rejects every valid password on mobile":                `{"description":"Fix the login bug that rejects every valid password on mobile","title":"Fix the login bug that rejects every"}`,
 		"": "",
 	} {
 		if got := titleJSON(in, shape); got != want {

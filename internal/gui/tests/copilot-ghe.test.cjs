@@ -81,7 +81,7 @@ for (const engine of engines) for (const lang of ["en", "zh"]) {
     assert.deepEqual(canceled, ["c1"]);
     const text = await box.innerText();
     assert.match(text, lang === "zh" ? /你的企业在 GHE\.com 上的地址/ : /Your enterprise on GHE\.com/);
-    assert.match(text, lang === "zh" ? /github\.com 上的账号不用填/ : /An account on github\.com doesn't need it/);
+    assert.match(text, lang === "zh" ? /github\.com 账号无需填写/ : /An account on github\.com doesn't need it/);
     const field = box.locator(".copilot-ghe input");
     const go = box.locator('.copilot-ghe button[type="submit"]');
     assert.equal(await field.getAttribute("placeholder"), "acme.ghe.com");

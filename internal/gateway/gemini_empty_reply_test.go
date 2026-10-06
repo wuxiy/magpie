@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -86,6 +88,75 @@ func TestGeminiEmptyReplyIsAnError(t *testing.T) {
 		code, body := post(t, "/v1/chat/completions", asks[0].body)
 		if code != 200 || strings.Contains(body, "an empty reply") || !strings.Contains(body, `"finish_reason"`) {
 			t.Errorf("%s: %d %s", what, code, body)
+		}
+	}
+}
+
+// A Gemini reply that says nothing several times running is asked again
+// on the same account before the request's own tries run out: on a long
+// conversation antigravity/gemini-3.8-flash ended with only its reasoning
+// three times in a row, the error stopped Pi's run, and the user had to
+// type "continue" (#667, tianshuo886). One that never says anything still
+// ends with the error, asked a bounded number of times.
+func TestGeminiEmptyRepliesAskedAgain(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	calls, emptyFor := 0, 0
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		calls++
+		w.Header().Set("Content-Type", "text/event-stream")
+		if calls <= emptyFor {
+			io.WriteString(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Let me see.","thought":true}]}}]}`+"\n\n"+
+				`data: {"candidates":[{"content":{"role":"model","parts":[{"text":""}]},"finishReason":"STOP"}]}`+"\n\n")
+			return
+		}
+		io.WriteString(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"hello"}]},"finishReason":"STOP"}]}`+"\n\n")
+	}))
+	t.Cleanup(up.Close)
+	t.Cleanup(provider.FactoryBaseForTest(up.URL, up.URL+"/eu"))
+	auth, _ := json.Marshal(map[string]any{
+		"accessToken": "tok", "refreshToken": "r",
+		"expiresAt": time.Now().Add(time.Hour).UnixMilli(),
+		"orgId":     "org_D", "activeOrganizationId": "fac_D", "email": "d@example.com",
+	})
+	dir := filepath.Dir(provider.Path())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal([]map[string]any{{
+		"agent": "factory", "user": "d@example.com", "plan": "pro", "on": true, "auth": json.RawMessage(auth),
+	}})
+	if err := os.WriteFile(filepath.Join(dir, "logins.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	const model = "factory/gemini-3.8-flash"
+	for _, a := range []struct{ name, path, body string }{
+		{"chat", "/v1/chat/completions", `{"model":"` + model + `","stream":true,"messages":[{"role":"user","content":"hi"}]}`},
+		{"anthropic", "/v1/messages", `{"model":"` + model + `","stream":true,"max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`},
+	} {
+		calls, emptyFor = 0, 3
+		code, body := post(t, a.path, a.body)
+		if code != 200 || !strings.Contains(body, "hello") || strings.Contains(body, "an empty reply") {
+			t.Errorf("%s: three empty replies running weren't asked past: %d calls, %d %s", a.name, calls, code, body)
+		}
+		if a.name == "anthropic" && strings.Count(body, "event: message_start") != 1 {
+			t.Errorf("%s: not one message: %s", a.name, body)
+		}
+
+		calls, emptyFor = 0, 1<<20
+		code, body = post(t, a.path, a.body)
+		if !strings.Contains(body, "an empty reply") {
+			t.Errorf("%s: a model that never answers isn't told as the error: %d %s", a.name, code, body)
+		}
+		if calls > 6 {
+			t.Errorf("%s: a model that never answers asked %d times", a.name, calls)
 		}
 	}
 }

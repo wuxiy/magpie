@@ -494,7 +494,7 @@ func TestClaudeBridgeSafeguardConcurrentHandoff(t *testing.T) {
 		done := make(chan int, 1)
 		go func() {
 			rec := httptest.NewRecorder()
-			code, _ := s.serveSubscription(rec, httptest.NewRequest("POST", "/v1/messages", nil), provider.Anthropic, "Claude Code", req.Model, body, &Usage{},
+			code, _ := s.serveSubscription(rec, httptest.NewRequest("POST", "/v1/messages", nil), provider.Anthropic, "Claude Code", req.Model, "", body, &Usage{},
 				func(context.Context, *Request) (*subscriptionRun, <-chan Event, error) {
 					return nil, nil, fmt.Errorf("must not start another run")
 				})

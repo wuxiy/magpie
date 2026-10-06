@@ -40,7 +40,7 @@ function serve(lang, logins, posts) {
 
 const title = {
   en: "magpie stops showing and using Kiro's own sign-in; its files are left as they are, and it shows again when Kiro signs in anew",
-  zh: "magpie 不再显示和使用 Kiro 自己的登录；它的文件保持原样，Kiro 重新登录后会再次出现",
+  zh: "不再显示和使用 Kiro 自己的登录；文件保持原样，Kiro 重新登录后再次出现",
 };
 const remove = { en: "Remove", zh: "移除" };
 
@@ -71,6 +71,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const own = page.locator(".accts .acc", { hasText: "Kiro account" }).getByRole("button", { name: remove[lang], exact: true });
       assert.equal(await own.getAttribute("title"), title[lang]);
       await own.click();
+      assert.deepEqual(posts, [], "Remove waits for confirmation");
+      await page.locator("dialog.action-confirm[open] button").last().click();
       for (let i = 0; i < 50 && !posts.length; i++) await page.waitForTimeout(50);
       assert.deepEqual(posts, [{ path: "/api/login/forget", body: { agent: "kiro", user: "Kiro account" } }]);
       assert.deepEqual(errors, []);
@@ -82,6 +84,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const own = page.locator(".accts .acc", { hasText: "Kiro account" }).getByRole("button", { name: remove[lang], exact: true });
       assert.equal(await own.getAttribute("title"), title[lang]);
       await own.click();
+      assert.deepEqual(posts, [], "Remove waits for confirmation");
+      await page.locator("dialog.action-confirm[open] button").last().click();
       for (let i = 0; i < 50 && !posts.length; i++) await page.waitForTimeout(50);
       assert.deepEqual(posts, [{ path: "/api/login/forget", body: { agent: "kiro", user: "Kiro account" } }]);
       assert.deepEqual(errors, []);

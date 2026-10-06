@@ -178,3 +178,51 @@ func TestCodexModelsMaxContext(t *testing.T) {
 		t.Fatalf("%+v", ms)
 	}
 }
+
+// A codex CLI that fails to run — macOS stopping it as malware, with an
+// alert each time (#864) — isn't run again every ten minutes, and an npm
+// install's version is read from its package, not run.
+func TestCodexVersionNotRerun(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell scripts")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", "")
+	dir := t.TempDir()
+	runs := filepath.Join(dir, "runs")
+	exe := filepath.Join(dir, "codex")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho x >> '"+runs+"'\nexit 137\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := codexExecutable
+	t.Cleanup(func() { codexExecutable = old; codexVersionCache.at = time.Time{}; codexSeen = seenVersion{} })
+	codexSeen = seenVersion{}
+	codexExecutable = func() string { return exe }
+	for range 3 { // ten minutes apart
+		codexVersionCache.at = time.Time{}
+		if got := codexVersion(); got != codexClientVersion {
+			t.Fatalf("got %s", got)
+		}
+	}
+	if b, _ := os.ReadFile(runs); strings.Count(string(b), "x") != 1 {
+		t.Fatalf("the failing codex was run %d times", strings.Count(string(b), "x"))
+	}
+
+	pkg := filepath.Join(dir, "node_modules", "@openai", "codex")
+	os.MkdirAll(filepath.Join(pkg, "bin"), 0o755)
+	os.WriteFile(filepath.Join(pkg, "package.json"), []byte(`{"version":"0.199.0"}`), 0o644)
+	os.WriteFile(filepath.Join(pkg, "bin", "codex.js"), []byte("#!/bin/sh\necho x >> '"+runs+"'\necho codex-cli 0.199.0\n"), 0o755)
+	link := filepath.Join(dir, "bin", "codex")
+	os.MkdirAll(filepath.Dir(link), 0o755)
+	os.Symlink(filepath.Join(pkg, "bin", "codex.js"), link)
+	codexExecutable = func() string { return link }
+	codexVersionCache.at = time.Time{}
+	if got := codexVersion(); got != "0.199.0" {
+		t.Fatalf("npm codex: %s", got)
+	}
+	if b, _ := os.ReadFile(runs); strings.Count(string(b), "x") != 1 {
+		t.Fatal("the npm codex was run")
+	}
+}

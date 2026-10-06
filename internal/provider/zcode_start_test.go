@@ -303,3 +303,44 @@ func TestZCodeStartHTTP1(t *testing.T) {
 		t.Fatalf("sent:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+// ganlerk (Discord): an account with ZCode Trust Build and the Start Plan,
+// both giving GLM-5.3-Flash, the Start Plan's all used and Trust Build's
+// 14.5%. The server spends whichever has some, so GLM-5.3-Flash counts on
+// Trust Build's bucket and the spent one is set aside: neither the model
+// nor the account reads as used up.
+func TestZCodeStartSpentSiblingAside(t *testing.T) {
+	signIn(t)
+	jwt := zcodeTestJWT(time.Now().Add(24 * time.Hour))
+	u := newZCodeStartUpstream(t, jwt)
+	now := time.Now()
+	u.balance = map[string]any{
+		"server_time": now.Unix(),
+		"plans": []any{
+			map[string]any{"plan_id": "zai-start-plan", "user_plan_id": "s1", "name": "ZCode Start Plan", "status": "active", "ends_at": now.Add(7 * 24 * time.Hour).Unix()},
+			map[string]any{"plan_id": "zai-trust-build", "user_plan_id": "t1", "name": "ZCode Trust Build", "status": "active", "ends_at": now.Add(24 * time.Hour).Unix()},
+		},
+		"balances": []any{
+			map[string]any{"plan_id": "zai-start-plan", "user_plan_id": "s1", "show_name": "GLM-5.3", "capabilities": []any{"model:GLM-5.3"},
+				"total_units": 3000000, "used_units": 0, "remaining_units": 3000000},
+			map[string]any{"plan_id": "zai-start-plan", "user_plan_id": "s1", "show_name": "GLM-5.3-Flash", "capabilities": []any{"model:GLM-5.3-Flash"},
+				"total_units": 5000000, "used_units": 5000000, "remaining_units": 0},
+			map[string]any{"plan_id": "zai-trust-build", "user_plan_id": "t1", "show_name": "GLM-5.3-Flash", "capabilities": []any{"model:GLM-5.3-Flash"},
+				"total_units": 100000000, "used_units": 14501196, "remaining_units": 85498804, "expires_at": now.Add(time.Hour).Unix()},
+		},
+	}
+	q := zcodeStartQuota(context.Background(), Login{User: "u@example.com"}, jwt)
+	if q.Error != "" || len(q.Windows) != 3 {
+		t.Fatalf("usage: %+v", q)
+	}
+	if w := q.Windows[1]; w.Used != 100 || !w.Aside {
+		t.Fatalf("the spent Start Plan bucket isn't set aside: %+v", w)
+	}
+	a := allowanceOf(q.Windows, now)
+	if used, _ := a.For("glm-5.3-flash", now); used < 14 || used > 15 {
+		t.Fatalf("GLM-5.3-Flash counts %v%% used, not Trust Build's 14.5%%", used)
+	}
+	if used, _ := a.For("glm-5.3", now); used != 0 {
+		t.Fatalf("GLM-5.3: %v", used)
+	}
+}

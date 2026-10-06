@@ -60,7 +60,7 @@ function server(lang, posted) {
 
 const want = {
   en: { name: "Provider in model names", sub: /provider after its name/, off: "Off", own: "Not on names I set", on: "On" },
-  zh: { name: "模型名带供应商", sub: /自定义的名称不带/, off: "关闭", own: "自定义名称不带供应商", on: "开启" },
+  zh: { name: "模型名带供应商", sub: /可设为自定义名称不带/, off: "关闭", own: "自定义名称不带供应商", on: "开启" },
 };
 const view = (page) => page.locator("#view-settings").evaluate((v) => v.scrollTop);
 

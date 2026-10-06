@@ -97,7 +97,7 @@ func (h *remapHarness) ask(msgs ...string) []string {
 	body := `{"model":"claude-sonnet-5","max_tokens":100,"tools":[{"name":"read","input_schema":{"type":"object"}}],"messages":[` + strings.Join(msgs, ",") + `]}`
 	rec := httptest.NewRecorder()
 	var u Usage
-	if code, msg := h.s.serveSubscription(rec, httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body)), provider.Anthropic, "Claude Code", "claude-sonnet-5", []byte(body), &u, h.start); code != 200 {
+	if code, msg := h.s.serveSubscription(rec, httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body)), provider.Anthropic, "Claude Code", "claude-sonnet-5", "", []byte(body), &u, h.start); code != 200 {
 		h.t.Fatalf("%d %s", code, msg)
 	}
 	var res struct {

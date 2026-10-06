@@ -40,7 +40,7 @@ func TestQuotaHistoryCmd(t *testing.T) {
 		return provider.QuotaPoint{At: now.Add(-ago), Left: left, ResetsAt: &r}
 	}
 	h := map[string]map[string][]provider.QuotaPoint{
-		"codex|a@x.com": {"5 hours": {pt(30*time.Hour, 40, now.Add(-26*time.Hour)), pt(3*time.Hour, 100, reset), pt(time.Hour, 72.5, reset)}},
+		"codex|a@x.com":  {"5 hours": {pt(30*time.Hour, 40, now.Add(-26*time.Hour)), pt(3*time.Hour, 100, reset), pt(time.Hour, 72.5, reset)}},
 		"claude|b@x.com": {"Weekly": {pt(2*time.Hour, 55, now.Add(72*time.Hour))}},
 	}
 	b, _ := json.Marshal(h)

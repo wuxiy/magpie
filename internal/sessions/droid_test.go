@@ -66,14 +66,14 @@ func TestDroid(t *testing.T) {
 		t.Fatalf("want 3 Droid sessions (the subagent in its session), got %d", n)
 	}
 	d := find(t, ss, "droid", droidMain)
-	if d.Cwd != "/work/droid" || d.Title != "Fix the login bug" {
+	if d.Cwd != "/work/droid" || d.Title != "Login bug" {
 		t.Fatalf("droid: %+v", d)
 	}
 	// magpie's custom model by the model it asks for, the subagent's in
-	if m := model(d, "anthropic/claude-sonnet-4-5"); m.Tokens != (Tokens{100, 50, 1000, 10}) {
+	if m := model(d, "anthropic/claude-sonnet-4-5"); m.Tokens != (Tokens{100, 50, 1000, 10, 0}) {
 		t.Fatalf("sonnet: %+v", d.Models)
 	}
-	if m := model(d, "claude-haiku-4-5"); m.Tokens != (Tokens{5, 2, 0, 0}) {
+	if m := model(d, "claude-haiku-4-5"); m.Tokens != (Tokens{5, 2, 0, 0, 0}) {
 		t.Fatalf("haiku, the subagent's in: %+v", d.Models)
 	}
 	if !d.Start.Equal(at("2026-09-27T08:00:00Z")) || !d.Last.Equal(at("2026-09-27T08:02:00Z")) {
@@ -87,10 +87,10 @@ func TestDroid(t *testing.T) {
 	// the fork: what it copied is its source's; a custom model of the
 	// user's own by its name
 	f := find(t, ss, "droid", droidFork)
-	if f.Title != "Try another way" || !f.Start.Equal(at("2026-09-27T09:00:00Z")) || !f.Last.Equal(at("2026-09-27T09:00:30Z")) {
+	if f.Title != "Login bug" || !f.Start.Equal(at("2026-09-27T09:00:00Z")) || !f.Last.Equal(at("2026-09-27T09:00:30Z")) {
 		t.Fatalf("fork: %+v", f)
 	}
-	if m := model(f, "Kimi-K2"); m.Tokens != (Tokens{7, 3, 0, 0}) {
+	if m := model(f, "Kimi-K2"); m.Tokens != (Tokens{7, 3, 0, 0, 0}) {
 		t.Fatalf("fork models: %+v", f.Models)
 	}
 	if o := find(t, ss, "droid", droidOld); o.Title != "hi there" || !o.Tokens.zero() {

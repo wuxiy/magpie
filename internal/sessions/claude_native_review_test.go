@@ -17,7 +17,7 @@ func TestClaudeNativeReplayAcrossReadersAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	want := Tokens{10338, 37363, 281066, 63398}
+	want := Tokens{10338, 37363, 281066, 63398, 0}
 	for split := 0; split <= len(lines); split++ {
 		t.Run(string(rune('0'+split)), func(t *testing.T) {
 			d := setupCalls(t)
@@ -114,7 +114,7 @@ func TestEvictedClaudeRevisionsReleasedAndRebuilt(t *testing.T) {
 		t.Fatal("evicted Claude retained continuation")
 	}
 	appendText(t, path, lines[2]+"\n")
-	want := Tokens{10338, 37363, 281066, 63398}
+	want := Tokens{10338, 37363, 281066, 63398, 0}
 	List(0)
 	var got Tokens
 	for _, v := range cache[path].Models {

@@ -10,21 +10,36 @@ import (
 	"github.com/yetone/magpie/internal/testenv"
 )
 
-func TestRequestPageAppendDoesNotRepriceHistory(t *testing.T) {
+// appendAndQueryAllocs is the allocations of one append and request page
+// query over a warm history of n records.
+func appendAndQueryAllocs(t *testing.T, n int) float64 {
+	t.Helper()
 	pageHome(t)
-	historyLog(t, 8000)
+	historyLog(t, n)
 	QueryPage(All, Filter{}, 0, 100)
+	return testing.AllocsPerRun(2, func() {
+		Append(Record{Agent: "codex", Provider: "relay", Model: "m", Input: 1, Status: 200})
+		QueryPage(All, Filter{}, 0, 100)
+	})
+}
+
+func TestRequestPageAppendDoesNotRepriceHistory(t *testing.T) {
+	// A query costs a fixed number of allocations that depends on the
+	// machine (on Windows, provider sign-in lookups read the environment and
+	// registry), so the budget is what 7990 more records of history add:
+	// reading them again costs about 8 allocations each, keeping their
+	// blocks about 50 per block of 500 (#972).
+	small := appendAndQueryAllocs(t, 10)
+	allocations := appendAndQueryAllocs(t, 8000)
+	if grown := allocations - small; grown > 2000 {
+		t.Fatalf("append re-read unchanged history: %.0f allocations over 8000 records, %.0f over 10", allocations, small)
+	}
 	raw := readLogSnapshot().blocks[0]
 	requestCache.Lock()
 	before := requestCache.gateways[raw].Archive
 	requestCache.Unlock()
-	allocations := testing.AllocsPerRun(2, func() {
-		Append(Record{Agent: "codex", Provider: "relay", Model: "m", Input: 1, Status: 200})
-		QueryPage(All, Filter{}, 0, 100)
-	})
-	if allocations > 3000 {
-		t.Fatalf("append re-priced unchanged history: %.0f allocations", allocations)
-	}
+	Append(Record{Agent: "codex", Provider: "relay", Model: "m", Input: 1, Status: 200})
+	QueryPage(All, Filter{}, 0, 100)
 	requestCache.Lock()
 	after := requestCache.gateways[raw].Archive
 	requestCache.Unlock()

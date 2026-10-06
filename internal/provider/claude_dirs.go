@@ -73,6 +73,20 @@ func clearClaudeDir(dir string) {
 }
 
 // forgetClaudeDir removes a saved account's config directory altogether.
+// ClaudeHandedOver is told of a saved Claude account switched in to Claude
+// Code itself, whose directory forgetClaudeDir has just removed: a Claude
+// Code still running there (the gateway's, waiting for its conversation's
+// next turn) holds the refresh token that is Claude Code's own now, and a
+// refresh of it there would leave Claude Code's copy refused, the account
+// signed out (0xAncientTwo on X). The gateway sets it.
+var ClaudeHandedOver func(user string)
+
+func claudeHandedOver(user string) {
+	if f := ClaudeHandedOver; f != nil {
+		f(user)
+	}
+}
+
 func forgetClaudeDir(user string) {
 	dir := claudeAccountDir(user)
 	clearClaudeDir(dir)
@@ -288,19 +302,30 @@ func (a *Account) AgentsOwn() bool { return a != nil && a.token == nil }
 // ClaudeCodeMovedOff says Claude Code itself is signed in to another
 // account than user now: what a Claude Code run in its own home says of
 // the account it is on is no longer user's. false when it can't be told.
+// Named from its profile, the account is told by its whole name: a Team
+// seat and a personal plan of one email ("me@x.com · Acme", "me@x.com")
+// are two accounts, and one's usage isn't the other's (netfishx on X).
 func ClaudeCodeMovedOff(user string) bool {
-	on := claudeCodeOn()
-	return on != "" && !sameClaudeUser(on, user)
+	on, named := claudeCodeOn()
+	if on == "" {
+		return false
+	}
+	if named {
+		return !strings.EqualFold(strings.TrimSpace(on), strings.TrimSpace(user))
+	}
+	return !sameClaudeUser(on, user)
 }
 
 // claudeCodeOn is the account Claude Code itself is signed in to now, as
-// magpie names it; "" when signed out or unknown.
-func claudeCodeOn() string {
+// magpie names it; "" when signed out or unknown. named: the name is from
+// its profile (~/.claude.json), whole, not the email alone `claude auth
+// status` gives.
+func claudeCodeOn() (user string, named bool) {
 	l, ok := liveLogin("claude")
 	if !ok {
-		return ""
+		return "", false
 	}
-	return l.User
+	return l.User, len(l.Profile) > 0
 }
 
 // sameClaudeUser: a and b name one account, the one as magpie names a Team

@@ -111,10 +111,18 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         for (let i = 0; i < 20 && !(await view(page)); i++) { await page.mouse.wheel(0, 200); await page.waitForTimeout(20); }
         const before = await view(page);
         assert(before > 0, "the settings list must be long enough to scroll");
-        await segs.nth(1).click();
+        const tall = () => page.locator("#view-settings").evaluate((v) => v.getBoundingClientRect().height);
+        const height = await tall();
+        // clicked where it is, as the reader's mouse does: in zh the wheel
+        // leaves the row a fraction of a pixel under the header, and
+        // Playwright's own scroll into view before its click moved the page
+        const seg = await segs.nth(1).boundingBox();
+        await page.mouse.click(seg.x + seg.width / 2, seg.y + seg.height / 2);
         await page.locator('#currencySegs .opt.on', { hasText: cny }).waitFor();
         await page.waitForTimeout(400);
         assert.equal(await view(page), before, "picking a currency must not scroll the settings page");
+        // the footer's "Saved" doesn't make it taller and the page shorter
+        assert.equal(await tall(), height, "the saved note resized the settings page");
 
         // the Usage page now shows ¥, at the fixed rate (12.34 * 7.2)
         await page.locator('[data-view="usage"]').click();

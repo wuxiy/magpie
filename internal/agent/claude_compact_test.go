@@ -84,3 +84,116 @@ func TestClaudeCompactWindow(t *testing.T) {
 		t.Fatalf("reset took the user's own: %q", compact())
 	}
 }
+
+// Claude Code compacts where the user said (#876, hisiling): at the size
+// typed for every model, at the main model's provider's own or the
+// model's own before that, a Claude model's included, and Full window
+// leaves out only the one for every model.
+func TestClaudeCompactAt(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	if err := provider.Save(provider.Provider{ID: "v", Name: "V", Chat: "https://example.test/v1", Key: "k",
+		Models: []string{"big", "flash", "claude-opus-5-5"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.SaveLive("v", "https://example.test/v1", []catalog.Model{{ID: "big", Context: 1000000}, {ID: "flash", Context: 1000000}, {ID: "claude-opus-5-5", Context: 1000000}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".claude", "settings.json")
+	writeFile(t, path, `{}`)
+	a := claude(home)
+	compact := func() string { v, _ := edit.GetJSON(path, "env."+claudeCompactEnv); return v }
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	expect := func(what, want string) {
+		t.Helper()
+		if got := compact(); got != want {
+			t.Fatalf("%s: %q; want %q", what, got, want)
+		}
+	}
+
+	must(provider.SetCompactAt(400000))
+	must(a.Field("model").Set("v/big"))
+	expect("every model at 400K", "400000")
+	must(provider.SetModelCompacts("v", map[string]int{"*": 600000, "flash": 200000}))
+	must(a.Sync())
+	expect("the provider's", "600000")
+	must(a.Field("model").Set("v/flash[1m]"))
+	expect("the model's own", "200000")
+	must(a.Field("model").Set("v/claude-opus-5-5[1m]"))
+	expect("a Claude model, its provider's", "600000")
+	must(provider.SetModelCompacts("v", map[string]int{"flash": 200000}))
+	must(a.Sync())
+	expect("a Claude model, none set", "")
+	must(provider.SetFullContext(true))
+	must(a.Field("model").Set("v/flash"))
+	expect("full window, the model's own", "200000")
+	must(a.Field("model").Set("v/big"))
+	expect("full window", "")
+}
+
+// An auto-compact window the user set in Claude Code (autoCompactWindow,
+// or modelSettings.<model>.autoCompactWindow as /autocompact saves it) is
+// theirs: magpie's default doesn't write the env that would take
+// precedence over it; a size typed in magpie, or on the model or its
+// provider, still does (#876, hisiling).
+func TestClaudeCompactYieldsToOwnSetting(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	if err := provider.Save(provider.Provider{ID: "v", Name: "V", Chat: "https://example.test/v1", Key: "k",
+		Models: []string{"big", "flash"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.SaveLive("v", "https://example.test/v1", []catalog.Model{{ID: "big", Context: 1000000}, {ID: "flash", Context: 1000000}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".claude", "settings.json")
+	writeFile(t, path, `{"autoCompactWindow": 900000}`)
+	a := claude(home)
+	compact := func() string { v, _ := edit.GetJSON(path, "env."+claudeCompactEnv); return v }
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	expect := func(what, want string) {
+		t.Helper()
+		if got := compact(); got != want {
+			t.Fatalf("%s: %q; want %q", what, got, want)
+		}
+	}
+
+	must(a.Field("model").Set("v/big[1m]"))
+	expect("autoCompactWindow", "")
+	if v, _ := edit.GetJSON(path, "autoCompactWindow"); v != "900000" {
+		t.Fatalf("autoCompactWindow changed: %q", v)
+	}
+	must(edit.DelJSON(path, "autoCompactWindow"))
+	must(a.Sync())
+	expect("none set", "272000")
+	// one for this model in modelSettings, not another's
+	must(edit.SetJSON(path, edit.KV{Path: "modelSettings", Value: map[string]any{"v/flash": map[string]any{"autoCompactWindow": 800000}}}))
+	must(a.Sync())
+	expect("another model's", "272000")
+	must(a.Field("model").Set("v/flash[1m]"))
+	expect("this model's", "")
+	// a size typed in magpie, or the model's own there, comes first
+	must(provider.SetModelCompacts("v", map[string]int{"flash": 200000}))
+	must(a.Sync())
+	expect("the model's own in magpie", "200000")
+	must(provider.SetModelCompacts("v", nil))
+	must(provider.SetCompactAt(400000))
+	must(a.Sync())
+	expect("typed in magpie", "400000")
+}

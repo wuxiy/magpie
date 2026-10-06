@@ -55,7 +55,7 @@ function server(lang, asked) {
 
 const L = {
   en: { installed: "Installed", signIn: "Sign in", other: "Sign in to Qoder CN", signedIn: "Signed in", tip: /Qoder CN is a subscription of its own; Qoder works without it/ },
-  zh: { installed: "已安装", signIn: "登录", other: "登录 Qoder CN", signedIn: "已登录", tip: /Qoder CN 是另一个独立的订阅，Qoder 不需要它也能用/ },
+  zh: { installed: "已安装", signIn: "登录", other: "登录 Qoder CN", signedIn: "已登录", tip: /Qoder CN 是独立订阅，Qoder 无需它也能使用/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

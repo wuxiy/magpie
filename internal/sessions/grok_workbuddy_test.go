@@ -24,14 +24,14 @@ func TestGrok(t *testing.T) {
 	}
 	g := find(t, ss, "grok", grokMain)
 	// the first prompt typed, its chunks put together, before the title Grok made
-	if g.Cwd != "/work/grok" || g.Title != "Port the parser" {
+	if g.Cwd != "/work/grok" || g.Title != "Parser port" {
 		t.Fatalf("grok: %+v", g)
 	}
 	// the cache out of the input, the subagent's turn in once
-	if m := model(g, "grok-4.7-build"); m.Tokens != (Tokens{700, 100, 2800, 0}) {
+	if m := model(g, "grok-4.7-build"); m.Tokens != (Tokens{700, 100, 2800, 0, 0}) {
 		t.Fatalf("build: %+v", m)
 	}
-	if m := model(g, "grok-4.7-mini"); m.Tokens != (Tokens{300, 30, 100, 0}) {
+	if m := model(g, "grok-4.7-mini"); m.Tokens != (Tokens{300, 30, 100, 0, 0}) {
 		t.Fatalf("mini, the subagent's in: %+v", m)
 	}
 	// the hook that ran as it was closed, a day on, isn't when it was at work
@@ -45,7 +45,7 @@ func TestGrok(t *testing.T) {
 	}
 	// the fork: what it copied counted in the session it came from
 	f := find(t, ss, "grok", grokFork)
-	if f.Tokens != (Tokens{100, 30, 300, 0}) || f.Title != "Try another way" {
+	if f.Tokens != (Tokens{100, 30, 300, 0, 0}) || f.Title != "Parser port, another way" {
 		t.Fatalf("fork: %+v", f)
 	}
 	if !f.Start.Equal(at("2026-09-27T09:00:00.25Z")) || !f.Last.Equal(at("2026-09-27T09:00:30Z")) {
@@ -85,7 +85,7 @@ func TestWorkBuddy(t *testing.T) {
 		t.Fatalf("workbuddy: %+v", w)
 	}
 	// a reply's usage counted once, however many of its lines carry it
-	if m := model(w, "hy3"); m.Tokens != (Tokens{400, 120, 2200, 0}) {
+	if m := model(w, "hy3"); m.Tokens != (Tokens{400, 120, 2200, 0, 0}) {
 		t.Fatalf("hy3: %+v", m)
 	}
 	if !w.Start.Equal(at("2026-09-27T10:00:00Z")) || !w.Last.Equal(at("2026-09-27T10:00:10Z")) {
@@ -96,7 +96,7 @@ func TestWorkBuddy(t *testing.T) {
 	if o.Cwd != "/work/wb-old" || o.Title != "Quarterly report" {
 		t.Fatalf("old: %+v", o)
 	}
-	if m := model(o, "auto"); m.Tokens != (Tokens{5000, 100, 0, 0}) {
+	if m := model(o, "auto"); m.Tokens != (Tokens{5000, 100, 0, 0, 0}) {
 		t.Fatalf("auto: %+v", m)
 	}
 

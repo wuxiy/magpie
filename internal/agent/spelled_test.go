@@ -17,7 +17,11 @@ func TestOwnProviderNamedAsMagpies(t *testing.T) {
 		"qoder", "qoder-cn", "grok", "atomcode", "cline"}
 	for _, id := range ids {
 		t.Run(id, func(t *testing.T) {
-			syncHome(t)
+			if id == "aside" {
+				asideHome(t)
+			} else {
+				syncHome(t)
+			}
 			a, err := Find(id)
 			if err != nil {
 				t.Fatal(err)

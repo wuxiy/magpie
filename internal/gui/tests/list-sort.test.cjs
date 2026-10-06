@@ -98,7 +98,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const openLib = async () => {
           await page.goto("http://magpie.test/");
           await page.locator('button[data-view="library"]').click();
-          await page.locator("#view-library .lib-row").first().waitFor();
+          await page.locator("#view-library .lib-body:not(.lib-skel) .lib-row").first().waitFor();
         };
         await openLib();
         assert.deepEqual(await serverNames(), ["Alpha", "beta", "gamma"]);
@@ -124,7 +124,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await openLib();
         assert.deepEqual(await skillNames(), ["pear", "mango", "kiwi", "cherry", "apple"]);
         await page.locator("#view-library .lib-tabs .opt").nth(1).click();
-        await page.locator("#view-library .lib-list .lib-row").first().waitFor();
+        await page.locator("#view-library .lib-body:not(.lib-skel) .lib-list .lib-row").first().waitFor();
         assert.deepEqual(await serverNames(), ["gamma", "beta", "Alpha"]);
         await page.locator("#view-library .lib-tabs .opt").nth(2).click();
         await pick("libSkills", 0);

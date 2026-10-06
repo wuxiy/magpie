@@ -451,3 +451,25 @@ func copilotSeenAPIs(model string) []Protocol {
 	}
 	return out
 }
+
+// ForgetCopilotForTest drops what magpie keeps of each Copilot account for
+// the process's life — its session (and the API endpoint it named), Auto's
+// session, the models it was refused, may pick or saw — so a test run
+// again (-count) asks the fake GitHub it serves rather than the last run's.
+func ForgetCopilotForTest() {
+	copilotMu.Lock()
+	copilotSessions = map[string]copilotSession{}
+	copilotMu.Unlock()
+	copilotAutoMu.Lock()
+	copilotAutoSessions = map[string]copilotAutoSession{}
+	copilotAutoMu.Unlock()
+	copilotTermsMu.Lock()
+	copilotTerms, copilotPicks = map[string]map[string]bool{}, map[string][]string{}
+	copilotTermsMu.Unlock()
+	copilotSeenMu.Lock()
+	copilotSeen = map[string][]string{}
+	copilotSeenMu.Unlock()
+	copilotRefusedMu.Lock()
+	copilotRefusedAt = map[string]map[string]time.Time{}
+	copilotRefusedMu.Unlock()
+}

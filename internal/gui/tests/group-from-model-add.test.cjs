@@ -85,21 +85,51 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             await page.waitForTimeout(80);
           }
           assert.ok(at, "the wheel reaches Add, and nothing covers it");
-          const clickAdd = () => page.mouse.click(at.x, at.y);
+          // Add is clicked where it is, and what is under it is checked: the
+          // error it answers with comes in at the foot of the page and, in a
+          // one column editor (under 760px), covers Add itself until the view
+          // is scrolled to its end. The reader wheels down to the end of the
+          // page here, so that the press lands whatever the error does.
+          const clickAdd = async () => {
+            for (let i = 0; i < 80; i++) {
+              const done = await page.evaluate(() => {
+                const v = document.querySelector("#view-routing");
+                return v.scrollTop + v.clientHeight >= v.scrollHeight - 1;
+              });
+              if (done) break;
+              await page.mouse.wheel(0, 120);
+              await page.waitForTimeout(60);
+            }
+            let now = await seen();
+            for (let i = 0; i < 80 && !now; i++) {
+              await page.mouse.wheel(0, -120);
+              await page.waitForTimeout(60);
+              now = await seen();
+            }
+            assert.ok(now, "Add is under the pointer's reach to be clicked");
+            await page.mouse.click(now.x, now.y);
+          };
           return { page, ed, errors, clickAdd };
         };
 
         // Add posts the group of its one model
         let posts = [];
         let { page, ed, errors, clickAdd } = await open(posts, false);
-        // every label beside its own field: a hidden classifier left its
-        // cell behind, and Levels' label sat at the right, its choices below
-        const rows = await ed.evaluate((e) => [...e.children].filter((c) => c.matches("label") && !c.hidden && c.offsetParent).map((l) => {
+        // every label beside its own field, or over it where the editor is one
+        // column: a hidden classifier left its cell behind, and Levels' label
+        // sat at the right, its choices below. Under 760px the editor is one
+        // column on purpose (routing.css), so the label is above its field
+        // there — beside is only what a wide window can ask for.
+        const oneColumn = width <= 760;
+        const rows = await ed.evaluate((e, oneColumn) => [...e.children].filter((c) => c.matches("label") && !c.hidden && c.offsetParent).map((l) => {
           const f = l.nextElementSibling, a = l.getBoundingClientRect(), b = f.getBoundingClientRect();
-          return { label: l.textContent, beside: a.right <= b.left + 1 && Math.abs(a.top - b.top) < 12 };
-        }));
+          const beside = a.right <= b.left + 1 && Math.abs(a.top - b.top) < 12;
+          const above = a.bottom <= b.top + 1 && a.left <= b.left + 1;
+          return { label: l.textContent, beside, above };
+        }), oneColumn);
         assert.ok(rows.length >= 6, JSON.stringify(rows));
-        assert.deepEqual(rows.filter((r) => !r.beside), [], "each label beside its field");
+        assert.deepEqual(rows.filter((r) => !(oneColumn ? r.above : r.beside)), [],
+          oneColumn ? "each label over its field, the editor in one column" : "each label beside its field");
         await clickAdd();
         for (let i = 0; i < 40 && !posts.some((p) => p.path === "/api/groups/save"); i++) await page.waitForTimeout(50);
         const saved = posts.find((p) => p.path === "/api/groups/save")?.body;

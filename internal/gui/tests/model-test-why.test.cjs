@@ -71,9 +71,19 @@ const words = {
   },
   zh: {
     item: "测试此模型", all: "测试模型", ok: "gpt-6-mini 在 321 毫秒内响应",
-    own: "Kiro 走的是它自己的接口，magpie 会为 Agent 的每个请求做转换，所以无法单独给它发测试请求。请在 Agent 里用这个模型试一下。",
+    own: "Kiro 使用自有接口，由 magpie 转换 Agent 的请求，无法单独发测试请求。请在 Agent 中使用该模型测试。",
   },
 };
+
+// a right-click on a chip out of sight: Playwright scrolls it in first, and
+// Chromium sends that scroll's event a frame later, which closes the menu
+// the click opened (a menu closes on a scroll). Scroll it in, let the
+// frame pass, then click.
+async function rclick(loc) {
+  await loc.click({ button: "right", trial: true }); // scrolls it in, clicks nothing
+  await loc.page().evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await loc.click({ button: "right" });
+}
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {
@@ -107,7 +117,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const c = chip(page, "gpt-6-mini");
       await c.scrollIntoViewIfNeeded();
       const before = await c.evaluate((e) => e.getBoundingClientRect().top), sc = await scrolled(page);
-      await c.click({ button: "right" });
+      await rclick(c);
       const menu = page.locator(".pop.row-menu");
       await menu.waitFor();
       const item = menu.getByRole("menuitem", { name: w.item });
@@ -130,7 +140,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const c = chip(page, "claude-haiku-5");
       await c.scrollIntoViewIfNeeded();
       const before = await c.evaluate((e) => e.getBoundingClientRect().top), sc = await scrolled(page);
-      await c.click({ button: "right" });
+      await rclick(c);
       const menu = page.locator(".pop.row-menu");
       await menu.waitFor();
       // Test this model, off, and Copy model ID, which is on
@@ -169,7 +179,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const tests = [];
       const { page, errors } = await open(t, "Deciders", tests);
       const c = chip(page, "respan/span-01");
-      await c.click({ button: "right" });
+      await rclick(c);
       const menu = page.locator(".pop.row-menu");
       await menu.waitFor();
       const item = menu.getByRole("menuitem", { name: w.item });
@@ -189,7 +199,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     test(`${engine} ${lang}: a Workers AI classifier's model still says why it can't be tested`, async (t) => {
       const tests = [];
       const { page, errors } = await open(t, "Workers", tests);
-      await chip(page, "typesafe/jev").click({ button: "right" });
+      await rclick(chip(page, "typesafe/jev"));
       const menu = page.locator(".pop.row-menu");
       await menu.waitFor();
       assert(await menu.locator(".rm-item").first().isDisabled(), "Test this model is off");

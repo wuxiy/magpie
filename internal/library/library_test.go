@@ -534,9 +534,9 @@ func TestSkillConflictAndImport(t *testing.T) {
 	ext := filepath.Join(h, "elsewhere/lint")
 	skill(t, ext, "lint", "Linked")
 	os.MkdirAll(filepath.Join(h, ".codex/skills"), 0o755)
-	os.Symlink(ext, filepath.Join(h, ".codex/skills/lint"))
+	dirLink(ext, filepath.Join(h, ".codex/skills/lint"))
 	os.MkdirAll(filepath.Join(h, ".gemini/skills"), 0o755)
-	os.Symlink(ext, filepath.Join(h, ".gemini/skills/lint"))
+	dirLink(ext, filepath.Join(h, ".gemini/skills/lint"))
 
 	v, _ := Read(nil)
 	byName := map[string]FoundSkill{}
@@ -548,7 +548,7 @@ func TestSkillConflictAndImport(t *testing.T) {
 	}
 	ok(t)(ImportSkill("notes"))
 	ok(t)(ImportSkill("lint"))
-	if fi, err := os.Lstat(filepath.Join(h, ".claude/skills/notes")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+	if fi, err := os.Lstat(filepath.Join(h, ".claude/skills/notes")); err != nil || !linkEntry(fi) {
 		t.Errorf("notes isn't linked from the library now: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(ext, "SKILL.md")); err != nil {

@@ -59,7 +59,7 @@ const words = {
   zh: {
     nav: "会话", cancel: "取消", forever: "彻底删除", empty: "清空回收站", askOne: "彻底删除这个会话？", askAll: "清空 magpie 的回收站？",
     one: "已彻底删除", all: "已彻底删除 2 个会话", count: "3 个会话", trashEmpty: "回收站是空的",
-    note: "删除的会话保存在 ~/Library/Application Support/magpie/trash/sessions，直到你在这里彻底删除；magpie 不会自行抹掉它们。",
+    note: "已删除的会话保存在 ~/Library/Application Support/magpie/trash/sessions，在此彻底删除前不会自动清除。",
   },
 };
 

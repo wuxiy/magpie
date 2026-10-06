@@ -192,12 +192,19 @@ func History(day string) (days []HistoryDay, routes []Route, cut bool) {
 
 // routedAgain reads a route kept before Routed was: a try that asked
 // another magpie's routing group was marked swapped for the member it
-// routed to, and is routed (usage.GroupRouted).
+// routed to, and is routed (usage.GroupRouted). A try kept marked swapped
+// for its model spelled with other separators (deepseek-v4.1-flash
+// answered as deepseek-v4-1-flash) wasn't swapped (usage.SameSpelled).
 func (r *Route) routedAgain() {
 	for i := range r.Tries {
 		if tr := &r.Tries[i]; tr.Swapped && usage.GroupRouted(tr.Model, tr.Served) {
 			tr.Swapped, tr.Routed = false, true
+		} else if tr.Swapped && usage.SameSpelled(tr.Model, tr.Served) {
+			tr.Swapped = false
 		}
+	}
+	if n := len(r.Tries); n > 0 && r.Swapped && !r.Tries[n-1].Swapped && !r.Tries[n-1].Routed && r.Served == r.Tries[n-1].Served {
+		r.Swapped = false
 	}
 	if n := len(r.Tries); n > 0 && r.Swapped && r.Tries[n-1].Routed && r.Served == r.Tries[n-1].Served {
 		r.Swapped, r.Routed = false, true

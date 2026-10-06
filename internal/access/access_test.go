@@ -3,6 +3,7 @@ package access
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -226,7 +227,7 @@ func TestNamedLANKeyKeepsItsName(t *testing.T) {
 				}
 			}
 			keys, err := load()
-			if err != nil || len(keys) != 3 || keys[0] != original[0] || keys[1] != original[1] || keys[2] != original[2] {
+			if err != nil || !reflect.DeepEqual(keys, original) {
 				t.Fatal("migration changed an existing named key", keys, err)
 			}
 		})

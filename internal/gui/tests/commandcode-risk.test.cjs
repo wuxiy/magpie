@@ -37,7 +37,7 @@ function server(lang, asked) {
 
 const L = {
   en: { title: "Command Code accounts can be suspended", note: /^A Go plan account is used through Command Code's private interface, which Command Code may treat as a breach of its terms and ban the account for\. Pro, Max and the other plans use its Provider API\./, anyway: "Sign in anyway", cancel: "Cancel" },
-  zh: { title: "Command Code 账号可能被封禁", note: /^Go 套餐的账号要通过 Command Code 的私有接口使用，Command Code 可能将其视为违反服务条款并封禁该账号。Pro、Max 等其他套餐走的是它的 Provider API。/, anyway: "仍然登录", cancel: "取消" },
+  zh: { title: "Command Code 账号可能被封禁", note: /^Go 套餐账号经 Command Code 的私有接口使用，Command Code 可能视为违反条款并封禁该账号。Pro、Max 等其他套餐走其 Provider API。/, anyway: "仍然登录", cancel: "取消" },
 };
 
 // where everything that can scroll stands

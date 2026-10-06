@@ -35,7 +35,7 @@ const route = {
 
 const words = {
   en: { cond: "compacting", story: "The agent is compacting the conversation, so rule 1 sends the summary to", small: "Passed over, as the conversation is longer than they take: c/mini.", skip: "longer conversations skip it: it takes 128,000 tokens", edit: "Edit", add: "Add a rule", save: "Save" },
-  zh: { cond: "压缩上下文时", story: "Agent 正在压缩上下文，规则 1 把这次总结交给", small: "对话比它们的上下文长，已跳过：c/mini。", skip: "更长的对话会跳过它：它的上下文只有 128,000 tokens", edit: "编辑", add: "添加规则", save: "保存" },
+  zh: { cond: "压缩上下文时", story: "Agent 正在压缩上下文，规则 1 将总结交给", small: "对话比它们的上下文长，已跳过：c/mini。", skip: "更长的对话会跳过它：它的上下文只有 128,000 tokens", edit: "编辑", add: "添加规则", save: "保存" },
 };
 
 function serve(lang, posts) {

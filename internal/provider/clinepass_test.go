@@ -38,7 +38,7 @@ func TestPlanModels(t *testing.T) {
 		t.Fatalf("free: %v", free)
 	}
 	// a free model costs nothing, not its paid model's price
-	if pr, ok := p.ListPrice("cline-free/deepseek-v4.1-flash"); !ok || pr != (catalog.Price{}) {
+	if pr, ok := p.ListPrice("cline-free/deepseek-v4.1-flash"); !ok || !pr.Same(catalog.Price{}) {
 		t.Fatalf("free price: %+v %v", pr, ok)
 	}
 	// another provider's list is left as it is
@@ -100,7 +100,7 @@ func TestClineFeed(t *testing.T) {
 	// a free model the feed named and no id gives away costs nothing too,
 	// a plan's model is not called free
 	for _, id := range []string{"stealth/new-free-one", "stealth/space-bunny-alpha"} {
-		if pr, ok := p.ListPrice(id); !ok || pr != (catalog.Price{}) {
+		if pr, ok := p.ListPrice(id); !ok || !pr.Same(catalog.Price{}) {
 			t.Fatalf("%s: %+v %v", id, pr, ok)
 		}
 	}

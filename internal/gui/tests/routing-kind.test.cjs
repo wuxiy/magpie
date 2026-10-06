@@ -90,7 +90,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert(Math.abs((await row.evaluate((e) => e.getBoundingClientRect().top)) - was) <= 1, "picking the request moved the page");
       const story = page.locator(".rt-steps li.kind");
       assert.equal(await story.locator(".kind").textContent(), want[lang][0]);
-      assert.match(await story.textContent(), lang === "zh" ? /不是对话中的一轮/ : /not as a turn of the conversation/);
+      assert.match(await story.textContent(), lang === "zh" ? /不属于对话轮次/ : /not as a turn of the conversation/);
       // Codex's home-page suggestions say where Codex turns them off (#705)
       await page.locator(".rt-req").nth(kinds.indexOf("ambient_suggestions")).click();
       await page.waitForTimeout(300);

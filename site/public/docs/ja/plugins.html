@@ -47,6 +47,7 @@
     <a href="/docs/ja/intent">インテントルーティング</a>
     <a href="/docs/ja/plugins">プラグイン</a>
     <a href="/docs/ja/import">magpie に追加</a>
+    <a href="/docs/integrate">アプリ連携</a>
     <a href="https://github.com/yetone/magpie-releases/releases">リリース</a>
   </div>
   <div class="langs">
@@ -79,6 +80,7 @@
     <a href="#ids">プロバイダ id</a>
     <a href="#test">テスト</a>
     <a href="#publish">公開と掲載</a>
+    <a href="#middleware">ゲートウェイミドルウェア</a>
     <a href="#pi">pi パッケージ</a>
     <a href="#protocol">ホストプロトコル</a>
     <a href="#faq">よくある質問</a>
@@ -578,14 +580,78 @@ m plugin logout acme</pre>
   <span class="s">"providers"</span>: [<span class="s">"acme"</span>],
   <span class="s">"summary"</span>: { <span class="s">"en"</span>: <span class="s">"Your Acme Coding Plan."</span>, <span class="s">"zh"</span>: <span class="s">"使用你的 Acme Coding Plan。"</span> } }</pre>
         </div>
-        <code>MAGPIE_PLUGIN_MARKET=&lt;url&gt;</code> は magpie に別の一覧を参照させます（自分の一覧の確認に便利です）。<code>off</code> にすると内蔵のコピーだけを使います。</li>
+        ミドルウェアのエントリには <code>"kind": "middleware"</code> を書き、<code>providers</code> は書きません。<span class="ui">ゲートウェイミドルウェア</span> の下に表示されます。<code>MAGPIE_PLUGIN_MARKET=&lt;url&gt;</code> は magpie に別の一覧を参照させます（自分の一覧の確認に便利です）。<code>off</code> にすると内蔵のコピーだけを使います。</li>
       <li><b>コミュニティのパッケージ。</b><a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a> に貢献するには：
         <ul>
-          <li><code>packages/&lt;name&gt;</code> に置き、名前は <code>@magpie-community/opencode-&lt;name&gt;-auth</code> とします。本当に必要でない限り、ランタイムの依存は持たせないでください。</li>
+          <li><code>packages/&lt;name&gt;</code> に置き、名前はプロバイダなら <code>@magpie-community/opencode-&lt;name&gt;-auth</code>、ミドルウェアなら <code>@magpie-community/middleware-&lt;name&gt;</code> とします。本当に必要でない限り、ランタイムの依存は持たせないでください。</li>
           <li>バージョンを上げて <code>main</code> にプッシュすると公開されます。</li>
           <li>これらのパッケージは、どの magpie でも自動で更新されます。</li>
         </ul></li>
     </ul>
+
+    <h2 id="middleware"><a class="anchor" href="#middleware">ゲートウェイミドルウェア</a></h2>
+    <p>プラグインは<em>ゲートウェイミドルウェア</em>にもなれます。エージェントが magpie のゲートウェイに送るすべてのリクエストに対して、ルーティングの前に実行され、戻ってくる応答に対しても実行されるコードです。モデルに別名を付ける、システムプロンプトに追記する、リクエストを断る、モデルの出力を書き換えたり隠したりする、通ったものを独自に数える、といったことができます。プラグインのものかどうかに関係なく、すべてのプロバイダで動きます。</p>
+    <div class="code">
+      <span class="lang">alias.middleware.js</span>
+      <button class="copy" data-copy="mw-ex">コピー</button>
+      <pre id="mw-ex"><span class="c">// alias.middleware.js</span>
+<span class="k">export const</span> events = [<span class="s">"message_start"</span>]
+
+<span class="k">export function</span> onRequest(body, ctx) {
+  ctx.state.asked = body.model
+  <span class="k">if</span> (body.model === <span class="s">"fast"</span>) body.model = <span class="s">"deepseek/deepseek-chat"</span>
+  <span class="k">if</span> ((ctx.options.blocked ?? []).includes(body.model)) <span class="k">return</span> ctx.reject(403, <span class="s">"not this model"</span>)
+  <span class="k">return</span> body
+}
+
+<span class="k">export function</span> onEvent(ev, ctx) {
+  ev.message.model = ctx.state.asked  <span class="c">// the agent sees the name it asked for</span>
+  <span class="k">return</span> ev
+}</pre>
+    </div>
+    <div class="code">
+      <span class="lang">shell</span>
+      <button class="copy" data-copy="mw-cli">コピー</button>
+      <pre id="mw-cli">magpie plugin add ./alias.middleware.js   <span class="c"># または package.json に "magpie": { "middleware": "./mw.js" } を書いたパッケージ</span></pre>
+    </div>
+    <h3 id="middleware-community"><a class="anchor" href="#middleware-community">すぐ使えるミドルウェア</a></h3>
+    <p>コミュニティリポジトリには、そのまま追加できるミドルウェアがあります。多くは <a href="https://github.com/QuantumNous/new-api">New API</a> がチャネルに対して行うことで、同じ JSON を受け取ります。<span class="ui">プラグイン → 発見 → ゲートウェイミドルウェア</span> にあり、そこのカードにはプロバイダかミドルウェアかが表示されます。</p>
+    <div class="table-wrap"><table>
+      <tr><th>パッケージ</th><th>すること</th></tr>
+      <tr><td><a href="https://github.com/magpie-community/plugins/tree/main/packages/param-override"><code>param-override</code></a></td><td>New API の <code>param_override</code>：リクエストのフィールドを設定・削除・移動・コピー・書き換えします。特定のモデルや条件に絞ることも、リクエストを断ることもできます。New API からコピーした <code>param_override</code> はそのまま動きます。</td></tr>
+      <tr><td><a href="https://github.com/magpie-community/plugins/tree/main/packages/model-map"><code>model-map</code></a></td><td>New API の <code>model_mapping</code>：モデルを別の名前で送ります。名前か <code>/パターン/</code> で指定します。応答にはエージェントが指定したモデル名が入ります。</td></tr>
+      <tr><td><a href="https://github.com/magpie-community/plugins/tree/main/packages/system-prompt"><code>system-prompt</code></a></td><td>すべてのリクエスト（または特定のエージェントやモデルのもの）に自分のシステムプロンプトを、各 API の決まった場所に加えます。リクエストに独自のものがあれば、<code>override</code> を有効にしない限りそのままにします。</td></tr>
+      <tr><td><a href="https://github.com/magpie-community/plugins/tree/main/packages/word-guard"><code>word-guard</code></a></td><td>New API の禁止語フィルタ：ユーザーが送る内容にある語やパターンを断るか伏せ字にします。応答も伏せ字にできます。</td></tr>
+      <tr><td><a href="https://github.com/magpie-community/plugins/tree/main/packages/think-tags"><code>think-tags</code></a></td><td>応答本文の先頭にある <code>&lt;think&gt;…&lt;/think&gt;</code> を取り除くか、Chat の応答の <code>reasoning_content</code> を本文に入れます（New API の <code>thinking_to_content</code>）。</td></tr>
+    </table></div>
+    <div class="code">
+      <span class="lang">shell</span>
+      <button class="copy" data-copy="mw-add">コピー</button>
+      <pre id="mw-add">magpie plugin add @magpie-community/middleware-model-map
+magpie plugin options model-map '{"mapping": {"fast": "deepseek/deepseek-chat"}}'</pre>
+    </div>
+    <h3 id="middleware-options"><a class="anchor" href="#middleware-options">オプション</a></h3>
+    <p>ミドルウェアは設定を <code>ctx.options</code> から読みます。これは <code>plugins.json</code> のそのエントリの <code>options</code> です。<span class="ui">プラグイン → インストール済み</span> でミドルウェアの <span class="ui">オプション</span> ボタンを押すとその行で JSON として編集でき、<code>magpie plugin options &lt;名前&gt; '&lt;json&gt;'</code> でも設定できます（<code>off</code> で消去）。名前はパッケージ名、spec、短い名前のどれでもかまいません：<code>@magpie-community/middleware-model-map</code> なら <code>model-map</code> です。次のリクエストから反映されます。パッケージは <code>package.json</code> の <code>"magpie": { "options": { … } }</code> でオプションの例を示せます。未設定のときエディタはそれから始まりますが、保存するまでミドルウェアはオプションなしで動きます。</p>
+    <h3>動き方</h3>
+    <p>ミドルウェアは Bun では動きません。ゲートウェイ自身のプロセスの中で、Go で書かれた JavaScript エンジン <a href="https://github.com/Calcium-Ion/moejs">moejs</a> によって動きます。応答は数千のイベントとしてストリームされ、各イベントがミドルウェアの処理を待つからです。1 イベントでのフック呼び出しは約 1 マイクロ秒で済みますが、Bun との往復だと数十マイクロ秒かかります。各ミドルウェアのコンパイルは一度だけで、リクエストごとに専用のランタイムを使います。そのためリクエストは並行に処理され、同じリクエストのフック同士は <code>ctx.state</code> を共有します。</p>
+    <ul>
+      <li><b>宣言のしかた。</b><code>package.json</code> に <code>"magpie": { "middleware": "./mw.js" }</code> と書くか、<code>*.middleware.js</code>（または <code>.mjs</code>）という名前の単一ファイルにします。<code>main</code> も <code>exports</code> もないパッケージはミドルウェア専用で、プラグインホストは読み込みません。両方あるパッケージはプロバイダプラグインとミドルウェアを兼ねます。</li>
+      <li><b>インポート。</b>プラグイン内のファイルだけを相対パスで読み込めます。ここに <code>node_modules</code> はないので、使う依存はファイルにバンドルしてください。</li>
+      <li><b>使えるもの。</b>標準の JavaScript と <code>console.log</code>（magpie のログに出ます。1 分あたり最大 60 行）。タイマー、<code>fetch</code>、Node の API はありません。フックは <code>async</code> にできますが、待つ対象はありません。</li>
+      <li><b>変更の反映。</b>magpie はファイルと <code>plugins.json</code> を 1 秒ごとに確認し、変わっていればミドルウェアを読み込み直します。</li>
+    </ul>
+    <h3>フック</h3>
+    <p>各フックは名前付きエクスポートか、<code>export default { … }</code> のメンバーです。本文とイベントはプロバイダではなく、エージェント自身の API の形式（<code>ctx.protocol</code>）です。送り出すオブジェクトを返すか、何も返さなければ元のまま送られます。</p>
+    <div class="table-wrap"><table>
+      <tr><th>フック</th><th>渡されるもの</th><th>戻り値</th></tr>
+      <tr><td><code>onRequest(body, ctx)</code></td><td>ルーティング前のリクエスト本文。<code>model</code> を変えると別の宛先にルーティングされます。</td><td>本文、または何も返さない。<code>ctx.reject(status, message)</code> はリクエストを断り、そのエラーをエージェントの API の形式で返します（ステータスを省くと 403）。</td></tr>
+      <tr><td><code>onEvent(event, ctx)</code></td><td>ストリーム応答の各イベントの <code>data:</code> JSON。</td><td>イベント、何も返さない、またはイベントを落とす <code>null</code>。</td></tr>
+      <tr><td><code>onResponse(body, ctx)</code></td><td>ストリームでない応答の全体。<code>ctx.status</code> がそのステータスです。</td><td>本文、または何も返さない。</td></tr>
+    </table></div>
+    <p><code>export const events = ["content_block_delta"]</code> と書くと、<code>onEvent</code> はその名前のイベントだけで呼ばれます（Anthropic Messages と Responses のイベントには名前があります）。Chat Completions と Gemini のイベントには名前がないので、それらでは <code>events</code> を書かないでください。1 つのイベントは応答の一部なので、1 つの単語が 2 つのイベントに分かれることがあります。<code>data: [DONE]</code> の行とコメントはフックを通らずにそのまま流れます。圧縮された応答もそのまま流れます。</p>
+    <p><code>ctx</code> には次のものがあります：<code>protocol</code>（<code>anthropic</code>・<code>chat</code>・<code>responses</code>・<code>gemini</code>）、エージェントが指定した <code>model</code> と <code>stream</code>、<code>path</code>、magpie が把握している場合の <code>agent</code>、<code>options</code>（そのプラグインの<a href="#middleware-options">オプション</a>）、そしてリクエストごとのオブジェクト <code>state</code>。</p>
+    <h3>フックが失敗したとき</h3>
+    <p>フックの持ち時間は、リクエストまたは応答全体で 250 ms、1 イベントで 50 ms、読み込みで 1 秒です。例外を投げたフック、時間切れになったフック、想定外の値を返したフックは、なかったものとして扱われます。つまりリクエストやイベントは元のまま送られます。設定 → プラグインには、ミドルウェアごとのフック、呼び出し回数、1 回あたりの平均時間、失敗回数と直近のエラーが表示されます。フックが見るのは、エージェントが送ったものと受け取るものそのものです。送信時は magpie のマスキングより前、受信時はマスク解除の後です。magpie 自身のリクエスト（スレッドのタイトル、ルーターの分類器）はミドルウェアを通りません。</p>
 
     <h2 id="pi"><a class="anchor" href="#pi">pi パッケージ</a></h2>
     <p>magpie は <a href="https://github.com/earendil-works/pi">pi</a> のパッケージも動かします。<code>pi.registerProvider</code> でプロバイダを登録する pi 拡張は、何も変えずに pi と同じように magpie で動き、ほかのプラグインと同じ方法で追加できます（<code>magpie plugin add pi-antigravity</code>）。</p>
@@ -642,6 +708,7 @@ m plugin logout acme</pre>
     <a href="/docs/ja/intent">インテントルーティング</a>
     <a href="/docs/ja/plugins">プラグイン</a>
     <a href="/docs/ja/import">magpie に追加</a>
+    <a href="/docs/integrate">アプリ連携</a>
     <a href="https://github.com/yetone/magpie">GitHub</a>
     <a href="https://discord.gg/vGSnD3ZKQF">Discord</a>
     <a href="https://github.com/yetone/magpie-releases/releases">リリース</a>

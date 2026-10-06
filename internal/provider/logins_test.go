@@ -66,14 +66,12 @@ func TestCodexLogins(t *testing.T) {
 		}
 	}
 
-	if err := ForgetLogin("codex", "me@example.com"); err == nil {
-		t.Fatal("forgot the active login")
-	}
-	if err := ForgetLogin("codex", "work@example.com"); err != nil {
+	// the active one forgotten: Codex is signed in to the other first
+	if err := ForgetLogin("codex", "me@example.com"); err != nil {
 		t.Fatal(err)
 	}
-	if users, _ := loginUsers(Logins("codex")); strings.Join(users, ",") != "me@example.com" {
-		t.Fatalf("after forget: %v", users)
+	if users, active := loginUsers(Logins("codex")); strings.Join(users, ",") != "work@example.com" || active != "work@example.com" {
+		t.Fatalf("after forget: %v, active %q", users, active)
 	}
 	if err := SwitchLogin("codex", "nobody@example.com"); err == nil {
 		t.Fatal("switched to an unknown login")

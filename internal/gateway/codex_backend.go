@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"slices"
@@ -104,7 +105,7 @@ func (s *Server) codexBackend(w http.ResponseWriter, r *http.Request) {
 				s.codexCompact(w, r, body)
 				return
 			}
-			s.serve(w, r, provider.Responses, body)
+			s.serveAgent(w, r, provider.Responses, body)
 			return
 		}
 		body = boundCallIDs(callItemIDs(body))
@@ -112,8 +113,8 @@ func (s *Server) codexBackend(w http.ResponseWriter, r *http.Request) {
 			break // preserve native compaction's existing passthrough
 		}
 		body, _ = codexInput(body, false)
-		if id, ok := codexAccounts(r.Header, model); ok {
-			s.serve(w, r, provider.Responses, withModel(body, id))
+		if id, ok := codexAccounts(r, model); ok {
+			s.serveAgent(w, r, provider.Responses, withModel(body, id))
 			return
 		}
 		if r.Header.Get(AccountHeader) != "" {
@@ -151,6 +152,7 @@ func sealedReaders(cands []candidate, pl planned) ([]candidate, planned) {
 		}
 	}
 	cands, pl.order = kept, order
+	pl.held = slices.DeleteFunc(slices.Clone(pl.held), func(c candidate) bool { return !sealedReader(c.p) })
 	return cands, pl
 }
 
@@ -251,7 +253,11 @@ func codexReader(r *http.Request) (io.ReadCloser, error) {
 // magpie: the codex subscription's model (codex/<model>), which goes to the
 // account Codex is signed in to and, when that one is out of its allowance
 // or rate limited, on to the next — as it can't when relayed as it came.
-func codexAccounts(h http.Header, model string) (string, bool) {
+// A gateway key held to some models or accounts (#882, #905) is served
+// through it always, alone no less: the relay would spend Codex's own
+// sign-in with nothing of the key asked, its accounts and its models both.
+func codexAccounts(r *http.Request, model string) (string, bool) {
+	h := r.Header
 	if model == "" || strings.Contains(model, "/") || apiKey(h) {
 		return "", false
 	}
@@ -259,9 +265,22 @@ func codexAccounts(h http.Header, model string) (string, bool) {
 	p, _, ok := provider.Resolve(id)
 	// one account named is found among them however many are on
 	pinned := h.Get(AccountHeader) != ""
-	// an account with a usage cap goes through routing, which holds it
-	// there, even alone: relayed as it came, nothing would
-	if ok && p.Account != nil && p.Account.Agent == "codex" && p.AccountCap(p.Account.User) > 0 {
+	// an account with a usage cap, or set not to spend its credits, goes
+	// through routing, which holds it there, even alone: relayed as it
+	// came, nothing would
+	if ok && p.Account != nil && p.Account.Agent == "codex" {
+		if share, _ := provider.HoldShare(p, "codex", p.Account.User); share > 0 {
+			return id, true
+		}
+	}
+	// the key's holds are served, not relayed past: a key held to some
+	// models or accounts goes through routing, which holds it to them,
+	// where the relay as it came asks nothing of the key — an account it
+	// may not use spent, a model it may not asked for. Neither list set,
+	// the relay is the key's as it always was
+	_, keyHeld := keyHolds(r)
+	_, accHeld := accountHolds(r)
+	if keyHeld || accHeld {
 		return id, true
 	}
 	if !ok || p.Account == nil || p.Account.Agent != "codex" || len(p.AlsoOn()) == 0 && !pinned {
@@ -312,18 +331,24 @@ func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest stri
 	kind := requestCallKind(r.Header, metadata)
 	var titleReply capturedBody // bounded; ordinary streams incur no copy
 	captureTitle := false
+	effort := "" // the reasoning Codex asked for, which goes on as it is
 	end := func(status int, msg string, tokens, out int) {}
 	if rest == "/responses" {
+		imageProvider := ""
+		if !apiKey(r.Header) {
+			imageProvider = "codex"
+		}
 		who := "Codex's own sign-in"
 		if base == codexAPIBase {
 			who = "Codex's API key"
 		}
 		model := modelOf(body)
+		effort = requestEffort(provider.Responses, body)
 		seat := Weighed{ID: "codex", Provider: "openai", Name: "OpenAI", Icon: "openai", Who: who, Kind: "account", Agent: "codex", Model: model}
 		link := s.titlePrompts.observe(r, body, metadata, kind, start)
 		captureTitle = link != nil && isTitleKind(kind)
-		tr = s.trace.begin(Route{TitleLink: link, Time: start, Agent: agentOf(r), Session: sessionOf(r.Header), ParentSession: titleParentSession(r.Header, metadata, kind), Kind: kind, Model: model, Provider: "openai",
-			Order: []Weighed{seat}, Tries: []Try{{ID: seat.ID, Model: model, Start: start}}})
+		tr = s.trace.begin(Route{imageTurn: drawingTurnID(metadata.Turn), imageCaller: codexTurnKey(r, callerOf(r).agent), imageProvider: imageProvider, TitleLink: link, Time: start, Agent: agentOf(r), Session: sessionOf(r.Header), ParentSession: titleParentSession(r.Header, metadata, kind), Kind: kind, Model: model, Effort: effort, Provider: "openai",
+			Order: []Weighed{seat}, Tries: []Try{{ID: seat.ID, Model: model, Effort: effort, Start: start}}})
 		end = func(status int, msg string, tokens, out int) {
 			ms := time.Since(start).Milliseconds()
 			ttft, text := first.ms()
@@ -492,7 +517,7 @@ func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest stri
 	rec := usage.Record{RouteID: tr.ID, Time: start, Agent: call.Agent, Provider: call.Provider, Host: provider.HostOf(base), Model: call.Model,
 		Requested: call.Model, Served: served,
 		Input: uu.Input, Output: uu.Output, CacheRead: uu.CacheRead, CacheWrite: uu.CacheWrite,
-		Reasoning: uu.Reasoning, Millis: call.Millis, TTFT: call.TTFT, FirstText: call.FirstText, Status: call.Status, Session: sessionOf(r.Header), NativeSession: nativeSessionOf(r.Header), Kind: call.Kind,
+		Reasoning: uu.Reasoning, Effort: effort, Millis: call.Millis, TTFT: call.TTFT, FirstText: call.FirstText, Status: call.Status, Session: sessionOf(r.Header), NativeSession: nativeSessionOf(r.Header), Kind: call.Kind,
 		RequestID: requestID(res.Header), ResponseID: uu.ResponseID, Endpoint: r.URL.Path}
 	failedWith(&rec, call.Status, call.Error, errType)
 	appendUsage(r, rec)
@@ -786,10 +811,20 @@ func (s *Server) codexModels(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// and the auto-review model the user picked (#938)
+	for _, m := range own {
+		if o, ok := m.(map[string]any); ok {
+			codexcat.AutoReview(o)
+		}
+	}
 	ms := provider.CodexListed()
 	// the list is the backend's and magpie's, and so is its ETag
 	w.Header().Set("ETag", codexcat.WithTag(etag, provider.CodexListTag()))
-	writeJSON(w, 200, map[string]any{"models": append(own, codexcat.Entries(ms, len(own)+100)...)})
+	all := append(own, codexcat.Entries(ms, len(own)+100)...)
+	if at, ok := provider.CodexOrder(); ok {
+		codexcat.Order(all, at)
+	}
+	writeJSON(w, 200, map[string]any{"models": all})
 }
 
 // modelsEtag is the X-Models-Etag of a backend reply as Codex should read
@@ -1073,9 +1108,30 @@ func userMessage(text string) map[string]any {
 // summarises it, and the summary goes back to Codex as the compaction item
 // the backend would have made, marked as magpie's so magpie reads it back
 // in later requests.
+//
+// A provider that answers the summary 404 — a relay that serves the
+// conversation turn by turn but not the summary of it, "Upstream request
+// failed" (#866) — is asked once more with the conversation as plain text,
+// none of its items' ids or sealed reasoning in it; when that fails too the
+// summary is magpie's own, the conversation's user messages and last reply,
+// so the compaction still completes and Codex goes on. Any other failure
+// (401, 429, 500) goes back to Codex as it came.
 func (s *Server) codexCompact(w http.ResponseWriter, r *http.Request, body []byte) {
 	rec := &recorder{header: http.Header{}, status: 200}
 	s.serve(rec, r, provider.Responses, body)
+	local := ""
+	if rec.status == http.StatusNotFound {
+		who, msg := compactFailure(body, rec)
+		log.Printf("codex compaction: %s answered 404 (%s); asking again with the conversation as text", who, msg)
+		rec = &recorder{header: http.Header{}, status: 200}
+		s.serve(rec, r, provider.Responses, plainCompact(body))
+		if rec.status >= 400 {
+			_, again := compactFailure(body, rec)
+			log.Printf("codex compaction: %s answered %d again (%s); compacting locally", who, rec.status, again)
+			local = localSummary(body, who+" answered 404 to the summary request: "+msg)
+			rec = &recorder{header: http.Header{}, status: 200}
+		}
+	}
 	if rec.status >= 400 {
 		for k, vs := range rec.header {
 			w.Header()[k] = vs
@@ -1084,18 +1140,23 @@ func (s *Server) codexCompact(w http.ResponseWriter, r *http.Request, body []byt
 		w.Write(rec.body.Bytes())
 		return
 	}
-	res, err := compactReply(rec.body.Bytes())
-	if err != nil {
-		writeError(w, provider.Responses, 502, "compaction: "+err.Error())
-		return
-	}
+	var res compactResult
 	var sum strings.Builder
-	for _, o := range res.Output {
-		if o.Type != "message" {
-			continue
+	if local != "" {
+		sum.WriteString(local)
+	} else {
+		var err error
+		if res, err = compactReply(rec.body.Bytes()); err != nil {
+			writeError(w, provider.Responses, 502, "compaction: "+err.Error())
+			return
 		}
-		for _, c := range o.Content {
-			sum.WriteString(c.Text)
+		for _, o := range res.Output {
+			if o.Type != "message" {
+				continue
+			}
+			for _, c := range o.Content {
+				sum.WriteString(c.Text)
+			}
 		}
 	}
 	if strings.TrimSpace(sum.String()) == "" {
@@ -1128,6 +1189,144 @@ func (s *Server) codexCompact(w http.ResponseWriter, r *http.Request, body []byt
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// compactFailure names who answered a summary request with a failure — the
+// provider, the model and the provider's base URL — and what it said.
+func compactFailure(body []byte, rec *recorder) (who, msg string) {
+	model := modelOf(body)
+	who = cmp.Or(rec.header.Get(providerHeader), strings.SplitN(model, "/", 2)[0]) +
+		" (" + cmp.Or(rec.header.Get(modelHeader), model)
+	if p, _, ok := provider.Resolve(model); ok {
+		if u := cmp.Or(p.Base(provider.Responses), p.Base(provider.Chat), p.Base(provider.Anthropic)); u != "" {
+			who += ", " + u
+		}
+	}
+	return who + ")", provider.APIError(rec.body.Bytes(), http.StatusText(rec.status))
+}
+
+// compactItems is a summary request and its input's items.
+func compactItems(body []byte) (map[string]json.RawMessage, []map[string]any) {
+	var q map[string]json.RawMessage
+	if json.Unmarshal(body, &q) != nil {
+		return nil, nil
+	}
+	var items []map[string]any
+	json.Unmarshal(q["input"], &items)
+	return q, items
+}
+
+// itemText is what an input item says, as text: a message's text parts, a
+// call's name and arguments, a call's output (its middle left out when
+// long), reasoning's summary.
+func itemText(it map[string]any) (role, text string) {
+	str := func(v any) string { s, _ := v.(string); return s }
+	parts := func(v any) string {
+		if s, ok := v.(string); ok {
+			return s
+		}
+		var ts []string
+		ps, _ := v.([]any)
+		for _, p := range ps {
+			if m, ok := p.(map[string]any); ok && str(m["text"]) != "" {
+				ts = append(ts, str(m["text"]))
+			}
+		}
+		return strings.Join(ts, "\n")
+	}
+	switch str(it["type"]) {
+	case "message", "":
+		return cmp.Or(str(it["role"]), "user"), parts(it["content"])
+	case "function_call", "custom_tool_call":
+		return "tool call", str(it["name"]) + " " + cmp.Or(str(it["arguments"]), str(it["input"]))
+	case "function_call_output", "custom_tool_call_output":
+		out := parts(it["output"])
+		if len(out) > 4000 {
+			out = out[:2000] + "\n…\n" + out[len(out)-2000:]
+		}
+		return "tool output", out
+	case "reasoning":
+		return "reasoning", parts(it["summary"])
+	}
+	return "", ""
+}
+
+// plainCompact is a summary request with the conversation in it as text, in
+// one user message, and Codex's request to summarise it after: no item ids,
+// sealed reasoning or calls a provider may look up and not find.
+func plainCompact(body []byte) []byte {
+	q, items := compactItems(body)
+	if q == nil {
+		return body
+	}
+	var b strings.Builder
+	for _, it := range items {
+		role, text := itemText(it)
+		if strings.TrimSpace(text) == "" || text == codexCompactPrompt {
+			continue
+		}
+		fmt.Fprintf(&b, "[%s]\n%s\n\n", role, text)
+	}
+	t := b.String()
+	if len(t) > plainCompactMax {
+		t = "…\n" + t[len(t)-plainCompactMax:]
+	}
+	q["input"], _ = json.Marshal([]map[string]any{
+		userMessage("This is the conversation so far:\n\n" + t),
+		userMessage(codexCompactPrompt),
+	})
+	delete(q, "previous_response_id")
+	nb, err := json.Marshal(q)
+	if err != nil {
+		return body
+	}
+	return nb
+}
+
+// plainCompactMax bounds the conversation's text a plain summary request
+// carries; the oldest of it is left out.
+const plainCompactMax = 400_000
+
+// localSummaryMax bounds the user's messages a local summary keeps, the
+// latest of them, as Codex's own compaction does.
+const localSummaryMax = 80_000
+
+// localSummary is a summary made without a model: what the user asked (the
+// summaries before this one with it), the latest of it kept, and the last
+// reply.
+func localSummary(body []byte, why string) string {
+	_, items := compactItems(body)
+	var asked []string
+	last := ""
+	for _, it := range items {
+		role, text := itemText(it)
+		text = strings.TrimSpace(text)
+		switch {
+		case text == "" || text == codexCompactPrompt:
+		case role == "user":
+			asked = append(asked, text)
+		case role == "assistant":
+			last = text
+		}
+	}
+	from, n := len(asked), 0
+	for from > 0 && n+len(asked[from-1]) <= localSummaryMax {
+		from--
+		n += len(asked[from])
+	}
+	var b strings.Builder
+	b.WriteString("magpie compacted this conversation without a model (" + why + "), so this is no summary: it is what the user asked")
+	if from > 0 {
+		fmt.Fprintf(&b, " (the latest %d of %d messages)", len(asked)-from, len(asked))
+	}
+	b.WriteString(" and the last reply. Look at the workspace for where the work stands before going on.\n\n## The user's messages\n")
+	for _, a := range asked[from:] {
+		b.WriteString("\n" + a + "\n")
+	}
+	if last != "" {
+		b.WriteString("\n## The last reply\n\n" + last + "\n")
+	}
+	return b.String()
 }
 
 type compactOutput struct {

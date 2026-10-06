@@ -50,8 +50,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     await page.getByRole("button", { name: "Names & levels" }).click();
     const list = page.locator(".mnames:not([hidden])");
     assert(await list.evaluate((e) => e.scrollHeight > e.clientHeight), "fixture must overflow");
-    await list.evaluate((e) => { e.scrollTop = 260; });
-    const before = await list.evaluate((e) => e.scrollTop);
+    // the list scrolled by hand so a row's levels are in sight, mid-list: a
+    // row has its price and more under its name now, so a fixed offset
+    // left model-5 out of sight and Playwright's own scroll moved the list
+    const into = (id) => list.evaluate((e, id) => {
+      const box = [...e.querySelectorAll(".mname")].find((r) => r.querySelector("code")?.textContent === id).querySelector("input[type=checkbox]");
+      e.scrollTop += box.getBoundingClientRect().top - e.getBoundingClientRect().top - e.clientHeight / 2;
+      const r = box.getBoundingClientRect(), l = e.getBoundingClientRect();
+      if (r.top < l.top || r.bottom > l.bottom) throw new Error(`${id}'s levels can't be scrolled into sight`);
+      return e.scrollTop;
+    }, id);
+    let before = await into("model-5");
     assert(before > 0);
     const fifth = page.locator(".mname", { has: page.locator("code", { hasText: "model-5" }) });
     const old = await list.elementHandle();
@@ -60,6 +69,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     assert.equal(await fifth.getByRole("checkbox", { name: "low" }).isChecked(), false);
     assert.equal(await list.evaluate((e) => e.scrollTop), before);
     const next = page.locator(".mname", { has: page.locator("code", { hasText: "model-6" }) });
+    before = await into("model-6");
     await next.getByRole("checkbox", { name: "high" }).uncheck();
     assert.equal(await next.getByRole("checkbox", { name: "high" }).isChecked(), false);
     assert.deepEqual(posts, []);

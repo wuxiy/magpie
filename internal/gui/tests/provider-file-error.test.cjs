@@ -40,7 +40,7 @@ const account = {
   account: { agent: "codex", agentName: "Codex", user: "me@example.com", plan: "Plus", logins: [] },
 };
 const heading = { en: "Your providers file can't be read", zh: "无法读取供应商配置文件" };
-const body = { en: "Fix the file or move it aside", zh: "请修复该文件或将其移走" };
+const body = { en: "Fix the file or move it aside", zh: "请修复或移走该文件" };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {

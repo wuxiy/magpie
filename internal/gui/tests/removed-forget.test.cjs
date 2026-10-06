@@ -20,7 +20,7 @@ const qoderCN = { id: "qoder-cn", name: "Qoder CN", icon: "qoder", models: [], a
 // the removed Qoder, named by its provider as the backend now names it
 const removed = (quiet) => ({ agent: "plugin", provider: "qoder-plugin", name: "Qoder", why: "You removed it from magpie.", quiet, agentName: "Qoder", agentIcon: "qoder" });
 
-function server(lang, asked, quiet) {
+function server(lang, asked, quiet, fail) {
   let gone = false;
   return async (route) => {
     const url = new URL(route.request().url());
@@ -32,6 +32,7 @@ function server(lang, asked, quiet) {
     if (url.pathname === "/api/providers") return json(state());
     if (url.pathname.startsWith("/api/provider/")) {
       asked.push([url.pathname.slice("/api/provider/".length), route.request().postDataJSON()]);
+      if (fail && url.pathname.endsWith("/forget")) return route.fulfill({ status: 400, json: { error: fail } });
       if (url.pathname.endsWith("/forget")) gone = true;
       return json(state());
     }
@@ -92,6 +93,29 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.locator("#modal").waitFor({ state: "hidden" });
         assert.deepEqual(asked, [["forget", { id: "qoder-plugin" }]]);
         assert.deepEqual(errors, []);
+      });
+
+      // #874: a sign-out that failed showed its error for a blink as the
+      // ask closed over it; the ask now stays, with the error in it, and
+      // Sign out can be pressed again
+      await t.test(lang + ": a failed sign-out stays with its error", async () => {
+        const w = L[lang];
+        const page = await (await browser.newContext({ viewport: { width: 900, height: 700 } })).newPage();
+        page.setDefaultTimeout(5000);
+        const asked = [];
+        await page.route("**/*", server(lang, asked, false, "the vendor said no"));
+        await page.goto("http://magpie.test/?view=providers");
+        await page.locator("#excluded .excluded button.link", { hasText: new RegExp("^" + w.line + "$") }).click();
+        const ask = page.locator("#modal .forget-ask");
+        await ask.waitFor();
+        const go = ask.locator("button", { hasText: new RegExp("^" + w.go + "$") });
+        await go.click();
+        await ask.locator(".editor-error").waitFor();
+        await new Promise((r) => setTimeout(r, 600)); // past the modal's close
+        assert.ok(await ask.isVisible(), "the ask closed over its error");
+        assert.match(await ask.locator(".editor-error").innerText(), /the vendor said no/);
+        assert.ok(await go.isEnabled(), "Sign out can be pressed again");
+        assert.deepEqual(asked, [["forget", { id: "qoder-plugin" }]]);
       });
 
       await t.test(lang + ": Add it back is still there", async () => {

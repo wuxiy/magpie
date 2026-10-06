@@ -162,6 +162,9 @@ body.window.mac .top { padding-left: calc(96px / var(--zoom, 1)); height: calc(5
 body.window.mac .seg { top: calc(50% + 1px / var(--zoom, 1)); } /* 50% centres in the padding box; the 2px top padding puts the flex row a pixel lower */
 .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: .01em; }
 body.window:not(.mac):not(.linux):not(.web) .brand { display: none; } /* Windows' title bar above already shows the icon and the name; a browser tab has no title bar of the app's */
+/* app.js removes these controls later; keep them out of the first paint too. */
+body.window :is(#open, #openMain, #quit),
+body:not(.window.linux) #winclose { display: none; }
 /* Linux: the header is the title bar, so it closes the window too — round,
    as GNOME draws its close button, and set a little apart from the icons */
 .icon.winclose { align-self: center; width: 22px; height: 22px; margin-left: 8px; border-radius: 50%; background: var(--pill); color: var(--fg-2); }
@@ -293,15 +296,33 @@ body.window .top.inrow .actions { margin-left: 0; }
 /* ---- lists ---------------------------------------------------------------- */
 .view { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 4px; display: flex; flex-direction: column; animation: view-in .24s var(--ease); }
 @keyframes view-in { from { opacity: 0; transform: translateY(5px); } }
+@media (prefers-reduced-motion: reduce) { .view { animation-name: fade-in; } }
 body.window .view { padding: 2px 16px 8px; }
+/* a page of rows and settings keeps to a width the eye can follow across,
+   centred in a maximized window, rather than its name at one edge and its
+   switch at the other (#860); the tables and charts of Routing, Usage and
+   Sessions take the whole width */
+body.window :is(#view-agents, #view-providers, #view-gateway, #view-library, #view-plugins, #view-settings) { padding-left: max(16px, calc(50% - 600px)); padding-right: max(16px, calc(50% - 600px)); }
 .view > .view-room { flex: none; pointer-events: none; } /* see "where the reader is" */
-.view::-webkit-scrollbar { width: 0; }
 /* Windows and Linux draw a classic scrollbar, arrows and all; a thin rounded
    thumb instead, like the overlay one macOS shows (left as it is there) */
 :where(body:not(.mac)) ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
 :where(body:not(.mac)) ::-webkit-scrollbar-thumb { background: var(--faint); border: 3px solid transparent; border-radius: 10px; background-clip: padding-box; }
 :where(body:not(.mac)) ::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
 :where(body:not(.mac)) ::-webkit-scrollbar-button, :where(body:not(.mac)) ::-webkit-scrollbar-corner { display: none; background: transparent; }
+/* a page, a dialog and a framed editor that run longer than the window
+   show where the reader is in them with a thin thumb, on the Mac too
+   (PAMI on Discord: no page had a scrollbar) — the WebView draws the
+   Mac's overlay one only while a trackpad scrolls, and a mouse never */
+body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar { width: 8px; background: transparent; }
+body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar-thumb { background: var(--faint); border: 2px solid transparent; border-radius: 8px; background-clip: padding-box; }
+body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar-corner { background: transparent; }
+/* WebKit lays a framed editor's grid out at the full width and then lets
+   the 8px bar take its right edge, so a body that scrolled ran 8px wide
+   and scrolled sideways; the bar's room is always kept, out of the right
+   padding, so the fields end where they did */
+body.mac .modal .editor.framed > .ebody { overflow-y: scroll; padding-right: 10px; }
 .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; flex: none; }
 body.panel .list { border: 0; border-radius: 10px; box-shadow: var(--card-edge); }
 .row { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 5px 9px 5px 11px; }
@@ -614,6 +635,13 @@ body.window .field.solo { grid-column: auto; }
 .quota-curve .qc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 10.5px; color: var(--muted); }
 .quota-curve .qc-range { font-size: 10px; color: var(--faint); }
 .quota-curve .qc-plot { display: block; width: 100%; height: 52px; margin-top: 5px; overflow: hidden; }
+/* a click makes a curve larger, another back (TJHHHH on Discord) */
+.quota-curve .qc-plot { cursor: zoom-in; transition: height .15s ease; }
+.quota-curve.big .qc-plot { height: 168px; cursor: zoom-out; }
+.quota-curve .qc-plot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+@media (prefers-reduced-motion: reduce) { .quota-curve .qc-plot { transition: none; } }
+.balance-curve .qc-range { color: var(--muted); }
+.balance-curve .bc-pace { color: var(--faint); }
 .qc-grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .qc-line { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 /* a window far shorter than the span drawn (a 5-hour one over a week) is a
@@ -676,7 +704,9 @@ body.window .field.solo { grid-column: auto; }
    card's other lines do (#840) */
 .quota-refresh { display: inline-flex; align-items: center; justify-content: center; width: 0; height: 14px; margin: 0; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--faint); vertical-align: -3px; opacity: 0; overflow: hidden; cursor: pointer; transition: width .12s, margin .12s, opacity .12s; }
 .quota-refresh svg { flex: none; }
-.subscription-card:hover .quota-refresh, .quota-refresh:focus-visible, .quota-refresh.busy { width: 14px; margin: 0 3px 0 -2px; opacity: 1; }
+.subscription-card:hover .quota-refresh, .quota-refresh.busy { width: 14px; margin: 0 3px 0 -2px; opacity: 1; }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.quota-refresh:focus-visible { width: 14px; margin: 0 3px 0 -2px; opacity: 1; }
 .quota-refresh:hover { color: var(--fg); background: var(--pill-hover); }
 .quota-refresh.busy { cursor: default; }
 .quota-refresh.busy svg { animation: spin .8s linear infinite; }
@@ -750,7 +780,7 @@ body.window .field.solo { grid-column: auto; }
    were of — by provider, agent or model — which is also the chart's legend */
 .led-dash { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
 .led-dash[hidden] { display: none; }
-.led-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.led-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
 .led-strip .blk { min-width: 0; padding: 11px 15px 10px; }
 .led-strip .blk + .blk { border-left: 1px solid var(--line-2); }
 .led-strip .k { display: block; font-size: 11px; color: var(--muted); }
@@ -761,9 +791,11 @@ body.window .field.solo { grid-column: auto; }
 .led-strip .meter { height: 5px; margin-top: 8px; border-radius: 3px; background: var(--pill); overflow: hidden; }
 .led-strip .meter i { display: block; height: 100%; border-radius: 3px; background: var(--green); }
 .led-trend { padding: 10px 14px 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
-.led-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.led-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-bottom: 8px; }
 .led-bar .grow { flex: 1; }
 .led-by { font-size: 11.5px; color: var(--muted); }
+/* "Split by" and its choices wrap together, under the metrics when narrow */
+.led-split { display: flex; align-items: center; gap: 8px; }
 .led-body { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: 18px; }
 .led-chart { min-width: 0; }
 .led-chart .plot { position: relative; height: 236px; }
@@ -772,6 +804,8 @@ body.window .field.solo { grid-column: auto; }
 .led-chart .axis { fill: var(--muted); font-size: 10.5px; }
 .led-chart .hot { fill: var(--pill); }
 .led-chart rect.col { transition: opacity .12s; }
+/* a speed chart's column is all the replies', each one told apart a mark on it */
+.led-chart rect.col.all { fill-opacity: .55; }
 .led-chart .led-day { cursor: pointer; outline: none; }
 .led-chart .led-day:focus-visible { stroke: var(--accent); stroke-width: 1; }
 .led-chart .tip { position: absolute; top: 2px; z-index: 2; min-width: 172px; max-width: 260px; padding: 8px 10px 7px; background: var(--pop-bg); border-radius: 9px; box-shadow: var(--shadow); font-size: 11.5px; pointer-events: none; }
@@ -820,8 +854,9 @@ body.window .field.solo { grid-column: auto; }
   .led-body { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .led-rail { display: none; }
   .led-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .led-strip .blk:nth-child(3) { border-left: 0; }
+  .led-strip .blk:nth-child(odd) { border-left: 0; }
   .led-strip .blk:nth-child(n + 3) { border-top: 1px solid var(--line-2); }
+  .led-strip .blk:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 /* over the requests: their sum, and at its right the request archive's switch */
 .led-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 0 2px 7px; min-width: 0; }
@@ -868,6 +903,14 @@ body.window .field.solo { grid-column: auto; }
 #ledRoute[hidden] { display: none; }
 #ledRouteClear { font-size: 18px; padding: 2px 6px; }
 .led .model, .led .where { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+/* a window too narrow for every column leaves out those the row's details
+   say (#860), and narrows the names */
+.led.tight .lc-opt, .led:not(.tight) .led-dl .lc-opt { display: none; }
+.led.tight .led-dl .lc-opt { display: block; }
+.led.tight .model, .led.tight .where { max-width: 160px; }
+.led.tight th, .led.tight td { padding-left: 6px; padding-right: 6px; }
+.led-tight { font-size: 11.5px; color: var(--muted); }
+.led-tight[hidden] { display: none; }
 .led .where { color: var(--fg-2); }
 .led .where-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .led .source-badges { display: flex; flex-wrap: nowrap; gap: 4px; margin-top: 4px; }
@@ -889,6 +932,7 @@ body.window .field.solo { grid-column: auto; }
 .led .src.official::before { content: ""; width: 6px; height: 3.5px; border-left: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-1px) rotate(-45deg); }
 .led .src.access-api { --badge-ink: var(--tk-f); }
 .led .src.access-subscription { --badge-ink: var(--tk-k); }
+.led .src.proto { --badge-ink: var(--muted); font-weight: 500; }
 .led .duration { font-weight: 550; }
 .led .duration-fast { color: var(--tk-s); }
 .led .duration-slow { color: var(--amber); }
@@ -1093,7 +1137,9 @@ details.cx-part[open] > summary .cx-h { margin-bottom: 2px; }
 /* a row of the Usage page's list opens on the Sessions page (#752) */
 .row.sess.sess-link { cursor: pointer; }
 .row.sess .sess-go { flex: none; display: inline-flex; color: var(--faint); }
-.row.sess.sess-link:hover .sess-go, .row.sess.sess-link:focus-visible .sess-go { color: var(--fg-2); }
+.row.sess.sess-link:hover .sess-go { color: var(--fg-2); }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.row.sess.sess-link:focus-visible .sess-go { color: var(--fg-2); }
 .sess-all { flex: none; white-space: nowrap; }
 .sess-resume { flex: none; height: 24px; padding: 0 10px; border-radius: 7px; border: 0; background: var(--pill); color: var(--fg); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
 .sess-resume:hover { background: var(--pill-hover); }
@@ -1285,18 +1331,23 @@ body.panel .profiles #save { height: 25px; } /* the field's: the line keeps its 
 .pq-use:hover { background: color-mix(in srgb, var(--fg) 12%, transparent); color: var(--fg); }
 /* a Codex account spending its resets by itself (#719): a standing say of
    the account's, held or not, its two times in words beside a switch */
-.quota-autoreset, .pq-autoreset { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-.quota-autoreset { margin-top: 8px; font-size: 10.5px; }
-.quota-resets + .quota-autoreset { margin-top: 6px; }
-.subscription-card.several .quota-autoreset + .subscription-account { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }
-.pq-autoreset { grid-column: 1 / -1; margin-top: 5px; padding-top: 7px; border-top: 1px solid var(--line-2); font-size: 11px; }
-.pq-resets + .pq-autoreset { margin-top: 5px; padding-top: 0; border-top: 0; }
+.quota-autoreset, .pq-autoreset, .quota-credits, .pq-credits { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+/* the switch keeps by the first line, so one whose words rewrap when it
+   turns stays under the pointer */
+.quota-autoreset, .pq-autoreset, .quota-credits, .pq-credits { align-items: flex-start; }
+.quota-autoreset .ar-say, .pq-autoreset .ar-say, .quota-credits .ar-say, .pq-credits .ar-say { line-height: 16px; }
+.quota-autoreset, .quota-credits { margin-top: 8px; font-size: 10.5px; }
+.quota-resets + .quota-autoreset, .quota-autoreset + .quota-credits { margin-top: 6px; }
+.subscription-card.several .quota-autoreset + .subscription-account,
+.subscription-card.several .quota-credits + .subscription-account { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }
+.pq-autoreset, .pq-credits { grid-column: 1 / -1; margin-top: 5px; padding-top: 7px; border-top: 1px solid var(--line-2); font-size: 11px; }
+.pq-resets + .pq-autoreset, .pq-autoreset + .pq-credits { margin-top: 5px; padding-top: 0; border-top: 0; }
 .ar-say { flex: 1; min-width: 0; line-height: 1.35; }
 .ar-say b { font-weight: 500; color: var(--fg-2); }
-.lib-switch.auto-reset { width: 28px; height: 16px; padding: 0; border: 0; cursor: pointer; }
-.lib-switch.auto-reset i { width: 12px; height: 12px; }
-.lib-switch.auto-reset.on i { transform: translateX(12px); }
-.lib-switch.auto-reset:disabled { opacity: .6; cursor: default; }
+.lib-switch.auto-reset, .lib-switch.use-credits { width: 28px; height: 16px; padding: 0; border: 0; cursor: pointer; }
+.lib-switch.auto-reset i, .lib-switch.use-credits i { width: 12px; height: 12px; }
+.lib-switch.auto-reset.on i, .lib-switch.use-credits.on i { transform: translateX(12px); }
+.lib-switch.auto-reset:disabled, .lib-switch.use-credits:disabled { opacity: .6; cursor: default; }
 .resets-kept { color: var(--faint); }
 .resets-kept.on { color: var(--accent); }
 /* in brief: the resets held and the say, beside the account's name */
@@ -1349,6 +1400,11 @@ body.panel .foot { min-height: 0; padding: 5px 8px 7px 14px; border-top: 1px sol
 /* several accounts: the button opening the ones in brief, in the head */
 .subscription-card .quota-more { margin: -4px -7px -4px auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--muted); }
 .subscription-card .quota-more:hover { color: var(--fg); }
+/* a provider's keys: their sum in the head, the rest of them behind a button at the foot */
+.subscription-head .quota-sum { margin-left: auto; flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.subscription-card .quota-sum + .quota-more { margin-left: 4px; }
+.subscription-card .quota-keys-more { display: block; margin: 8px 0 -4px -7px; max-width: calc(100% + 7px); overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--muted); }
+.subscription-card .quota-keys-more:hover { color: var(--fg); }
 .text { font-size: 12px; color: var(--ctl-fg); padding: 3px 7px; border-radius: 6px; transition: background .12s, color .12s; white-space: nowrap; }
 .text:hover { color: var(--fg); background: var(--pill); }
 .text.action { height: 27px; padding: 0 10px; border: 1px solid var(--line); background: var(--card); color: var(--fg-2); box-shadow: 0 1px 1px rgba(0, 0, 0, .04); display: inline-flex; align-items: center; justify-content: center; }
@@ -1416,8 +1472,10 @@ body.window .foot { padding-left: 18px; }
 .status.err { color: var(--red); }
 .status.warn { color: var(--amber); }
 /* an outcome (Refresh, Test models…) stands out from the corner it is in:
-   a solid pill in its colour, over a window the desktop shows through */
-.status.ok, .status.err, .status.warn { font-size: 12.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, currentColor 16%, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent); }
+   a solid pill in its colour, over a window the desktop shows through;
+   it fits the footer's 22px, so its coming doesn't make the page above
+   it shorter and move it */
+.status.ok, .status.err, .status.warn { font-size: 12.5px; line-height: 16px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, currentColor 16%, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent); }
 .status.lift { position: fixed; z-index: 21; font-size: 12.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, currentColor 16%, var(--card)); left: 50%; bottom: 18px; transform: translateX(-50%); max-width: calc(100vw - 32px); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent), 0 6px 20px rgba(0, 0, 0, .28); animation: fade-in .2s var(--ease); }
 
 /* ---- picker popover ------------------------------------------------------- */
@@ -1481,6 +1539,16 @@ body.window .foot { padding-left: 18px; }
 .pop li .favorite.on { color: var(--amber); }
 /* not a favourite: an outline star, on hover; a favourite: a filled one, always */
 .pop li .favorite.on path { fill: currentColor; }
+/* a model sent fast for the agent (#954): a bolt, filled when on; shown
+   on the row under the pointer or the keys, the current one, and when on */
+.pop li .fast { display: none; align-items: center; justify-content: center; color: var(--faint); width: 24px; height: 24px; border-radius: 6px; flex: none; }
+.pop li:hover .fast, .pop li.sel .fast, .pop li.cur .fast, .pop li .fast.on { display: inline-flex; }
+.pop li .fast:hover { color: var(--accent); background: var(--pill-hover); }
+.pop li .fast.on { color: var(--accent); }
+.pop li .fast.on path { fill: currentColor; }
+.field .fast-tag { display: inline-flex; flex: none; color: var(--accent); }
+.field .fast-tag path { fill: currentColor; }
+.ag-open .field .fast-tag { order: 1; }
 .pop.explained li { height: auto; padding: 7px 8px; white-space: normal; align-items: flex-start; }
 .pop.explained li .option-words { flex-direction: column; align-items: flex-start; gap: 2px; }
 .pop.explained li .n { flex: none; overflow: visible; line-height: 1.4; }
@@ -1590,6 +1658,10 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .gw .name .state { margin-left: 8px; font-size: 11px; font-weight: 500; color: var(--green); }
 .gw .dot:not(.on) ~ .who .state { color: var(--amber); }
 .gw .sub.old { white-space: normal; overflow: visible; text-overflow: clip; }
+.gw .sub.err { color: var(--red); overflow-wrap: anywhere; }
+/* the take-over / restart button: bordered, so it reads as a button on the
+   card in either theme (leslie_luo on Discord: in dark mode it didn't) */
+.gw .gw-fix { display: inline-flex; height: auto; min-height: 27px; margin: 6px 0 0; padding: 4px 10px; white-space: normal; text-align: left; }
 .gw .url { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 6px; background: var(--pill); box-shadow: inset 0 0 0 1px var(--line-2); flex: none; transition: background .12s, box-shadow .12s; }
 .gw .url:hover { background: var(--pill-hover); box-shadow: inset 0 0 0 1px var(--line); }
 .gw .url code { color: var(--fg-2); font-size: 11px; }
@@ -1704,6 +1776,10 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 /* a provider row: logo, name, the agents on it, key status */
 .provider .who { flex: 1 1 auto; }
 .provider .name .badge { margin-left: 6px; }
+/* a row whose name holds a vendor's outage badge (#971): the name gives
+   way to it, the badge is never the part cut */
+.provider .name:has(> .badge.upstream) { display: flex; align-items: center; }
+.provider .name > .nm { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .badge { font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; background: var(--amber-soft); color: var(--amber); vertical-align: 1px; }
 .provider.selected { background: var(--card-2); }
 /* switched off (#163): kept, dimmed, and said so by its name */
@@ -1725,11 +1801,13 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .badge.mapi-tag { background: var(--accent-soft); color: var(--accent); letter-spacing: .02em; text-transform: none; }
 .mchip .badge { margin: 0 -3px 0 1px; padding: 0 4px; font-size: 9px; line-height: 14px; }
 .row.model .name .badge { margin-left: 6px; padding: 0 4px; font: 600 9px/14px var(--font); }
-.row.model .minfo { display: inline-flex; align-items: center; gap: 4px; flex: none; margin-left: 8px; cursor: help; }
-.row.model .minfo .badge { display: inline-flex; align-items: center; padding: 0 5px; font: 600 9.5px/16px var(--font); letter-spacing: .02em; text-transform: none; background: var(--pill); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); vertical-align: 0; }
-.row.model .minfo .mi-ctx { font-variant-numeric: tabular-nums; }
-.row.model .minfo .mi-img { padding: 0 4px; }
-.row.model .minfo .mi-img svg { display: block; }
+/* the chips a model is summed up in, where a list of models is read: the
+   Gateway page's list, and a routing group's members in its editor */
+.row.model .minfo, .rt-gedit .fbrow .minfo { display: inline-flex; align-items: center; gap: 4px; flex: none; margin-left: 8px; cursor: help; }
+.row.model .minfo .badge, .rt-gedit .fbrow .minfo .badge { display: inline-flex; align-items: center; padding: 0 5px; font: 600 9.5px/16px var(--font); letter-spacing: .02em; text-transform: none; background: var(--pill); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); vertical-align: 0; }
+.row.model .minfo .mi-ctx, .rt-gedit .fbrow .minfo .mi-ctx { font-variant-numeric: tabular-nums; }
+.row.model .minfo .mi-img, .rt-gedit .fbrow .minfo .mi-img { padding: 0 4px; }
+.row.model .minfo .mi-img svg, .rt-gedit .fbrow .minfo .mi-img svg { display: block; }
 .provider .pswitch { margin-left: 8px; }
 .editor .off-note { grid-column: 1 / -1; }
 .uses { display: flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
@@ -1780,6 +1858,21 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .acc.add:hover { background: var(--card-2); color: var(--fg); }
 .acc.add:hover .dot { box-shadow: inset 0 0 0 1.5px var(--fg); color: var(--fg); }
 
+/* a long list of keys, folded (361 on Discord): All N keys opens it on a
+   filter, removing many at once, and a page of rows */
+.acc.keys-more { width: 100%; color: var(--fg-2); background: none; border: 0 solid var(--line-2); cursor: default; }
+.acc + .acc.keys-more { border-top-width: 1px; }
+.acc.keys-more .dot { box-shadow: none; background: var(--pill); }
+.acc.keys-more:hover { background: var(--card-2); color: var(--fg); }
+.accts .keys-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; padding: 7px 8px 7px 11px; border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); background: var(--card-2); }
+.accts .keys-tools .grow { flex: 1; }
+.accts .keys-tools .keys-filter { flex: 1 1 220px; max-width: 320px; height: 26px; padding: 0 8px; font-size: 12px; }
+.accts .keys-tools .keys-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.accts .keys-tools + .acc { border-top: 0; }
+.accts > .keys-tools:first-child { border-top: 0; }
+.accts > .keys-none + .acc, .accts > .keys-rest + .acc { border-top: 1px solid var(--line-2); }
+.accts > .keys-none, .accts > .keys-rest { padding: 8px 11px; font-size: 12px; border-top: 1px solid var(--line-2); }
+
 .acc .rename { font: inherit; font-weight: 500; color: inherit; background: none; border: 0; padding: 0; cursor: text; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .acc .rename:hover { text-decoration: underline dotted var(--faint); text-underline-offset: 3px; }
 .acc .dot.tick { padding: 0; border: 0; background: none; cursor: default; transition: background .15s, box-shadow .15s; }
@@ -1819,10 +1912,23 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .acc .amodels:hover, .acc .amodels.open { color: var(--fg); background: var(--pill-hover); }
 /* an account's usage cap: as the models pill, shown on hover till one is set */
 .acc .acap { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 7px; font: inherit; font-size: 11px; color: var(--muted); border: 0; border-radius: 5px; background: none; box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; cursor: default; opacity: 0; transition: opacity .15s, background .12s, color .12s; }
-.acc:hover .acap, .acc .acap.open, .acc .acap:focus-visible, .acc .acap.set { opacity: 1; }
+.acc:hover .acap, .acc .acap.open, .acc .acap.set { opacity: 1; }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.acc .acap:focus-visible { opacity: 1; }
 .acc .acap.set { color: var(--accent); background: var(--accent-soft); box-shadow: none; font-weight: 500; }
 .acc .acap:hover, .acc .acap.open { color: var(--fg); background: var(--pill-hover); }
 .acc .acap-in { width: 64px; }
+/* an account's or key's limit on requests at once (#892), and how many
+   run and wait under it: shown on hover unless a limit applies */
+.acc .alane { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 7px; font: inherit; font-size: 11px; color: var(--muted); border: 0; border-radius: 5px; background: none; box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; cursor: default; opacity: 0; transition: opacity .15s, background .12s, color .12s; font-variant-numeric: tabular-nums; }
+.acc:hover .alane, .acc .alane.open, .acc .alane.set { opacity: 1; }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.acc .alane:focus-visible { opacity: 1; }
+.acc .alane.set { color: var(--fg); background: var(--pill-hover); box-shadow: none; }
+.acc .alane.busy-lane { color: var(--accent); background: var(--accent-soft); font-weight: 500; }
+.acc .alane.queued { color: var(--amber); }
+.acc .alane:hover, .acc .alane.open { color: var(--fg); background: var(--pill-hover); }
+.acc .alane-in { width: 64px; }
 .acc .acap-held { color: var(--fg); }
 /* held for magpie's requests, not the agent signed in to it: a warning */
 .acc .acap-held.acap-direct { color: var(--amber); }
@@ -1833,6 +1939,29 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .acc .acct-models .acm-foot .grow { flex: 0 0 0; }
 .acc .n, .acc .rename { flex: 0 1 auto; }
 .acc .plan { flex: none; }
+/* a key's row (#841): what shows only on hover takes no room till then,
+   so a key's weight never squeezes its name away; the room it takes on
+   hover is the row's free room, else the masked key's, and the models
+   badge gives its own up first. First and Make first stay one line */
+.accts.keys .acc .plan { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; }
+.accts.keys .acc > :is(.amodels:not(.set), .proto:not(.set), .alane:not(.set), .text.quiet) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.accts.keys .acc:not(:hover) > :is(.amodels:not(.set), .proto:not(.set), .alane:not(.set), .text.quiet):not(.open):not(:focus-visible) { max-width: 0; padding-left: 0; padding-right: 0; box-shadow: none; }
+.accts.keys .acc > :is(.amodels, .alane):not(.set):not(.open):not(:focus-visible) { flex-shrink: 10000; }
+/* the limit pill unset on a key's row is quiet text, as the row's other
+   hover-only controls: no padding to keep, and hidden it takes back the
+   gap before it too (#892) */
+.accts.keys .acc > .alane:not(.set):not(.open):not(:focus-visible) { padding: 0; box-shadow: none; background: none; }
+.accts.keys .acc:not(:hover) > .alane:not(.set):not(.open):not(:focus-visible) { margin-left: -9px; }
+.accts.keys .acc > :is(.proto, .text.quiet) { flex-shrink: 0; }
+/* Safari before 15.4 has no :focus-visible and drops the rules above
+   whole: there a focused control stays out on :focus instead */
+@supports not selector(:focus-visible) {
+  .accts.keys .acc:not(:hover) > :is(.amodels:not(.set), .proto:not(.set), .alane:not(.set), .text.quiet):not(.open):not(:focus) { max-width: 0; padding-left: 0; padding-right: 0; box-shadow: none; }
+  .accts.keys .acc > :is(.amodels, .alane):not(.set):not(.open):not(:focus) { flex-shrink: 10000; }
+  .accts.keys .acc > .alane:not(.set):not(.open):not(:focus) { padding: 0; box-shadow: none; background: none; }
+  .accts.keys .acc:not(:hover) > .alane:not(.set):not(.open):not(:focus) { margin-left: -9px; }
+}
+.accts.keys .acc .using, .accts.keys .acc > .text:not(.quiet) { flex: none; white-space: nowrap; }
 #gatewayKeys .acc { min-width: 0; }
 #gatewayKeys .acc .plan { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* a gateway key's own limit (#585): the badge, what it used under the
@@ -1850,6 +1979,9 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 #gatewayKeys .klf-err { color: var(--red); }
 #gatewayKeys .klf .klf-period { width: 100%; max-width: none; height: 28px; justify-content: space-between; color: var(--fg); }
 @media (max-width: 520px) { #gatewayKeys .klf { grid-template-columns: 1fr; } }
+/* the models a key may use (#882): a long model's id is cut, and the
+   badge gives way first on a narrow window */
+#gatewayKeys .amodels.key-models { display: inline-block; flex: 0 1 auto; min-width: 24px; max-width: 180px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; }
 /* the Settings row's picker: the key row's badge, always shown */
 .row.pref .proto.pick { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 6px 0 9px; font: inherit; font-size: 12px; color: var(--fg-2); border: 0; border-radius: 7px; background: var(--pill); white-space: nowrap; cursor: default; transition: background .12s, color .12s; }
 .row.pref .proto.pick svg { opacity: .7; transition: transform .15s var(--ease); }
@@ -1906,6 +2038,13 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 /* a plugin's ways to sign in: the question keeps the row, the choices
    wrap beneath it at whatever length the plugin names them */
 .signing.plugin-ask { flex-wrap: wrap; }
+/* ZCode's site step: the question keeps the row, the sites one group
+   beneath it and the plugin's other ways a line of links under them */
+.signing.site-pick { flex-wrap: wrap; row-gap: 8px; }
+.signing.site-pick .sites, .signing.site-pick .ways { flex-basis: 100%; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.signing.site-pick .ways { gap: 2px 10px; margin: -3px 0 0 -4px; }
+.signing.site-pick .sites button, .signing.site-pick .ways button { height: auto; min-height: 26px; max-width: 100%; white-space: normal; text-align: left; line-height: 1.3; overflow-wrap: anywhere; }
+.signing.site-pick .ways .link { color: var(--fg-2); }
 .signing.plugin-ask .choices { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
 .signing.plugin-ask .choices button { height: auto; min-height: 26px; max-width: 100%; padding: 4px 10px; white-space: normal; text-align: left; line-height: 1.3; overflow-wrap: anywhere; }
 /* an import: what is pasted is sign-ins, so it is masked */
@@ -1939,6 +2078,14 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 /* a built-in subscription a community plugin can run: an outlined amber
    word, apart from the filled "sponsored" */
 .badge.deprecated { background: transparent; color: var(--amber); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 45%, transparent); }
+/* a vendor's status page says its API is affected (#971): a button, its
+   page a click away; red for an outage, amber when degraded */
+.badge.upstream { border: 0; font-family: inherit; cursor: pointer; white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 4px; letter-spacing: .02em; text-transform: none; }
+.badge.upstream::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.badge.upstream.partial, .badge.upstream.major { background: var(--red-soft); color: var(--red); }
+.badge.upstream.maintenance { background: var(--pill); color: var(--muted); }
+.badge.upstream:hover { filter: brightness(.95); }
+.badge.upstream:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* over the list: what is deprecated, why, and the way on */
 .deprecation { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); animation: fade-in .2s; }
 .deprecation .dep-dot { flex: none; align-self: flex-start; width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: var(--amber); }
@@ -2021,7 +2168,7 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .editor .proxy-row .proxy-mode { flex: none; }
 .editor .proxy-row input.proxy-url { flex: 1 1 auto; width: auto; min-width: 0; }
 .editor .proxy-row input.proxy-url.off { visibility: hidden; }
-.editor input.concurrency[type] { width: 12em; max-width: 100%; }
+.editor :is(input.concurrency, input.queue-limit, input.queue-wait)[type] { width: 12em; max-width: 100%; }
 .editor input[type="number"] { -moz-appearance: textfield; }
 .editor input[type="number"]::-webkit-inner-spin-button, .editor input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 /* each of a subscription's accounts with a proxy of its own: its name
@@ -2083,6 +2230,16 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .opt.on { color: var(--fg); }
 /* how often magpie checks for updates, while it doesn't by itself */
 .update-every-row.off .segs { opacity: .55; }
+/* Command line: each shell's `magpie`, a dot for whether it runs this app */
+.cli-row .sub { overflow-wrap: anywhere; }
+.cli-shells { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.cli-shell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); min-height: 22px; }
+.cli-shell .cli-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.cli-shell.on .cli-dot { background: var(--green); }
+.cli-shell .cli-sh { color: var(--fg-2); min-width: 72px; }
+.cli-shell .cli-state { overflow-wrap: anywhere; min-width: 0; }
+.cli-shell button.text { font-size: 12px; height: 20px; line-height: 20px; padding-top: 0; padding-bottom: 0; }
+.cli-note { margin-top: 4px; font-size: 11px; color: var(--faint); }
 .opt:hover:not(.on) { color: var(--fg-2); }
 .thumb {
   position: absolute; top: 2px; bottom: 2px; left: 0; width: 0; border-radius: 6px;
@@ -2091,15 +2248,17 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
   pointer-events: none;
 }
 .segs .thumb { border-radius: 5px; }
-/* a strip too wide for the window scrolls in itself: the regions, and
-   Connect's five APIs on a narrow one */
-.segs.regions, .connect .segs { max-width: 100%; overflow-x: auto; }
+/* a strip too wide for the window scrolls in itself: the regions,
+   Connect's five APIs on a narrow one, and Usage → Sessions' agents,
+   which #929 left widening the whole page until its last agent's
+   filter was only reachable by dragging the page sideways */
+.segs.regions, .connect .segs, #sessAgent { max-width: 100%; overflow-x: auto; }
 /* no scrollbar-width here: Chromium (WebView2) then drops every
    ::-webkit-scrollbar rule and draws Windows' classic bar, arrows and all,
    under the strip; the app's thin thumb instead, slimmer still */
-:where(body:not(.mac)) :is(.segs.regions, .connect .segs)::-webkit-scrollbar { height: 6px; }
-:where(body:not(.mac)) :is(.segs.regions, .connect .segs)::-webkit-scrollbar-thumb { border-width: 1px; }
-.segs.regions .opt, .connect .segs .opt { flex: none; }
+:where(body:not(.mac)) :is(.segs.regions, .connect .segs, #sessAgent)::-webkit-scrollbar { height: 6px; }
+:where(body:not(.mac)) :is(.segs.regions, .connect .segs, #sessAgent)::-webkit-scrollbar-thumb { border-width: 1px; }
+.segs.regions .opt, .connect .segs .opt, #sessAgent .opt { flex: none; }
 /* an installed list's order (#481): small, beside the list's heading */
 .segs.sortby { align-self: center; flex: none; }
 .segs.sortby .opt { height: 20px; padding: 0 8px; font-size: 11px; }
@@ -2115,7 +2274,10 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .editor .more summary::before { content: "▸"; font-size: 10px; color: var(--faint); }
 .editor .more[open] summary::before { content: "▾"; }
 .editor .more summary:hover { color: var(--fg); }
-.editor .more .inner { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px 14px; align-items: start; padding-top: 8px; }
+/* its labels are longer (Anthropic 地址, Responses-URL): their column takes
+   the longest, on one line, rather than wrap a last 址 under it (#875) */
+.editor .more .inner { display: grid; grid-template-columns: minmax(72px, max-content) minmax(0, 1fr); gap: 10px 14px; align-items: start; padding-top: 8px; }
+.editor .more .inner label { white-space: nowrap; }
 .editor .warnbox { grid-column: 1 / -1; font-size: 12px; line-height: 1.5; color: var(--fg); background: color-mix(in srgb, var(--amber) 12%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent); border-radius: 8px; padding: 8px 10px; }
 .editor .warnbox.soft { background: none; color: var(--amber); border: 0; padding: 0 0 0 86px; }
 .editor.import .mchips .mchip { cursor: default; }
@@ -2235,6 +2397,13 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .mnames { display: grid; gap: 4px; max-height: 240px; overflow-y: auto; padding: 1px; }
 .mnames[hidden] { display: none; }
 .mnames > .hint { font-size: 11px; color: var(--faint); }
+/* its quiet title and Fold, held at the top while the rows scroll (#868) */
+.mnhead { position: sticky; top: -1px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 2px 8px; background: var(--card); }
+.mnhead b { flex: 1; min-width: 0; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.mnhead .text.action { flex: none; padding: 2px 7px; font-size: 11.5px; }
+/* how the agents' lists will call them, and the setting that says so (#868) */
+.msuffix { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 2px 8px 4px; font-size: 12px; }
+.msuffix .hint { font-size: 11px; color: var(--faint); overflow-wrap: anywhere; }
 .mname { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 .mname .mwho { display: flex; align-items: center; gap: 8px; flex: 1 1 220px; min-width: 0; }
 .mname .mwho input { flex: 1; min-width: 0; max-width: 220px; height: 25px; }
@@ -2243,6 +2412,13 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .mname .msame { display: flex; align-items: center; gap: 6px; flex: 0 1 230px; min-width: 0; font-size: 11.5px; color: var(--muted); }
 .mname .msame span { flex: none; }
 .mname .msame input { flex: 1; min-width: 0; height: 25px; font-size: 11.5px; }
+.mname .mprice { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; flex: 1 1 100%; min-width: 0; font-size: 11.5px; color: var(--muted); }
+.mname .mprice > span { flex: none; }
+.mname .mpart { display: flex; align-items: center; gap: 4px; flex: none; }
+.mname .mpart input { width: 72px; height: 25px; font-size: 11.5px; }
+.mname .mtier { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; flex: 1 1 100%; min-width: 0; }
+.mname .mtier[hidden], .mname .mtier-add[hidden] { display: none; }
+.mname .mtier-add { font-size: 11.5px; padding: 0; }
 .mname .mlevels { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11.5px; }
 .editor .mname label.tick { gap: 4px; }
 .mname .text { flex: none; padding: 2px 7px; font-size: 11.5px; }
@@ -2291,6 +2467,10 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .proxy-segs input.proxy:focus, input.words:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .proxy-segs input.proxy::placeholder, input.words::placeholder { color: var(--faint); }
 input.words { width: 240px; max-width: 100%; }
+/* Settings → Long conversations: 272K or the size typed, beside it (#876) */
+.compact-at { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
+.row.pref .compact-at .segs { margin-left: 0; }
+input.words.compact-num { flex: none; width: 76px; font-variant-numeric: tabular-nums; }
 /* the masking rules' add row: its words in full, then on a line of their
    own a name, prefix or regex, the match taking the room left, Add */
 .row.pref.rule-row { flex-wrap: wrap; row-gap: 8px; }
@@ -2300,7 +2480,7 @@ input.words { width: 240px; max-width: 100%; }
 .row .sub.wraps { white-space: normal; overflow-wrap: anywhere; }
 .prefs .val.rule-add { flex: 1 1 100%; max-width: none; margin-left: 0; gap: 6px; }
 input.words.rule-kind { flex: none; width: 110px; }
-input.words.rule-match { flex: 1 1 auto; width: auto; min-width: 0; }
+input.words.gateway-port { flex: none; width: 110px; font-variant-numeric: tabular-nums; }input.words.rule-match { flex: 1 1 auto; width: auto; min-width: 0; }
 input.words.search-key, input.words.search-url { flex: 1 1 120px; width: auto; min-width: 0; }
 /* a search API's key, shown: selectable, and broken anywhere rather than widening the row */
 .search-api .sub.revealed { font-family: var(--code); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
@@ -2395,6 +2575,17 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
   transition: background-color .35s var(--ease), background .35s var(--ease), color .35s var(--ease), border-color .35s var(--ease), box-shadow .35s var(--ease) !important;
 }
 
+/* Confirmation uses the top layer so an open editor remains intact underneath. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.action-confirm { --confirm-fill: #c73535; --confirm-fg: #ffffff; position: fixed; inset: 0; margin: auto; max-height: calc(100vh - 32px); overflow-y: auto; width: min(420px, calc(100vw - 32px)); padding: 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--fg); box-shadow: 0 24px 60px rgba(0, 0, 0, .32); font: inherit; }
+.action-confirm .text.danger-fill { background: var(--confirm-fill); color: var(--confirm-fg); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .action-confirm { --confirm-fill: var(--red); --confirm-fg: #14142a; } }
+:root[data-theme="dark"] .action-confirm { --confirm-fill: var(--red); --confirm-fg: #14142a; }
+.action-confirm::backdrop { background: rgba(0, 0, 0, .32); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.action-confirm h2 { margin: 0 0 12px; font-size: 16px; overflow-wrap: anywhere; }
+.action-confirm p { margin: 0 0 20px; color: var(--fg-2); line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+.action-confirm .bar { display: flex; align-items: center; gap: 10px; margin: 0; }
+@media (pointer: coarse) { .action-confirm button { min-height: 44px; min-width: 44px; } }
 /* ---------- modal ---------- */
 .modal {
   position: fixed; inset: 0; z-index: 20;
@@ -2410,7 +2601,6 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
   box-shadow: 0 0 0 1px var(--line), 0 24px 60px rgba(0, 0, 0, .32), 0 2px 8px rgba(0, 0, 0, .12);
 }
 .modal .dialog.swap { animation: content-in .22s var(--ease); }
-.modal .dialog::-webkit-scrollbar { width: 0; }
 /* In a dialog the editor's head and buttons stay put and only the fields
    between them scroll; both bars are the same height, their contents
    centred in it. */
@@ -2420,7 +2610,6 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
   flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   display: grid; grid-template-columns: inherit; gap: 10px 14px; align-items: start; padding: 14px 18px;
 }
-.modal .editor.framed > .ebody::-webkit-scrollbar { width: 0; }
 .modal .editor.framed > .ehead, .modal .editor.framed > .bar { flex: none; min-height: 48px; margin: 0; padding: 0 18px; }
 .modal .editor.framed > .ehead { border-bottom: 1px solid var(--line-2); }
 .modal .editor.framed > .bar { border-top: 1px solid var(--line-2); }
@@ -2428,10 +2617,11 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
 /* what's new after an update: each release's notes, one under another,
    divided by a hairline, the text selectable */
 .modal .editor.whatsnew > .ebody { gap: 0; }
-.whatsnew .wn-rel { grid-column: 1 / -1; min-width: 0; }
+.whatsnew .wn-rel, .whatsnew .wn-list { grid-column: 1 / -1; min-width: 0; }
 .whatsnew .wn-rel + .wn-rel { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-2); }
 .whatsnew .wn-ver { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .whatsnew .wn-ver b { font-weight: 600; }
+.whatsnew .wn-since { margin-left: 10px; font-size: 12px; color: var(--muted); }
 .whatsnew .wn-notes { font-size: 12.5px; line-height: 1.55; color: var(--fg-2); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
 .whatsnew .wn-h { margin: 10px 0 2px; font-size: 12px; font-weight: 600; color: var(--fg); }
 .whatsnew .wn-h1, .whatsnew .wn-h2 { font-size: 12.5px; }
@@ -2593,7 +2783,9 @@ body.panel .modal { padding: 16px 12px; }
    with 3.5px between them the right column was cut in half (Hu9956, #842) */
 .subscription-head .us-handle { position: relative; width: 24px; height: 24px; margin: -4px -3px; }
 .subscription-head .us-handle::before { content: ""; position: absolute; left: -8px; top: 50%; width: 6px; height: 11px; margin-top: -5.5px; background: radial-gradient(circle, var(--muted) .9px, transparent 1.2px) 0 0 / 3px 3.75px; opacity: 0; transition: opacity .15s; }
-.subscription-card:is(:hover, .dragging) .us-handle::before, .us-handle:focus-visible::before { opacity: 1; }
+.subscription-card:is(:hover, .dragging) .us-handle::before { opacity: 1; }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.us-handle:focus-visible::before { opacity: 1; }
 .subscription-usage.sorting { user-select: none; -webkit-user-select: none; }
 .subscription-usage.sorting > .subscription-card { transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
 .subscription-usage.sorting .us-handle { cursor: grabbing; }
@@ -2775,7 +2967,21 @@ body.window .row.agent .who.with-models { flex-wrap: wrap; row-gap: 0; }
 .am-reset { border: 0; background: none; padding: 2px 4px; border-radius: 5px; color: var(--fg-2); font: inherit; font-size: 11.5px; cursor: pointer; }
 .am-reset:hover:not(:disabled) { color: var(--accent); }
 .am-reset:disabled { color: var(--faint); cursor: default; }
+.am-reset[data-armed] { color: var(--red); background: var(--red-soft); }
 .am-dot { color: var(--faint); }
+/* Codex's list in the order it shows it (#855): the whole list, dragged by
+   any row; its grip shows only on the row under the pointer */
+.pop.am-pop.ordering .am-search, .pop.am-pop.ordering .am-rail { display: none; }
+.am-order { padding-top: 4px; }
+.am-rows.am-order .am-mr { padding-left: 14px; cursor: grab; user-select: none; -webkit-user-select: none; }
+.am-or .grip { flex: none; width: 6px; height: 11px; margin-right: -4px; background: radial-gradient(circle, var(--muted) .9px, transparent 1.2px) 0 0 / 3px 3.75px; opacity: 0; transition: opacity .15s; }
+.am-or:is(:hover, .dragging) .grip { opacity: 1; }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.am-or:focus-visible .grip { opacity: 1; }
+@media (hover: none) { .am-or .grip { opacity: 1; } }
+.am-or .ix { flex: none; min-width: 16px; font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; text-align: right; }
+.am-order.sorting .am-or { transition: transform .22s cubic-bezier(.22, 1, .36, 1); cursor: grabbing; }
+.am-order .am-or.dragging { position: relative; z-index: 2; transition: none; background: var(--pop-bg); box-shadow: 0 6px 18px rgba(20, 22, 30, .12), 0 0 0 1px var(--line); }
 
 /* ---- an agent's switch onto magpie ---------------------------------------- */
 /* the rows drawn again under the line said beneath each name had WebKit's
@@ -2937,3 +3143,4 @@ input[type="checkbox"]:checked::before { transform: scale(1); }
 input[type="checkbox"]:indeterminate::before { transform: scale(1); -webkit-mask: none; mask: none; width: 8px; height: 1.6px; border-radius: 1px; }
 input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 input[type="checkbox"]:disabled { opacity: .45; }
+.editor .pair .side .key-count { white-space: nowrap; font-size: 11.5px; font-variant-numeric: tabular-nums; }

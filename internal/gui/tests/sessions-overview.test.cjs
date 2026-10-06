@@ -250,9 +250,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const y = (await bar.boundingBox()).y;
         await bar.click();
         await page.waitForFunction(() => document.querySelector("#sessProjects .sess-bar.on"));
+        // the bars are drawn again once the folder's overview is in: the bar
+        // is measured where that left it, not as it is taken off for it
+        await page.waitForFunction(() => document.querySelector("#sessStats .kpi b")?.textContent === "7");
         assert.equal((await page.locator("#sessProjects .sess-bar.on").boundingBox()).y, y);
         assert.match(await page.locator("#sessFolder").innerText(), /beta/);
-        await page.waitForFunction(() => document.querySelector("#sessStats .kpi b")?.textContent === "7");
         assert(seen.some((s) => s.includes("cwd=%2Fwork%2Fbeta")), seen.join("\n"));
         assert.equal(await page.locator("#sessProjects .sess-bar").count(), 2);
         await page.locator("#sessProjects .sess-bar.on").click();

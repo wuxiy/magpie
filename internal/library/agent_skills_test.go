@@ -42,8 +42,17 @@ func TestAgentsSkillsFolders(t *testing.T) {
 		t.Errorf("kimi with ~/.config/agents/skills: %+v", tg)
 	}
 	// Alma, there once it has its data folder, reads ~/.config/alma/skills
-	// on every system, and Claude Code's, Codex's and the shared ones (#824)
-	cfg, _ := os.UserConfigDir()
+	// on every system, and Claude Code's, Codex's and the shared ones (#824).
+	// Its data folder on Windows is under %APPDATA%, which sandbox clears:
+	// without one there is no Alma there. Goose's config moves there with
+	// it, so Goose is there too
+	app := filepath.Join(h, "AppData", "Roaming")
+	t.Setenv("APPDATA", app)
+	write(t, filepath.Join(app, "Block", "goose", "config", "config.yaml"), "")
+	cfg, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
 	os.MkdirAll(filepath.Join(cfg, "alma"), 0o755)
 	if tg := targetByID("alma"); tg == nil || tg.Skills != filepath.Join(h, ".config/alma/skills") ||
 		!slices.Contains(tg.SkillsAlso, "claude") || !slices.Contains(tg.SkillsAlso, "codex") || !slices.Contains(tg.SkillsAlso, "goose") {

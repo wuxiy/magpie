@@ -90,4 +90,18 @@ func TestZedAppPath(t *testing.T) {
 	if got, err := zedAppPath(context.Background()); err != nil || got != custom {
 		t.Fatalf("CLI's bundle: %q, %v", got, err)
 	}
+	customEnv := filepath.Join(t.TempDir(), "ZedG.app")
+	customBin := filepath.Join(customEnv, "Contents", "MacOS", "zedg")
+	writeFile(t, customBin, "#!/bin/sh\n")
+	if err := os.Chmod(customBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	customEnv, err = filepath.EvalSymlinks(customEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MAGPIE_ZED_BIN", customBin)
+	if got, err := zedAppPath(context.Background()); err != nil || got != customEnv {
+		t.Fatalf("custom configured bundle: %q, %v", got, err)
+	}
 }

@@ -257,3 +257,49 @@ func TestQueryPageSourceAndIdentityInvalidation(t *testing.T) {
 	os.Remove(Path())
 	check(0, "", false)
 }
+
+// One model at two providers is ranked once at each, with each one's own
+// first token and decode, and a provider picked still ranks the other
+// (inaction on Discord).
+func TestRequestPageRanksModelAtEachProvider(t *testing.T) {
+	pageHome(t)
+	now := time.Now()
+	records := []Record{
+		{Time: now, Provider: "zhipu", Agent: "claude", Model: "glm-5.3", Output: 1000, Millis: 2200, TTFT: 200},
+		{Time: now, Provider: "zhipu", Agent: "claude", Model: "glm-5.3", Output: 1000, Millis: 2200, TTFT: 200},
+		{Time: now, Provider: "zcode", Agent: "claude", Model: "glm-5.3", Output: 1000, Millis: 10800, TTFT: 800},
+		{Time: now, Provider: "zcode", Agent: "claude", Model: "kimi-k3", Output: 10, Millis: 100, TTFT: 50},
+	}
+	gateway := &rowChunk{}
+	all := Ledgered{}
+	for i, r := range records {
+		row := Row{Record: r}
+		gateway.add(row, "", int64(i), false)
+		all.Rows = append(all.Rows, row)
+	}
+	f := Filter{Provider: "zhipu", Model: "glm-5.3"}
+	for name, page := range map[string]RequestPage{
+		"compact": buildRequestPage(Today, f, 0, 100, gateway, nil),
+		"ledger":  pageFromLedger(Today, f, 0, 100, all),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := map[string]Share{}
+			for _, s := range page.By["modelAt"] {
+				got[s.ID] = s
+			}
+			fast, slow := got[ModelAtKey("zhipu", "glm-5.3")], got[ModelAtKey("zcode", "glm-5.3")]
+			if len(got) != 3 || fast.Calls != 2 || slow.Calls != 1 || got[ModelAtKey("zcode", "kimi-k3")].Calls != 1 {
+				t.Fatalf("model at each provider = %+v, want glm-5.3 at zhipu (2) and at zcode (1), kimi-k3 at zcode (1)", page.By["modelAt"])
+			}
+			if fast.Timed != 2 || fast.TTFT != 400 || slow.Timed != 1 || slow.TTFT != 800 {
+				t.Fatalf("first tokens mixed between providers: %+v %+v", fast, slow)
+			}
+			if fast.DecodeMs == 0 || slow.DecodeMs == 0 || fast.DecodeOut*1000/int(fast.DecodeMs) <= slow.DecodeOut*1000/int(slow.DecodeMs) {
+				t.Fatalf("decode speeds mixed between providers: %+v %+v", fast, slow)
+			}
+			if page.Total != 2 {
+				t.Fatalf("the provider and model picked no longer filter the requests: %d", page.Total)
+			}
+		})
+	}
+}

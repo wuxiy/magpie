@@ -13,7 +13,7 @@ func TestParseTokens(t *testing.T) {
 			t.Errorf("%q: %d %v", in, got, err)
 		}
 	}
-	for _, in := range []string{"", "k", "lots", "-5", "1g"} {
+	for _, in := range []string{"", "k", "lots", "-5", "1g", "nan", "inf", "1e20"} {
 		if _, err := parseTokens(in); err == nil {
 			t.Errorf("%q read", in)
 		}

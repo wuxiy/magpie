@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/yetone/magpie/internal/edit"
-	"github.com/yetone/magpie/internal/gateway"
 )
 
 // morphUA is the User-Agent magpie has morph send, in llm.headers: its
@@ -46,7 +45,7 @@ func morphIn(at place) *Agent {
 	getKey := func(k string) string { v, _ := edit.GetYAML(path, "llm."+k); return v }
 	// the token is magpie's alone, where the endpoint moves with the
 	// gateway's port
-	onMagpie := func() bool { return getKey("api_key") == gateway.Token }
+	onMagpie := func() bool { return ourKey(getKey("api_key")) }
 	// restore puts back what the user had under llm before magpie
 	restore := func() error {
 		var del []string
@@ -135,7 +134,7 @@ func morphIn(at place) *Agent {
 					kvs := []edit.KV{
 						{Path: "llm.inference_provider", Value: "openai_response_compatible"},
 						{Path: "llm.endpoint", Value: at.v1()},
-						{Path: "llm.api_key", Value: gateway.Token},
+						{Path: "llm.api_key", Value: at.gwKey()},
 						{Path: "llm.model", Value: ref},
 						{Path: "llm.headers.User-Agent", Value: morphUA},
 					}

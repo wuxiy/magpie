@@ -33,7 +33,7 @@ func TestCodexUsageCompactionCounterDomains(t *testing.T) {
 				}
 				total.add(c.Tokens)
 			}
-			if len(cs) != 4 || total != (Tokens{11157, 6856, 496640, 0}) {
+			if len(cs) != 4 || total != (Tokens{11157, 6856, 496640, 0, 0}) {
 				t.Fatalf("calls=%d tokens=%+v", len(cs), total)
 			}
 			if ss := List(0); len(ss) != 1 || ss[0].Tokens != total {
@@ -90,7 +90,7 @@ func TestCodexUsageCounterDomainOffsetChangesAndReload(t *testing.T) {
 				if epoch := callCache[path].CX.Usage.Epoch; epoch != 0 {
 					t.Fatalf("cross-domain reset: %d", epoch)
 				}
-				if ss := List(0); len(ss) != 1 || ss[0].Tokens != (Tokens{1080, 180, 720, 0}) {
+				if ss := List(0); len(ss) != 1 || ss[0].Tokens != (Tokens{1080, 180, 720, 0, 0}) {
 					t.Fatalf("summary: %+v", ss)
 				}
 				resetCalls()
@@ -152,7 +152,7 @@ func TestCodexUsageResumeCounterDomainsAndReload(t *testing.T) {
 				if len(cs) != 9 {
 					t.Fatalf("reset doubled/lost calls: %+v", cs)
 				}
-				if ss := List(0); len(ss) != 1 || ss[0].Tokens != (Tokens{600, 100, 400, 0}) {
+				if ss := List(0); len(ss) != 1 || ss[0].Tokens != (Tokens{600, 100, 400, 0, 0}) {
 					t.Fatalf("summary: %+v", ss)
 				}
 				Reset()
@@ -199,7 +199,7 @@ func TestCodexUsageEmbeddedCompactionBeforeTopLevelRecord(t *testing.T) {
 	if cs := Calls(time.Time{}); len(cs) != 2 {
 		t.Fatalf("compaction replay duplicated usage: %+v", cs)
 	}
-	if ss := List(0); len(ss) != 1 || ss[0].Tokens != (Tokens{120, 20, 80, 0}) {
+	if ss := List(0); len(ss) != 1 || ss[0].Tokens != (Tokens{120, 20, 80, 0, 0}) {
 		t.Fatalf("summary: %+v", ss)
 	}
 }
@@ -265,7 +265,7 @@ func TestCodexUsageRealCheckpointPairs(t *testing.T) {
 					t.Fatalf("identity: %+v", c)
 				}
 			}
-			if total != (Tokens{4515, 1084, 299776, 0}) {
+			if total != (Tokens{4515, 1084, 299776, 0, 0}) {
 				t.Fatal(total)
 			}
 			if cs[0].Time.Format(time.RFC3339Nano) != "2026-10-03T08:49:56.408Z" || cs[1].Time.Format(time.RFC3339Nano) != "2026-10-03T08:49:31.433Z" {

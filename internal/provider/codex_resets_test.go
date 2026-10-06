@@ -64,13 +64,21 @@ func TestCodexResetsCounted(t *testing.T) {
 		{"never expire", 2, map[string]any{"available_count": 2, "credits": []any{
 			map[string]any{"id": "a", "reset_type": "codex_rate_limits", "status": "available", "granted_at": "2026-09-01T00:00:00Z", "expires_at": nil},
 			map[string]any{"id": "b", "reset_type": "codex_rate_limits", "status": "available", "granted_at": "2026-09-02T00:00:00Z"},
-		}}, &ResetCredits{Count: 2}, 1},
+		}}, &ResetCredits{Count: 2, Each: []ResetCard{{}, {}}}, 1},
 		{"soonest of those left", 2, map[string]any{"available_count": 2, "credits": []any{
 			map[string]any{"id": "a", "status": "available", "granted_at": "2026-09-01T00:00:00Z", "expires_at": later},
 			map[string]any{"id": "b", "status": "redeemed", "granted_at": "2026-09-01T00:00:00Z", "expires_at": "2026-09-20T00:00:00Z"},
 			map[string]any{"id": "c", "status": "available", "granted_at": "2026-09-02T00:00:00Z", "expires_at": soon},
 			map[string]any{"id": "d", "status": "available", "granted_at": "2026-09-02T00:00:00Z", "expires_at": nil},
 		}}, &ResetCredits{Count: 2, Until: ptrTime(soon)}, 1},
+		// #960: each one left listed, soonest first, the one that never
+		// runs out last; the redeemed one isn't
+		{"each of those left", 3, map[string]any{"available_count": 3, "credits": []any{
+			map[string]any{"id": "a", "status": "available", "granted_at": "2026-09-01T00:00:00Z", "expires_at": later},
+			map[string]any{"id": "b", "status": "redeemed", "granted_at": "2026-09-01T00:00:00Z", "expires_at": "2026-09-20T00:00:00Z"},
+			map[string]any{"id": "d", "status": "available", "granted_at": "2026-09-02T00:00:00Z", "expires_at": nil},
+			map[string]any{"id": "c", "status": "available", "granted_at": "2026-09-02T00:00:00Z", "expires_at": soon},
+		}}, &ResetCredits{Count: 3, Until: ptrTime(soon), Each: []ResetCard{{Until: ptrTime(soon)}, {Until: ptrTime(later)}, {}}}, 1},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			asked := fakeCodexResets(t, c.count, c.details)
@@ -97,10 +105,22 @@ func sameResets(a, b *ResetCredits) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	if a.Count != b.Count || (a.Until == nil) != (b.Until == nil) {
+	if a.Count != b.Count || !sameTime(a.Until, b.Until) || len(a.Each) != len(b.Each) {
 		return false
 	}
-	return a.Until == nil || a.Until.Equal(*b.Until)
+	for i := range a.Each {
+		if a.Each[i].Window != b.Each[i].Window || !sameTime(a.Each[i].Until, b.Each[i].Until) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
 }
 
 func TestConsumeCodexReset(t *testing.T) {

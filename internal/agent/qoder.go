@@ -288,13 +288,14 @@ func qoderProviderAt(agent, model, v1 string) map[string]any {
 		ms = append(ms, e)
 	}
 	return map[string]any{"displayName": "magpie", "protocol": "openai", "baseUrl": v1,
-		"apiKey": gateway.TokenFor(agent), "model": model, "models": ms}
+		"apiKey": agentKeyAt(agent, v1), "model": model, "models": ms}
 }
 
 // qoderKeyed: key is one magpie gives Qoder's provider — its own,
 // gateway.TokenFor, since Qoder's requests carry Bun's User-Agent and
-// nothing of Qoder's, or gateway.Token, which it was given before; a sync
-// gives it the new one.
+// nothing of Qoder's, gateway.Token, which it was given before, or the LAN
+// sharing key one in a WSL distro is given (agentKeyAt); a sync gives it
+// the new one.
 func qoderKeyed(key, agent string) bool {
-	return key == gateway.TokenFor(agent) || key == gateway.Token
+	return key == gateway.TokenFor(agent) || ourKey(key)
 }

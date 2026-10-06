@@ -19,7 +19,7 @@ const { test } = require("node:test");
 // Another revision of app.js can be selected with MAGPIE_APP_JS to check
 // the same behavior cases against the implementation before the fix.
 const APP = process.env.MAGPIE_APP_JS || path.resolve(__dirname, "../assets/app.js");
-const source = fs.readFileSync(APP, "utf8");
+const source = fs.readFileSync(APP, "utf8").replace(/\r\n/g, "\n");
 
 // lift a top-level function out of app.js whole: from its `function` line to
 // the `}` at the left margin that closes it

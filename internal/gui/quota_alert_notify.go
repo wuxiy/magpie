@@ -112,7 +112,7 @@ func (h *host) watchAlerts() {
 	go func() {
 		<-h.ready
 		// set before this run: asked now, so Settings can say if it was refused
-		if s := settings.Load(); s.UsageAlert > 0 || s.BalanceAlert > 0 {
+		if s := settings.Load(); s.UsageAlert > 0 || s.BalanceAlert > 0 || s.ResetReminder > 0 {
 			go n.allowed()
 		}
 		provider.WatchQuotas(context.Background(), wake, func(a provider.QuotaAlert) {

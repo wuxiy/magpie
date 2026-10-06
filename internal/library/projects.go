@@ -3,7 +3,6 @@ package library
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -167,7 +166,7 @@ func (p *Project) place(e, name string) error {
 		if !ours(abs, name) {
 			return errForeign
 		}
-		link := fi.Mode()&fs.ModeSymlink != 0
+		link := linkEntry(fi)
 		// a copy stands for a link on Windows without the right to make one
 		if !p.Copy && link || !link && (p.Copy || runtime.GOOS == "windows") && hashDir(abs) == hashDir(realDir(lib)) {
 			return nil

@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/yetone/magpie/internal/access"
+	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/settings"
 )
 
@@ -129,5 +131,98 @@ func TestGatewayKeyLimitCLI(t *testing.T) {
 	}
 	if keys, _ = access.List(); keys[0].Limit != nil {
 		t.Fatal("off kept", keys[0].Limit)
+	}
+}
+
+func TestGatewayKeyModelsCLI(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := settings.Save(settings.Settings{LAN: true}); err != nil {
+		t.Fatal(err)
+	}
+	call := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := gatewayKeysTo(&out, append([]string{"gateway-key"}, args...))
+		return out.String(), err
+	}
+	if _, err := call("add", "Phone"); err != nil {
+		t.Fatal(err)
+	}
+	keys, _ := access.List()
+	id := keys[0].ID
+	if got, err := call("models", id); err != nil || got != "Phone: every model\n" {
+		t.Fatal(got, err)
+	}
+	if got, err := call("models", id, "openai/gpt-5", "anthropic/*"); err != nil || got != "Phone: only openai/gpt-5, anthropic/*\n" {
+		t.Fatal(got, err)
+	}
+	if keys, _ = access.List(); !slices.Equal(keys[0].Models, []string{"openai/gpt-5", "anthropic/*"}) {
+		t.Fatal("kept", keys[0].Models)
+	}
+	if got, _ := call("list"); !strings.Contains(got, "MODELS") || !strings.Contains(got, "openai/gpt-5,anthropic/*") {
+		t.Fatal(got)
+	}
+	for _, args := range [][]string{{"models"}, {"models", id, "gpt-5"}, {"models", "missing", "a/b"}, {"models", "missing"}} {
+		if _, err := call(args...); err == nil {
+			t.Error("accepted", args)
+		}
+	}
+	if got, err := call("models", id, "all"); err != nil || got != "Phone: every model\n" {
+		t.Fatal(got, err)
+	}
+	if keys, _ = access.List(); keys[0].Models != nil {
+		t.Fatal("all kept", keys[0].Models)
+	}
+}
+
+// magpie gateway-key accounts sets, shows and takes off a key's account
+// whitelist, and refuses an account no provider has (#905). An account's
+// stable id, named by who is signed in, is exercised against a real
+// sign-in in the gateway's tests; a key's fingerprint is one here.
+func TestGatewayKeyAccountsCLI(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := settings.Save(settings.Settings{LAN: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.Save(provider.Provider{ID: "relay", Name: "Relay", Chat: "http://127.0.0.1:1/v1", Keys: []provider.KeyAccount{{Key: "sk-1", Name: "First"}, {Key: "sk-2", Name: "Second"}}}); err != nil {
+		t.Fatal(err)
+	}
+	k1, k2 := provider.KeyID("sk-1"), provider.KeyID("sk-2")
+	call := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := gatewayKeysTo(&out, append([]string{"gateway-key"}, args...))
+		return out.String(), err
+	}
+	if _, err := call("add", "Phone"); err != nil {
+		t.Fatal(err)
+	}
+	keys, _ := access.List()
+	id := keys[0].ID
+	if got, err := call("accounts", id); err != nil || got != "Phone: every account\n" {
+		t.Fatal(got, err)
+	}
+	// named by the name it is shown by, kept by its fingerprint
+	if got, err := call("accounts", id, "relay/First", "relay/"+k2); err != nil || got != "Phone: only relay/First, relay/Second\n" {
+		t.Fatal(got, err)
+	}
+	if keys, _ = access.List(); !slices.Equal(keys[0].Accounts, []string{"relay/" + k1, "relay/" + k2}) {
+		t.Fatal("kept", keys[0].Accounts)
+	}
+	if got, _ := call("list"); !strings.Contains(got, "ACCOUNTS") || !strings.Contains(got, "relay/First,relay/Second") {
+		t.Fatal(got)
+	}
+	for _, args := range [][]string{{"accounts"}, {"accounts", id, "sk-1"}, {"accounts", id, "relay/" + provider.KeyID("sk-9")}, {"accounts", "missing", "relay/First"}, {"accounts", "missing"}} {
+		if _, err := call(args...); err == nil {
+			t.Error("accepted", args)
+		}
+	}
+	if got, err := call("accounts", id, "all"); err != nil || got != "Phone: every account\n" {
+		t.Fatal(got, err)
+	}
+	if keys, _ = access.List(); keys[0].Accounts != nil {
+		t.Fatal("all kept accounts", keys[0].Accounts)
 	}
 }

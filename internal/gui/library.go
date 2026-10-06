@@ -343,6 +343,7 @@ func libraryRoutes(mux *http.ServeMux, w Windows) {
 			Copy   bool              // a project gets copies, not links
 			Keep   bool              // a project removed keeps what magpie put in it
 			On     bool              // every skill or server given to the agents, or taken from them
+			How    string            // link or copy: how skills are given to Agent, or to every agent with none (#896)
 			library.InstructionsChange
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -396,6 +397,8 @@ func libraryRoutes(mux *http.ServeMux, w Windows) {
 			res, err = library.ImportSkills(in.Names)
 		case "skills/use-library":
 			res, err = library.UseLibrarySkill(in.Name, in.Agent)
+		case "skills/how":
+			res, err = library.SetSkillHow(in.Agent, in.How)
 		case "skills/keep-own":
 			res, err = library.KeepAgentSkill(in.Name, in.Agent)
 		case "market/server":

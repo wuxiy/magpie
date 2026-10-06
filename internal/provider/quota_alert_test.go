@@ -139,10 +139,10 @@ func TestCheckAlertsKeepsMarks(t *testing.T) {
 	now := time.Now()
 	reset := now.Add(time.Hour)
 	qs := []SubscriptionQuota{{Provider: "claude", User: "x", Windows: []QuotaWindow{{Name: "5 hours", Used: 90, ResetsAt: &reset}}}}
-	if got := checkAlerts(path, qs, 80, 0, now); len(got) != 1 {
+	if got := checkAlerts(path, qs, 80, 0, 0, now); len(got) != 1 {
 		t.Fatalf("first: %+v", got)
 	}
-	if got := checkAlerts(path, qs, 80, 0, now.Add(time.Minute)); len(got) != 0 {
+	if got := checkAlerts(path, qs, 80, 0, 0, now.Add(time.Minute)); len(got) != 0 {
 		t.Fatalf("told again after the file was read back: %+v", got)
 	}
 }
@@ -195,5 +195,44 @@ func TestDueAlertsPoolWindows(t *testing.T) {
 		Windows: []QuotaWindow{{Name: "5 hours", Used: 90, ResetsAt: &reset}}}}
 	if told := dueAlerts(codex, legacy, 80, 0, now); len(told) != 0 {
 		t.Errorf("the old mark no longer holds: %+v", told)
+	}
+}
+
+// the reset reminder (#720): a long window renewing within the hours set
+// with much of it left, once a run; a 5-hour one, a window nearly used up
+// and one renewing later say nothing; resets running out are told too
+func TestDueReminders(t *testing.T) {
+	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	soon, later := now.Add(20*time.Hour), now.Add(30*time.Hour)
+	week, five := 7*24*time.Hour, 5*time.Hour
+	qs := []SubscriptionQuota{{Provider: "codex", Name: "Codex", User: "a@b.c",
+		Windows: []QuotaWindow{
+			{Name: "7 days", Span: week, Used: 40, ResetsAt: &soon},
+			{Name: "5 hours", Span: five, Used: 10, ResetsAt: &soon},
+			{Name: "Monthly", Span: 30 * 24 * time.Hour, Used: 90, ResetsAt: &soon},
+			{Name: "Other week", Span: week, Used: 10, ResetsAt: &later},
+		},
+		Resets: &ResetCredits{Count: 2, Until: &soon},
+	}}
+	marks := map[string]alertMark{}
+	if got := dueReminders(qs, marks, 0, now); len(got) != 0 {
+		t.Fatalf("off: %+v", got)
+	}
+	got := dueReminders(qs, marks, 24*time.Hour, now)
+	if len(got) != 2 || got[0].Kind != "renews" || got[0].Window != "7 days" || got[0].Used != 40 ||
+		got[1].Kind != "expires" || got[1].Credits != 2 || !got[1].ResetsAt.Equal(soon) {
+		t.Fatalf("got %+v", got)
+	}
+	if again := dueReminders(qs, marks, 24*time.Hour, now.Add(time.Hour)); len(again) != 0 {
+		t.Fatalf("told twice: %+v", again)
+	}
+	// with a longer lead the later week is due too, once
+	if more := dueReminders(qs, marks, 48*time.Hour, now.Add(time.Hour)); len(more) != 1 || more[0].Window != "Other week" {
+		t.Fatalf("longer lead: %+v", more)
+	}
+	// a failed reading says nothing
+	failed := []SubscriptionQuota{{Provider: "codex", User: "x", Error: "429", Windows: qs[0].Windows}}
+	if got := dueReminders(failed, map[string]alertMark{}, 24*time.Hour, now); len(got) != 0 {
+		t.Fatalf("failed reading: %+v", got)
 	}
 }

@@ -68,7 +68,9 @@ function serve(lang, posts) {
 
 const listed = (page) => page.locator(".rt-groups > .rt-group").evaluateAll((rs) => rs.map((r) => r.dataset.id));
 // each row's margin grip: what it draws, how much shows, and where
-const grips = (page) => page.locator(".rt-groups > .rt-group").evaluateAll((rs) => rs.map((r) => {
+// (read in one go: a locator's rows may be drawn anew, and so detached, by
+// the time it is evaluated, which reads as no style and no place)
+const grips = (page) => page.evaluate(() => [...document.querySelectorAll(".rt-groups > .rt-group")].map((r) => {
   const h = r.querySelector(".rt-ghandle"), s = getComputedStyle(h, "::before"), hb = h.getBoundingClientRect(), rb = r.getBoundingClientRect();
   const left = hb.left + parseFloat(s.left), w = parseFloat(s.width);
   return { id: r.dataset.id, image: s.backgroundImage, opacity: s.opacity, inRow: left >= rb.left && left + w <= hb.left + 0.5, x: left + w / 2, y: hb.top + hb.height / 2 };
@@ -154,8 +156,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await menu.waitFor();
       assert.equal(await menu.getByRole("menuitem", { name: w.down }).isDisabled(), true, "Move down on the last group");
       assert.equal(await page.locator(".rt-gedit").count(), 0, "the handle opened the editor");
+      // the list is drawn in its new order at once and again from the
+      // answer: the drag below starts on the rows the answer drew
+      const answered = page.waitForResponse((r) => r.url().endsWith("/api/groups/arrange"));
       await menu.getByRole("menuitem", { name: w.up }).click();
+      await answered;
       await page.waitForFunction(() => [...document.querySelectorAll(".rt-groups > .rt-group")].map((r) => r.dataset.id).join() === "two,auto-m,one");
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r))));
       assert.deepEqual(posts.at(-1), ["two", "auto-m", "one", "auto-z"]);
 
       // dragging by the grip moves the row to the top

@@ -70,7 +70,7 @@ func TestToolSearchLoadKeepsTheRun(t *testing.T) {
 		defer close(done)
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
-		s.serveSubscription(w, r, provider.Anthropic, "Claude Code", "claude-sonnet-5", []byte(body), &Usage{}, start)
+		s.serveSubscription(w, r, provider.Anthropic, "Claude Code", "claude-sonnet-5", "", []byte(body), &Usage{}, start)
 	}()
 
 	var got mcpToolResult

@@ -6,9 +6,15 @@ on:
   pull_request:
   workflow_dispatch:
 
+# On main a run finishes: a release waits for a green run, and one cancelled
+# by every next push left none to wait for (LESSONS.md). A newer push still
+# replaces a run that hasn't started. A PR's run is cancelled by its next push.
 concurrency:
   group: test-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -62,12 +68,16 @@ jobs:
           go test -timeout 10m -tags "${{ steps.tags.outputs.tags }}" ./internal/plugin/... -run '^TestFlowBigReplyProd$' -count=1
 
       # The redaction tests reuse this binary in fresh processes to check
-      # first-use races, so it must include the race detector.
+      # first-use races, so it must include the race detector. The gateway's
+      # tests can't call t.Parallel (t.Setenv), so its suite runs split over
+      # one process per core (#923); each process isolates its own home.
       - name: Race
         if: runner.os != 'Windows'
-        # The full gateway suite can exceed Go's default 10-minute package
-        # timeout under the race detector on hosted macOS runners.
-        run: go test -race -timeout 20m -tags "${{ steps.tags.outputs.tags }}" ./internal/gateway/ ./internal/redact/
+        shell: bash
+        run: |
+          go test -race -c -o "$RUNNER_TEMP/gateway.race" -tags "${{ steps.tags.outputs.tags }}" ./internal/gateway/
+          build/race-shards.sh internal/gateway "$RUNNER_TEMP/gateway.race" "$(getconf _NPROCESSORS_ONLN)" -test.timeout=20m
+          go test -race -tags "${{ steps.tags.outputs.tags }}" ./internal/redact/
 
       # Account usage mixes cached results with concurrent fetches.
       - name: Race account usage
@@ -110,6 +120,10 @@ jobs:
       - name: Windows dsh configuration
         if: runner.os == 'Windows'
         run: go test -v -count=1 ./internal/agent -run '^Test(Dsh|KeepDsh)'
+
+      - name: Windows VS Code detection
+        if: runner.os == 'Windows'
+        run: go test -v -count=1 ./internal/agent -run '^TestVSCodeDetected$'
 
   cli:
     name: cli (${{ matrix.goos }}/${{ matrix.goarch }}, nogui)

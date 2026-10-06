@@ -114,7 +114,7 @@ func TestQianfanPlansListNothing(t *testing.T) {
 
 	plan := base
 	plan.Chat, plan.Responses = srv.URL+"/v2/tokenplan/personal", srv.URL+"/v2/tokenplan/personal"
-	plan.Anthropic = srv.URL+"/anthropic/tokenplan/personal"
+	plan.Anthropic = srv.URL + "/anthropic/tokenplan/personal"
 	ms, err := plan.Fetch(context.Background())
 	if err != nil {
 		t.Fatalf("plan fetch: %v", err)
@@ -125,7 +125,7 @@ func TestQianfanPlansListNothing(t *testing.T) {
 
 	api := base
 	api.Chat, api.Responses = srv.URL+"/v2", srv.URL+"/v2"
-	api.Anthropic = srv.URL+"/anthropic"
+	api.Anthropic = srv.URL + "/anthropic"
 	if ms, err := api.Fetch(context.Background()); err != nil || len(ms) != 3 || atomic.LoadInt32(&asked) == 0 {
 		t.Fatalf("pay as you go: %d models, %d requests, err %v", len(ms), asked, err)
 	}

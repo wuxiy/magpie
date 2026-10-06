@@ -46,7 +46,8 @@ function serve(lang, web, posted, st) {
 async function open(engine, lang, web, posted, st, t) {
   const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
   t.after(() => browser.close());
-  const page = await (await browser.newContext({ viewport: { width: 900, height: 700 } })).newPage();
+  // tall enough that Lightweight mode is over the window's foot: rows were added above it
+  const page = await (await browser.newContext({ viewport: { width: 900, height: 1000 } })).newPage();
   page.setDefaultTimeout(5000);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));

@@ -62,8 +62,8 @@ const words = {
   },
   zh: {
     s3Row: "S3 同步", davRow: "WebDAV 同步", davKept: "WebDAV 设置已保留", s3Kept: "S3 设置已保留",
-    s3On: "S3 · 使用中", here: "当前正同步到这里。WebDAV 的设置仍然保留（不会同步到它），选 WebDAV 即可查看。",
-    moving: "当前同步到 S3。保存后改为同步到这里；S3 的设置会保留，随时可以切回。",
+    s3On: "S3 · 使用中", here: "正在同步到这里。WebDAV 的设置保留但不同步，选 WebDAV 可查看。",
+    moving: "当前同步到 S3。保存后改为同步到这里；S3 的设置保留，可随时切回。",
     save: "保存", move: "改为同步到 WebDAV", address: "地址", user: "用户", password: "密码",
     saved: "已保存 · 输入新的即可替换",
   },

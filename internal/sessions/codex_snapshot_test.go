@@ -46,7 +46,7 @@ func TestCodexUsagePaginatedSnapshotBoundary(t *testing.T) {
 				for _, c := range cs {
 					total.add(c.Tokens)
 				}
-				if total != (Tokens{340, 52, 190, 0}) {
+				if total != (Tokens{340, 52, 190, 0, 0}) {
 					t.Fatalf("tokens=%+v", total)
 				}
 				if ss := List(0); len(ss) != 1 || ss[0].Tokens != total {

@@ -78,10 +78,10 @@ const words = {
   },
   zh: {
     here: "在资源库文件夹中，但未列入",
-    bring: "在原处列入资源库，不移动任何文件：你可以把它给任何 Agent",
-    always: (a) => `${a} 自己会读取 ~/.agents/skills，这个技能就放在那里 — 无论这里是否勾选，它都有这个技能`,
-    stays: "它会从所有已启用的 Agent 中移除。它链接的原文件夹保持不动。",
-    moved: "它会从所有已启用的 Agent 中移除，文件夹会移到 magpie 的备份中。",
+    bring: "在原处列入资源库，不移动文件：可分配给任何 Agent",
+    always: (a) => `${a} 会自行读取此技能所在的 ~/.agents/skills，无论是否勾选都能使用`,
+    stays: "将从所有已启用的 Agent 中移除，链接的原文件夹保持不动。",
+    moved: "将从所有已启用的 Agent 中移除，文件夹移到 magpie 的备份。",
     cancel: "取消",
   },
 };
@@ -104,7 +104,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.route("http://magpie.test/**", server(lang, posts));
       await page.goto("http://magpie.test/");
       await page.locator('button[data-view="library"]').click();
-      await page.locator("#view-library .lib-row").first().waitFor();
+      await page.locator("#view-library .lib-body:not(.lib-skel) .lib-row").first().waitFor();
+      // the page's entrance played out: a button still sliding in isn't
+      // stable, and Playwright scrolls the view to click it
+      await page.waitForFunction(() => !document.querySelector("#view-library").getAnimations({ subtree: true }).some((a) => a.playState === "running" && isFinite(a.effect.getComputedTiming().endTime)));
       return page;
     };
     const row = (page, name) => page.locator("#view-library .lib-row").filter({ has: page.locator(".name", { hasText: new RegExp("^" + name) }) });

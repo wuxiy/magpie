@@ -61,16 +61,16 @@ func checkOpenCode(t *testing.T, ss []Session) {
 		t.Fatalf("want 1 OpenCode session (the child in its parent, the empty one out), got %d: %+v", n, ss)
 	}
 	oc := find(t, ss, "opencode", ocMain)
-	if oc.Cwd != "/work/oc" || oc.Title != "Why does the login test flake?" {
+	if oc.Cwd != "/work/oc" || oc.Title != "Flaky test hunt" {
 		t.Fatalf("opencode: %+v", oc)
 	}
-	if a := model(oc, "gpt-6-astra"); a.Tokens != (Tokens{1000, 120, 5000, 0}) || !a.Priced {
+	if a := model(oc, "gpt-6-astra"); a.Tokens != (Tokens{1000, 120, 5000, 0, 0}) || !a.Priced {
 		t.Fatalf("astra: %+v", a)
 	}
-	if l := model(oc, "codex/gpt-6-luna"); l.Tokens != (Tokens{300, 60, 2000, 0}) || l.Priced {
+	if l := model(oc, "codex/gpt-6-luna"); l.Tokens != (Tokens{300, 60, 2000, 0, 0}) || l.Priced {
 		t.Fatalf("luna: %+v", l)
 	}
-	if o := model(oc, "claude-opus-5-5"); o.Tokens != (Tokens{40, 60, 700, 300}) {
+	if o := model(oc, "claude-opus-5-5"); o.Tokens != (Tokens{40, 60, 700, 300, 0}) {
 		t.Fatalf("the subagent's opus: %+v", o)
 	}
 	if !oc.Start.Equal(at("2026-09-26T10:00:00Z")) || !oc.Last.Equal(at("2026-09-26T10:03:00Z")) {
@@ -90,7 +90,7 @@ func TestOpenCodeFiles(t *testing.T) {
 
 	// the work of the main session only, 10:00:00–10:03:00, every pause short
 	s := statsAt(0, statsNow)
-	if got, sec := usageOn(s, "2026-09-26", "/work/oc"); got != (Tokens{1340, 240, 7700, 300}) || sec != 180 {
+	if got, sec := usageOn(s, "2026-09-26", "/work/oc"); got != (Tokens{1340, 240, 7700, 300, 0}) || sec != 180 {
 		t.Fatalf("opencode on the 26th: %+v, %ds active", got, sec)
 	}
 }
@@ -179,7 +179,7 @@ func TestOpenCodeDB(t *testing.T) {
 		t.Fatalf("path %s", oc.Path)
 	}
 	s := statsAt(0, statsNow)
-	if got, sec := usageOn(s, "2026-09-26", "/work/oc"); got != (Tokens{1340, 240, 7700, 300}) || sec != 180 {
+	if got, sec := usageOn(s, "2026-09-26", "/work/oc"); got != (Tokens{1340, 240, 7700, 300, 0}) || sec != 180 {
 		t.Fatalf("opencode on the 26th: %+v, %ds active", got, sec)
 	}
 
@@ -187,7 +187,7 @@ func TestOpenCodeDB(t *testing.T) {
 	ocInsert(t, db, ocChild, "msg_0005", 1790416990000, 1790417000000,
 		`{"id":"msg_0005","role":"assistant","modelID":"claude-opus-5-5","tokens":{"input":1,"output":2,"reasoning":0,"cache":{"read":3,"write":4}},"time":{"created":1790416990000,"completed":1790417000000}}`)
 	oc = find(t, List(0), "opencode", ocMain)
-	if o := model(oc, "claude-opus-5-5"); o.Tokens != (Tokens{41, 62, 703, 304}) {
+	if o := model(oc, "claude-opus-5-5"); o.Tokens != (Tokens{41, 62, 703, 304, 0}) {
 		t.Fatalf("after a new reply: %+v", o)
 	}
 	if !oc.Last.Equal(at("2026-09-26T10:03:20Z")) {
@@ -210,15 +210,15 @@ func TestPi(t *testing.T) {
 	setupMore(t)
 	ss := List(0)
 	p := find(t, ss, "pi", piFirst)
-	if p.Cwd != "/work/pi" || p.Title != "Refactor the parser" {
+	if p.Cwd != "/work/pi" || p.Title != "Parser refactor" {
 		t.Fatalf("pi: %+v", p)
 	}
 	// a tool's model work and a compaction on the model in use, a usage
 	// entry on its own
-	if o := model(p, "claude-opus-5-5"); o.Tokens != (Tokens{110, 55, 1300, 200}) || !o.Priced {
+	if o := model(p, "claude-opus-5-5"); o.Tokens != (Tokens{110, 55, 1300, 200, 0}) || !o.Priced {
 		t.Fatalf("opus: %+v", o)
 	}
-	if o := model(p, "claude/claude-opus-5-5"); o.Tokens != (Tokens{60, 40, 500, 0}) {
+	if o := model(p, "claude/claude-opus-5-5"); o.Tokens != (Tokens{60, 40, 500, 0, 0}) {
 		t.Fatalf("magpie's opus: %+v", o)
 	}
 	if !p.Start.Equal(at("2026-09-24T08:00:00Z")) || !p.Last.Equal(at("2026-09-24T08:04:00Z")) {
@@ -232,7 +232,7 @@ func TestPi(t *testing.T) {
 
 	// the fork: what it copied counted in the session it came from
 	f := find(t, ss, "pi", piFork)
-	if f.Tokens != (Tokens{7, 3, 0, 0}) || f.Title != "Refactor the parser" {
+	if f.Tokens != (Tokens{7, 3, 0, 0, 0}) || f.Title != "Refactor the parser" {
 		t.Fatalf("fork: %+v", f)
 	}
 	if !f.Start.Equal(at("2026-09-25T09:00:00Z")) || !f.Last.Equal(at("2026-09-25T09:00:20Z")) {
@@ -240,10 +240,10 @@ func TestPi(t *testing.T) {
 	}
 
 	s := statsAt(0, statsNow)
-	if got, sec := usageOn(s, "2026-09-24", "/work/pi"); got != (Tokens{170, 95, 1800, 200}) || sec != 240 {
+	if got, sec := usageOn(s, "2026-09-24", "/work/pi"); got != (Tokens{170, 95, 1800, 200, 0}) || sec != 240 {
 		t.Fatalf("pi on the 24th: %+v, %ds active", got, sec)
 	}
-	if got, sec := usageOn(s, "2026-09-25", "/work/pi"); got != (Tokens{7, 3, 0, 0}) || sec != 20 {
+	if got, sec := usageOn(s, "2026-09-25", "/work/pi"); got != (Tokens{7, 3, 0, 0, 0}) || sec != 20 {
 		t.Fatalf("pi on the 25th: %+v, %ds active", got, sec)
 	}
 }
@@ -350,7 +350,7 @@ func TestOpenCodeV2(t *testing.T) {
 		t.Fatalf("v2 session: %+v", oc)
 	}
 	s := statsAt(0, statsNow)
-	if got, sec := usageOn(s, "2026-09-26", "/work/oc"); got != (Tokens{1340, 240, 7700, 300}) || sec != 180 {
+	if got, sec := usageOn(s, "2026-09-26", "/work/oc"); got != (Tokens{1340, 240, 7700, 300, 0}) || sec != 180 {
 		t.Fatalf("opencode 2 on the 26th: %+v, %ds active", got, sec)
 	}
 
@@ -360,7 +360,7 @@ func TestOpenCodeV2(t *testing.T) {
 		t.Fatal(err)
 	}
 	oc = find(t, List(0), "opencode", ocMain)
-	if l := model(oc, "codex/gpt-6-luna"); l.Tokens != (Tokens{305, 61, 2000, 0}) {
+	if l := model(oc, "codex/gpt-6-luna"); l.Tokens != (Tokens{305, 61, 2000, 0, 0}) {
 		t.Fatalf("luna after a compaction: %+v", l)
 	}
 

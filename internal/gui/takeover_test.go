@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"os"
@@ -26,14 +27,29 @@ func TestGatewayTakenOver(t *testing.T) {
 		w.Write([]byte(`{"name":"magpie"}`))
 	})}
 	go other.Serve(ln)
-	defer served.Store(nil)
+	defer other.Close()
+	// the watch and the gateway it takes up end with the test, before its
+	// HOME and MAGPIE_ADDR are put back
+	ctx, stop := context.WithCancel(context.Background())
+	watched := make(chan struct{})
+	t.Cleanup(func() {
+		stop()
+		<-watched
+		gatewayMu.Lock()
+		defer gatewayMu.Unlock()
+		if served.Load() != nil && servedRun.stop != nil {
+			servedRun.stop()
+			<-servedRun.done
+		}
+		served.Store(nil)
+	})
+	go func() {
+		defer close(watched)
+		watchGateway(ctx, 50*time.Millisecond)
+	}()
 	if serveGateway() != nil {
 		t.Fatal("served over another magpie")
 	}
-	old := gatewayWatch
-	gatewayWatch = 50 * time.Millisecond
-	defer func() { gatewayWatch = old }()
-	go watchGateway()
 	time.Sleep(200 * time.Millisecond)
 	if served.Load() != nil {
 		t.Fatal("took the gateway while the other had it")

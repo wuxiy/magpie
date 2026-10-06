@@ -10,9 +10,13 @@ package provider
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -55,6 +59,12 @@ type Login struct {
 }
 
 type savedLogin struct {
+	// ID is the account's stable id (#905): set once it is written, and
+	// kept as it is when the account is renamed or its plan changes — a
+	// gateway key held to accounts names it by this, not by a name that
+	// moves. Until the logins are next written, one made of the name
+	// stands in, so an entry made before stands.
+	ID string `json:"id,omitempty"`
 	// Order is the user-arranged routing order within this agent. Zero keeps
 	// the original alphabetical order for accounts not arranged yet.
 	Order     int       `json:"order,omitempty"`
@@ -110,26 +120,97 @@ var (
 // switchable agents: those whose sign-in magpie can save and put back.
 var loginAgents = []string{"claude", "codex"}
 
+// loginID is the account's stable id (#905): the one saved with it, or a
+// stand-in made of its name until the logins are next written — set then,
+// and kept through renames.
+func loginID(l savedLogin) string {
+	if l.ID != "" {
+		return l.ID
+	}
+	sum := sha256.Sum256([]byte("magpie login\n" + l.Agent + "\n" + accountKey(l.User)))
+	return hex.EncodeToString(sum[:8])
+}
+
+// LoginID is the stable id of an agent's account known by its name
+// (#905): the login's, kept through renames, or one made of the name
+// for an account whose logins haven't been written since — and for an
+// agent that keeps its accounts elsewhere, made of the name always.
+func LoginID(agent, user string) string {
+	for _, l := range readLogins() {
+		if l.Agent == agent && accountKey(l.User) == accountKey(user) {
+			return loginID(l)
+		}
+	}
+	return loginID(savedLogin{Agent: agent, User: user})
+}
+
 func loginsPath() string { return filepath.Join(filepath.Dir(Path()), "logins.json") }
+
+// lastLogins is the accounts last read from logins.json: a read that fails
+// (a file half there, one magpie can't open for a moment) is them, not no
+// accounts, which the next change of an account would write back over
+// every account.
+var (
+	lastLoginsMu sync.Mutex
+	lastLogins   []savedLogin
+)
 
 func readLogins() []savedLogin {
 	// parsed once until the file changes: a state of the page asks for it
 	// dozens of times (every agent's drift and models), and with the
 	// accounts' credentials in it the file is large — a Save of a profile
 	// waited seconds on it
-	ls, _ := filememo.Read("logins", loginsPath(), func(b []byte) ([]savedLogin, error) {
+	ls, err := filememo.Read("logins", loginsPath(), func(b []byte) ([]savedLogin, error) {
 		var out []savedLogin
-		_ = json.Unmarshal(b, &out)
+		if err := json.Unmarshal(b, &out); err != nil {
+			return nil, err
+		}
 		// DimAgent's accounts: magpie no longer signs in to it (DimAgent
 		// doesn't allow its subscription used outside its client), so one
 		// signed in before is left out, and gone from the file at its next write
 		out = slices.DeleteFunc(out, func(l savedLogin) bool { return l.Agent == "dimagent" })
-		return dedupeLogins(out), nil
+		return nameAlike(dedupeLogins(out)), nil
 	})
+	lastLoginsMu.Lock()
+	defer lastLoginsMu.Unlock()
+	switch {
+	case err == nil:
+		lastLogins = ls
+	case errors.Is(err, fs.ErrNotExist):
+		lastLogins = nil
+	default:
+		log.Printf("logins.json: %v; the accounts read before are kept", err)
+		ls = lastLogins
+	}
 	return slices.Clone(ls) // callers change theirs
 }
 
+// keepUnreadLogins copies a logins.json that doesn't parse aside before it
+// is written over, so the accounts in it can still be got back.
+func keepUnreadLogins(path string) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	// Match readLogins: valid JSON can still have unreadable field types.
+	var ls []savedLogin
+	if json.Unmarshal(b, &ls) == nil {
+		return
+	}
+	bad := path + ".bad-" + time.Now().Format("20060102-150405")
+	if err := os.WriteFile(bad, b, 0o600); err != nil {
+		log.Printf("logins.json doesn't parse and couldn't be kept: %v", err)
+		return
+	}
+	log.Printf("logins.json didn't parse; it is kept as %s", filepath.Base(bad))
+}
+
 func writeLogins(ls []savedLogin) error {
+	// every account gets its stable id before it is written (#905): the
+	// one it has, or the stand-in made of its name, there to stay
+	for i := range ls {
+		ls[i].ID = loginID(ls[i])
+	}
 	sort.SliceStable(ls, func(i, j int) bool {
 		if ls[i].Agent != ls[j].Agent {
 			return ls[i].Agent < ls[j].Agent
@@ -150,7 +231,14 @@ func writeLogins(ls []savedLogin) error {
 		return err
 	}
 	defer Changed() // an account added, switched or gone: All builds anew
-	return writePrivate(loginsPath(), append(b, '\n'))
+	keepUnreadLogins(loginsPath())
+	if err := writePrivate(loginsPath(), append(b, '\n')); err != nil {
+		return err
+	}
+	lastLoginsMu.Lock()
+	lastLogins = slices.Clone(ls)
+	lastLoginsMu.Unlock()
+	return nil
 }
 
 // writePrivate replaces a file readable by the user alone, atomically, so
@@ -184,6 +272,10 @@ func writePrivate(path string, b []byte) error {
 }
 
 func upsertLogin(ls []savedLogin, l savedLogin) []savedLogin {
+	l.User = codexName(ls, l)
+	if claudeSignInOfAnother(ls, l) {
+		return ls
+	}
 	for i := range ls {
 		if sameLogin(ls[i], l) {
 			// a refused Claude credential stays refused while it is the
@@ -277,6 +369,58 @@ func codexWho(auth json.RawMessage) (email, workspace string) {
 		workspace = claimString(id, "https://api.openai.com/auth", "chatgpt_account_id")
 	}
 	return claimString(id, "email"), workspace
+}
+
+// codexName is the name a Codex account goes by among the saved ones ls:
+// codexUser's, unless another account goes by that already — two seats of
+// one email in two Team workspaces read alike — and then the one it was
+// saved under, or for a new one the name with its workspace after it.
+// Every account is told by its name (switched to, refreshed, removed), and
+// two by one name were taken as one: removing the one not in use signed
+// Codex out of the other, as the last account, and a refresh of one was
+// written over the other's credentials (vincentzhang on Discord).
+func codexName(ls []savedLogin, l savedLogin) string {
+	if l.Agent != "codex" {
+		return l.User
+	}
+	taken := func(user string) bool {
+		return slices.ContainsFunc(ls, func(x savedLogin) bool {
+			return x.Agent == "codex" && strings.EqualFold(x.User, user) && !sameLogin(x, l)
+		})
+	}
+	for _, x := range ls {
+		// told apart once, it keeps that name; else it takes a new plan's
+		if x.Agent == "codex" && sameLogin(x, l) && (taken(l.User) || strings.HasPrefix(strings.ToLower(x.User), strings.ToLower(l.User)+" · ")) {
+			return x.User
+		}
+	}
+	if !taken(l.User) {
+		return l.User
+	}
+	_, ws := codexWho(l.Auth)
+	if len(ws) > 8 {
+		ws = ws[:8]
+	}
+	name := l.User
+	if ws != "" {
+		name += " · " + ws
+	}
+	for n := 2; taken(name); n++ {
+		name = fmt.Sprintf("%s · %s (%d)", l.User, ws, n)
+	}
+	return name
+}
+
+// nameAlike gives each Codex account in ls a name of its own (codexName),
+// the first by a name keeping it: two saved by one name before are told
+// apart from the next write on.
+func nameAlike(ls []savedLogin) []savedLogin {
+	for i := range ls {
+		if ls[i].Agent == "codex" {
+			ls[i].User = codexName(ls[:i], ls[i])
+		}
+	}
+	return ls
 }
 
 // codexUser names a ChatGPT account from its ID token's claims: its email,
@@ -433,8 +577,11 @@ func liveLogin(agent string) (savedLogin, bool) {
 		if user == "" {
 			return savedLogin{}, false
 		}
-		return savedLogin{Agent: agent, User: user, Plan: claimString(id, "https://api.openai.com/auth", "chatgpt_plan_type"),
-			Auth: json.RawMessage(bytes.TrimSpace(b))}, true
+		l := savedLogin{Agent: agent, User: user, Plan: claimString(id, "https://api.openai.com/auth", "chatgpt_plan_type"),
+			Auth: json.RawMessage(bytes.TrimSpace(b))}
+		// by the name it is saved under, which may not be codexUser's
+		l.User = codexName(readLogins(), l)
+		return l, true
 	case "claude":
 		c, _, ok := claudeCredential()
 		if !ok {
@@ -537,6 +684,8 @@ func Logins(agent string) []Login {
 		return factoryLoginList()
 	case MiMoID:
 		return mimoLoginList()
+	case ChatGPTAPIID:
+		return siwcLoginList()
 	case "gemini", "antigravity":
 		return googleLoginList(agent)
 	case "":
@@ -561,7 +710,7 @@ func Logins(agent string) []Login {
 			{WorkBuddyAIID, func() []Login { return wbLoginList(wbAI) }}, {CommandCodePlanID, cmdLoginList},
 			{"qoder", func() []Login { return loginsOf(qoderLogins()) }},
 			{QoderCNID, func() []Login { return loginsOf(qoderLoginsOf(QoderCNID)) }}, {"zed", zedLoginList}, {"factory", factoryLoginList},
-			{MiMoID, mimoLoginList}, {"gemini", func() []Login { return googleLoginList("gemini") }},
+			{MiMoID, mimoLoginList}, {ChatGPTAPIID, siwcLoginList}, {"gemini", func() []Login { return googleLoginList("gemini") }},
 			{"antigravity", func() []Login { return googleLoginList("antigravity") }},
 		} {
 			if !Moved(b.id) {
@@ -749,6 +898,8 @@ func switchLogin(agent, user string) error {
 		return switchFactoryLogin(user)
 	case MiMoID:
 		return switchMiMoLogin(user)
+	case ChatGPTAPIID:
+		return switchSIWCLogin(user)
 	case "gemini", "antigravity":
 		return switchGoogleLogin(agent, user)
 	}
@@ -795,6 +946,12 @@ func switchSavedLogin(agent, user string) (from string, _ error) {
 		}
 	}
 	want := *target
+	if agent == "claude" {
+		// the credentials as Claude Code has them this moment, not as last
+		// looked at: one it refreshed since has a new refresh token and the
+		// old one is dead (0xAncientTwo on X: signed out again and again)
+		forgetClaudeCredential()
+	}
 	if live, ok := liveLogin(agent); ok {
 		if strings.EqualFold(live.User, want.User) {
 			return "", nil
@@ -821,6 +978,7 @@ func switchSavedLogin(agent, user string) (from string, _ error) {
 		if err = putClaudeLogin(want); err == nil {
 			// Claude Code's own now: its only holder
 			forgetClaudeDir(want.User)
+			claudeHandedOver(want.User)
 		}
 	default:
 		err = fmt.Errorf("%s accounts can't be switched", agent)
@@ -882,7 +1040,11 @@ func putClaudeLogin(l savedLogin) error {
 }
 
 // ForgetLogin drops a remembered account. The one an agent is signed in to
-// now can't be forgotten; it would only be remembered again.
+// now can't be forgotten while it has another to be signed in to; it would
+// only be remembered again (SignedInError). Codex is signed in to another
+// of its accounts first (nextOnForget), and its last one is signed out
+// instead, as `codex logout` does (mamba on Discord: a single Codex account
+// couldn't be removed at all).
 func ForgetLogin(agent, user string) error {
 	if pp, ok := pluginOfAgent(agent); ok {
 		return forgetPluginLogin(pp, user)
@@ -910,15 +1072,69 @@ func ForgetLogin(agent, user string) error {
 		return forgetFactoryLogin(user)
 	case MiMoID:
 		return forgetMiMoLogin(user)
+	case ChatGPTAPIID:
+		return forgetSIWCLogin(user)
 	case "gemini", "antigravity":
 		return forgetGoogleLogin(agent, user)
 	}
+	if agent == "codex" {
+		// the account Codex is signed in to, with another saved: Codex is
+		// signed in to that one first, as its Use would, and this one is
+		// forgotten then, rather than Codex left signed out or the removal
+		// refused (vincentzhang1_55530 on Discord: a Team account removed
+		// beside a Plus one, and Codex was at its sign-in screen)
+		if next := nextOnForget(agent, user); next != "" {
+			if err := SwitchLogin(agent, next); err != nil {
+				return err
+			}
+		}
+	}
+	signedOut, err := forgetLogin(agent, user)
+	if signedOut {
+		// gone from the agent too: nothing of it is served any more
+		ForgetAccounts()
+	}
+	return err
+}
+
+// nextOnForget is the account an agent is signed in to in place of user,
+// which is being removed: "" when it isn't signed in to user, or has no
+// other saved. The first other in the order that is on, else one whose
+// sign-in still holds, else any other.
+func nextOnForget(agent, user string) string {
+	ls := Logins(agent)
+	if !slices.ContainsFunc(ls, func(l Login) bool { return l.Active && strings.EqualFold(l.User, user) }) {
+		return ""
+	}
+	for _, fit := range []func(Login) bool{
+		func(l Login) bool { return l.On && !l.Paused && l.Lapsed == "" },
+		func(l Login) bool { return l.Lapsed == "" },
+		func(Login) bool { return true },
+	} {
+		for _, l := range ls {
+			if !strings.EqualFold(l.User, user) && fit(l) {
+				return l.User
+			}
+		}
+	}
+	return ""
+}
+
+func forgetLogin(agent, user string) (signedOut bool, err error) {
 	loginsMu.Lock()
 	defer loginsMu.Unlock()
-	if live, ok := liveLogin(agent); ok && strings.EqualFold(live.User, user) {
-		return fmt.Errorf("%s is signed in to %s now; switch to another account first", agent, user)
-	}
 	ls := readLogins()
+	if live, ok := liveLogin(agent); ok && strings.EqualFold(live.User, user) {
+		other := slices.ContainsFunc(ls, func(l savedLogin) bool { return l.Agent == agent && !strings.EqualFold(l.User, user) })
+		if agent != "codex" || other {
+			return false, &SignedInError{Agent: agent, User: user}
+		}
+		// as `codex logout` does: the sign-in's file goes, all of it
+		if err := os.Remove(codexAuthPath()); err != nil && !os.IsNotExist(err) {
+			return false, err
+		}
+		signedOut = true
+	}
 	out := ls[:0]
 	found := false
 	for _, l := range ls {
@@ -929,12 +1145,36 @@ func ForgetLogin(agent, user string) error {
 		out = append(out, l)
 	}
 	if !found {
-		return fmt.Errorf("no saved %s account %q", agent, user)
+		if signedOut {
+			return true, nil // signed in, not saved yet
+		}
+		return false, fmt.Errorf("no saved %s account %q", agent, user)
 	}
 	if agent == "claude" {
 		forgetClaudeDir(user)
 	}
-	return writeLogins(out)
+	return signedOut, writeLogins(out)
+}
+
+// SignedInError is ForgetLogin's refusal of the account an agent is
+// signed in to now while it has another: that one is signed in to first
+// (its Use), and this one removed then. The GUI says it in the reader's
+// language (code signed_in).
+type SignedInError struct{ Agent, User string }
+
+func (e *SignedInError) Error() string {
+	return fmt.Sprintf("%s is signed in to %s now: sign it in to another of its accounts first (Use on that account), then remove this one", loginAgentName(e.Agent), e.User)
+}
+
+// loginAgentName is a switchable agent's name as its accounts list says it.
+func loginAgentName(agent string) string {
+	switch agent {
+	case "codex":
+		return "Codex"
+	case "claude":
+		return "Claude Code"
+	}
+	return agent
 }
 
 // ForgetAccounts makes the next look at the accounts read them afresh, for
@@ -943,6 +1183,11 @@ func ForgetAccounts() {
 	loginsMu.Lock()
 	loginsSeenAt = time.Time{}
 	loginsMu.Unlock()
+	// an account asked for its list a moment ago is asked again: the
+	// accounts read afresh may be others under the same id
+	newFetches.Lock()
+	clear(newFetches.m)
+	newFetches.Unlock()
 	forgetAccountCaches()
 }
 
@@ -956,4 +1201,38 @@ func forgetAccountCaches() {
 	subscriptionUsageCache.at = time.Time{}
 	subscriptionUsageCache.data = nil
 	subscriptionUsageCache.Unlock()
+}
+
+// claudeSignInOfAnother says the Claude sign-in l carries is another saved
+// account's, not the one its profile names: Claude Code's credential and
+// ~/.claude.json were read from two moments, as when magpie switches
+// Claude Code (keeping it signed in to one account) and a Claude Code
+// started on the account before writes that one's profile after. Saved,
+// it put the one account's sign-in and plan under the other's name, whose
+// runs and Usage card then were the first's (netfishx on X). The account
+// the profile names holding the sign-in already, it is that one's.
+func claudeSignInOfAnother(ls []savedLogin, l savedLogin) bool {
+	if l.Agent != "claude" {
+		return false
+	}
+	c, ok := parseClaudeCredentials(l.Auth)
+	if !ok {
+		return false
+	}
+	holds := func(x savedLogin) bool {
+		o, ok := parseClaudeCredentials(x.Auth)
+		return ok && (c.OAuth.AccessToken != "" && o.OAuth.AccessToken == c.OAuth.AccessToken ||
+			c.OAuth.RefreshToken != "" && o.OAuth.RefreshToken == c.OAuth.RefreshToken)
+	}
+	another := false
+	for _, x := range ls {
+		if x.Agent != "claude" || !holds(x) {
+			continue
+		}
+		if sameLogin(x, l) {
+			return false
+		}
+		another = true
+	}
+	return another
 }

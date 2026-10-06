@@ -38,6 +38,17 @@ type WSLHome struct {
 // internal/agent sets it, which it does where there is WSL.
 var WSLHomes func() []WSLHome
 
+// WSLRunning is whether a distro runs now, as wsl.exe said a few seconds
+// ago at most; internal/agent sets it. A listing's Running is as old as
+// the listing (up to wslRelist and more): a distro the user stopped since
+// (wsl --shutdown, to repair WSL) would be started again by reading its
+// files, so a file is read only while this says it runs.
+var WSLRunning func(distro string) bool
+
+// wslUp is WSLRunning's answer; true when nothing set it (the listing
+// alone decides).
+func wslUp(distro string) bool { return WSLRunning == nil || WSLRunning(distro) }
+
 // wslAgents are the agents whose sessions are read in a distro, and the
 // folder under its home each keeps them in (the default: an agent's own
 // variables there can't be read from Windows).
@@ -141,6 +152,16 @@ func wslFiles(agents ...string) []file {
 	for _, a := range agents {
 		want[a] = true
 	}
+	// which run is asked outside the lock: wsl.exe may take a while
+	wslSess.Lock()
+	up := map[string]bool{}
+	for n := range wslSess.lists {
+		up[n] = false
+	}
+	wslSess.Unlock()
+	for n := range up {
+		up[n] = wslUp(n)
+	}
 	wslSess.Lock()
 	defer wslSess.Unlock()
 	names := make([]string, 0, len(wslSess.lists))
@@ -151,9 +172,10 @@ func wslFiles(agents ...string) []file {
 	var out []file
 	for _, n := range names {
 		l := wslSess.lists[n]
+		cold := !l.Running || !up[n]
 		for _, e := range l.Files {
 			if want[e.Agent] {
-				out = append(out, file{agent: e.Agent, key: e.Key, path: e.Path, main: e.Main, size: e.Size, mod: e.Mod, wsl: n, cold: !l.Running})
+				out = append(out, file{agent: e.Agent, key: e.Key, path: e.Path, main: e.Main, size: e.Size, mod: e.Mod, wsl: n, cold: cold})
 			}
 		}
 	}
@@ -174,7 +196,7 @@ func wslList(gen uint64, done chan struct{}) {
 		if h.Distro == "" || h.Home == "" {
 			continue
 		}
-		if !h.Running {
+		if !h.Running || !wslUp(h.Distro) {
 			if o := old[h.Distro]; o != nil && o.Home == h.Home {
 				c := *o
 				c.Running = false
@@ -225,13 +247,18 @@ func wslCold(path string) bool {
 		return false
 	}
 	wslSess.Lock()
-	defer wslSess.Unlock()
-	for _, l := range wslSess.lists {
-		if !l.Running && under(path, l.Home) {
-			return true
+	var in string
+	for n, l := range wslSess.lists {
+		if under(path, l.Home) {
+			if !l.Running {
+				wslSess.Unlock()
+				return true
+			}
+			in = n
 		}
 	}
-	return false
+	wslSess.Unlock()
+	return in != "" && !wslUp(in)
 }
 
 // under reports whether path is dir or in it, its case aside (Windows').
@@ -263,6 +290,76 @@ func wslDirs() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// wslHomeOf is the home of a listed distro, "" when it isn't.
+func wslHomeOf(distro string) string {
+	wslSess.Lock()
+	defer wslSess.Unlock()
+	if l := wslSess.lists[distro]; l != nil {
+		return l.Home
+	}
+	return ""
+}
+
+// wslForget drops a deleted session's files from their distro's listing,
+// and has the next read list the distros again (which keeps that on disk).
+func wslForget(fs []file) {
+	gone := map[string]bool{}
+	for _, f := range fs {
+		if f.wsl != "" {
+			gone[f.path] = true
+		}
+	}
+	if len(gone) == 0 {
+		return
+	}
+	wslSess.Lock()
+	defer wslSess.Unlock()
+	for _, l := range wslSess.lists {
+		var kept []wslEntry
+		for _, e := range l.Files {
+			if !gone[e.Path] {
+				kept = append(kept, e)
+			}
+		}
+		l.Files = kept
+	}
+	wslSess.at = time.Time{}
+}
+
+// wslRelistNow lists the distros again when a restored session's files
+// went back into one, after any listing under way (which may have missed
+// them), waiting for it as a first listing is waited for: the session is
+// listed when the page asks next.
+func wslRelistNow(items []moved) {
+	if WSLHomes == nil {
+		return
+	}
+	wslSess.Lock()
+	in := false
+	for _, l := range wslSess.lists {
+		for _, m := range items {
+			in = in || under(m.From, l.Home)
+		}
+	}
+	busy := wslSess.done
+	wslSess.Unlock()
+	if !in {
+		return
+	}
+	if busy != nil {
+		<-busy
+	}
+	done := make(chan struct{})
+	wslSess.Lock()
+	wslSess.done, wslSess.at = done, time.Now()
+	go wslList(wslSess.gen, done)
+	wslSess.Unlock()
+	select {
+	case <-done:
+	case <-time.After(wslFirstWait):
+	}
 }
 
 // wslReset forgets the listings, in memory.

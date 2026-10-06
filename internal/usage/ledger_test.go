@@ -90,8 +90,8 @@ func TestLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := strings.Join(CSVHeader, ",") + "\n" +
-		rows[1].Time.Format(time.RFC3339) + ",codex,relay/sol,relay,relay.example,sol,sol-2026-01-01,false,,10,1,0,0,0,0.000028,100,,200,false,,,,,,,,,,,,false,,,false,,,\n" +
-		rows[2].Time.Format(time.RFC3339) + ",codex,fast,relay,relay.example,sol,luna,true,high,2000,500,1000,4000,0,0.012500,3200,400,200,false,s1,,,,,123,,,,,,false,,,false,,,\n"
+		rows[1].Time.Format(time.RFC3339) + ",codex,relay/sol,relay,relay.example,sol,sol-2026-01-01,false,,10,1,0,0,0,0.000028,100,,200,false,,,,,,,,,,,,false,,,false,,,,,0,0\n" +
+		rows[2].Time.Format(time.RFC3339) + ",codex,fast,relay,relay.example,sol,luna,true,high,2000,500,1000,4000,0,0.012500,3200,400,200,false,s1,,,,,123,,,,,,false,,,false,,,,,1000,0\n"
 	if b.String() != want {
 		t.Fatalf("csv:\n%s\nwant:\n%s", b.String(), want)
 	}
@@ -260,7 +260,7 @@ func TestLedgerWithSessionLogCalls(t *testing.T) {
 	if err := WriteCSV(&b, rows[2:4]); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{",req_log,,,,log,false,,,false,,,\n", ",true,s2,,,,,,req_lim,,You've hit your limit,rate_limit,log,false,,,false,,,\n"} {
+	for _, want := range []string{",req_log,,,,log,false,,,false,,,,,500,0\n", ",true,s2,,,,,,req_lim,,You've hit your limit,rate_limit,log,false,,,false,,,,,0,0\n"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("csv lacks %q:\n%s", want, b.String())
 		}
@@ -322,6 +322,36 @@ func TestLedgerSeries(t *testing.T) {
 	// no rows: the empty timeline, so the chart has its place
 	if bucket, pts := LedgerSeries(Month, nil); bucket != "day" || len(pts) != 30 {
 		t.Fatalf("no rows: %s, %d points", bucket, len(pts))
+	}
+}
+
+// A point's part of each model says how fast that model's replies came,
+// as the point's own sums do, for a chart of speed to tell the models
+// apart (#860): a failed call and one too fast to time count in neither.
+func TestLedgerSeriesSpeed(t *testing.T) {
+	now := time.Now()
+	at := time.Date(now.Year(), now.Month(), now.Day(), 0, 10, 0, 0, now.Location())
+	row := func(model string, out int, ms, ttft int64, status int) Row {
+		return Row{Record: Record{Time: at, Provider: "p", Model: model, Output: out, Millis: ms, TTFT: ttft, Status: status}}
+	}
+	rows := []Row{
+		row("fast", 1000, 2500, 500, 200), // 1000 tokens in 2 s
+		row("fast", 300, 1500, 500, 200),  // 300 in 1 s
+		row("slow", 100, 6000, 1000, 200), // 100 in 5 s
+		row("slow", 900, 9000, 2000, 500), // failed
+		row("slow", 50, 1001, 1000, 200),  // 1 ms: no speed, its TTFT counts
+	}
+	_, pts := LedgerSeries(Today, rows)
+	h := pts[0]
+	fast, slow := h.By["model"]["fast"], h.By["model"]["slow"]
+	if fast.Timed != 2 || fast.TTFT != 1000 || fast.DecodeMs != 3000 || fast.DecodeOut != 1300 {
+		t.Fatalf("fast: %+v", fast)
+	}
+	if slow.Calls != 3 || slow.Timed != 2 || slow.TTFT != 2000 || slow.DecodeMs != 5000 || slow.DecodeOut != 100 {
+		t.Fatalf("slow: %+v", slow)
+	}
+	if h.DecodeMs != fast.DecodeMs+slow.DecodeMs || h.DecodeOut != fast.DecodeOut+slow.DecodeOut || h.Timed != 4 {
+		t.Fatalf("the point's own: %+v", h.Totals)
 	}
 }
 

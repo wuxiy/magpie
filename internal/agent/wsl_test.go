@@ -183,7 +183,9 @@ func TestWSLAgentsElsewhere(t *testing.T) {
 func fakeWSL(t *testing.T, installed, running string, probes, roots map[string]string) (asked, opened *[]string) {
 	t.Helper()
 	run, root := wslRun, wslRoot
-	reset := func() { wsl.seen, wsl.at, wsl.names, wsl.running, wsl.dirty = nil, time.Time{}, nil, nil, false }
+	reset := func() {
+		wsl.seen, wsl.at, wsl.runAt, wsl.names, wsl.running, wsl.dirty = nil, time.Time{}, time.Time{}, nil, nil, false
+	}
 	t.Cleanup(func() { wslRun, wslRoot = run, root; reset() })
 	reset()
 	asked, opened = &[]string{}, &[]string{}
@@ -307,5 +309,76 @@ func TestWSLListFails(t *testing.T) {
 	}
 	if b2, _ := os.ReadFile(wslStatePath()); string(b2) != string(b) {
 		t.Fatalf("rewrote %s", b2)
+	}
+}
+
+// TJHHHH on Discord: magpie kept starting WSL while they repaired it. An
+// agent made while its distro ran is still read after the user stops it
+// (wsl --shutdown): its fields shown, the catalog synced, its check, the
+// requests it made. None of them opens the stopped distro, which would
+// start it: its fields read as last seen, and the next look neither probes
+// nor opens it.
+func TestWSLStoppedSinceNotOpened(t *testing.T) {
+	codexHome(t, "", "")
+	root := t.TempDir()
+	cfg := filepath.Join(root, "home", "me", ".codex", "config.toml")
+	os.MkdirAll(filepath.Dir(cfg), 0o755)
+	os.WriteFile(cfg, []byte("model = \"gpt-5.5\"\n"), 0o644)
+	asked, opened := fakeWSL(t, "Ubuntu\r\n", "", map[string]string{"Ubuntu": "home:/home/me\ndir:.codex\n"}, map[string]string{"Ubuntu": root})
+	running, fake := "Ubuntu\r\n", wslRun
+	wslRun = func(d time.Duration, args ...string) ([]byte, error) {
+		if strings.Join(args, " ") == "-l --running -q" {
+			return utf16le(running, true), nil
+		}
+		return fake(d, args...)
+	}
+	as := wslAgentsOf(wslDistros())
+	if len(as) != 1 || as[0].ID != "codex@wsl:Ubuntu" {
+		t.Fatalf("%+v", as)
+	}
+	a := as[0]
+	if v := a.Values(); v["model"] != "gpt-5.5" {
+		t.Fatalf("running: %v", v)
+	}
+
+	running = ""
+	wsl.Lock()
+	wsl.runAt = time.Time{} // wslRunningAge later
+	wsl.Unlock()
+	// opening it would start it: here there is nothing to read, and a
+	// write would put the folder back
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	*asked, *opened = nil, nil
+	if v := a.Values(); v["model"] != "gpt-5.5" {
+		t.Fatalf("the stopped distro's files were read: %v", v)
+	}
+	if a.Sync != nil {
+		if err := a.Sync(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a.Check != nil {
+		if c := a.Check(); c != "" {
+			t.Fatalf("check %q", c)
+		}
+	}
+	if a.Reached != nil {
+		if at, _, _ := a.Reached(time.Time{}); !at.IsZero() {
+			t.Fatal(at)
+		}
+	}
+	if ds := wslDistros(); len(ds) != 1 || ds[0].Running {
+		t.Fatalf("%+v", ds)
+	}
+	if WSLRunning("Ubuntu") {
+		t.Fatal("WSLRunning")
+	}
+	if len(*asked) != 0 || len(*opened) != 0 {
+		t.Fatalf("asked %v, opened %v", *asked, *opened)
+	}
+	if _, err := os.Stat(root); err == nil {
+		t.Fatal("written into the stopped distro")
 	}
 }

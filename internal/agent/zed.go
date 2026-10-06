@@ -3,11 +3,15 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/yetone/magpie/internal/appdir"
+	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/edit"
 )
 
@@ -19,6 +23,14 @@ var zedCredential = saveZedCredential
 
 // Zed uses ~/.config on macOS, XDG on Linux and Roaming AppData on Windows.
 func zed(home, cfg string) *Agent {
+	bin := os.Getenv("MAGPIE_ZED_BIN")
+	if bin == "" {
+		bin = "zed"
+	}
+	processes := zedProcessNames()
+	if custom := appdir.Getenv("MAGPIE_ZED_CONFIG_DIR"); custom != "" {
+		return zedAtWith(custom, bin, processes)
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		cfg = filepath.Join(home, ".config")
@@ -27,21 +39,25 @@ func zed(home, cfg string) *Agent {
 		if cfg == "" {
 			cfg = filepath.Join(home, "AppData", "Roaming")
 		}
-		return zedAt(filepath.Join(cfg, "Zed"))
+		return zedAtWith(filepath.Join(cfg, "Zed"), bin, processes)
 	}
-	return zedAt(filepath.Join(cfg, "zed"))
+	return zedAtWith(filepath.Join(cfg, "zed"), bin, processes)
 }
 
 func zedAt(dir string) *Agent {
+	return zedAtWith(dir, "zed", zedProcessNames())
+}
+
+func zedAtWith(dir, bin string, processes []string) *Agent {
 	path := filepath.Join(dir, "settings.json")
 	get := func(k string) string { v, _ := edit.GetJSON(path, k); return v }
 	model := pairGet(func(k string) (string, bool) { return edit.GetJSON(path, k) }, zedModel+".provider", zedModel+".model")
 	key := "zed:" + path + ":"
 	return atomic(&Agent{
-		ID: "zed", Name: "Zed", Icon: "zed", Bin: "zed", Dir: dir, Path: path, Spelled: prefixed,
+		ID: "zed", Name: "Zed", Icon: "zed", Bin: bin, Dir: dir, Path: path, Spelled: prefixed,
 		UA: []string{"zed"},
 		Notice: func() string {
-			if usesMagpie(model()) && Running(`(^|/)(zed|zeditor|zed-editor)( |$)`) {
+			if usesMagpie(model()) && Running(processes...) {
 				return "Restart Zed if it still asks for an API key: magpie has configured its gateway credential in the system credential store."
 			}
 			return ""
@@ -51,7 +67,7 @@ func zedAt(dir string) *Agent {
 				return nil
 			}
 			return syncJSON(path, zedProvider+".available_models", func() any {
-				return zedProviderJSON()["available_models"]
+				return zedProviderJSON(path)["available_models"]
 			})
 		},
 		Check: func() string {
@@ -75,7 +91,7 @@ func zedAt(dir string) *Agent {
 						stash(previous)
 					}
 					return edit.SetJSON(path,
-						edit.KV{Path: zedProvider, Value: zedProviderJSON()},
+						edit.KV{Path: zedProvider, Value: zedProviderJSON(path)},
 						edit.KV{Path: zedModel, Value: map[string]string{"provider": magpieID, "model": ref}})
 				}
 				// Validate a native selection before removing magpie's wiring.
@@ -118,13 +134,87 @@ func zedAt(dir string) *Agent {
 	}, path, stashPath())
 }
 
-func zedProviderJSON() map[string]any {
+func zedProcessNames() []string {
+	value := os.Getenv("MAGPIE_ZED_PROCESS_NAMES")
+	if value == "" {
+		return []string{`(^|/)(zed|zeditor|zed-editor)( |$)`}
+	}
+	var out []string
+	for _, name := range strings.Split(value, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			out = append(out, `(^|/)`+regexp.QuoteMeta(name)+`( |$)`)
+		}
+	}
+	if len(out) == 0 {
+		return []string{`(^|/)(zed|zeditor|zed-editor)( |$)`}
+	}
+	return out
+}
+
+// zedLevels are the reasoning_effort values magpie writes for Zed, weakest
+// first: those every Zed that reads the field takes. Its settings take
+// language_model_core's ReasoningEffort, lowercase; max and none came after
+// it (Zed 0.233 has minimal to xhigh), and a value a Zed doesn't know is
+// reported as a settings error.
+var zedLevels = []string{"minimal", "low", "medium", "high"}
+
+// zedEffort is the reasoning_effort a model is written with, "" for one
+// that doesn't think. Zed offers its thinking switch, and its levels, only
+// for a model whose reasoning_effort is set and not "none"
+// (open_ai_compatible.rs's default_thinking_reasoning_effort), and starts
+// on that level (#964): high, or the strongest of the model's own when they
+// all fall short of it. A model that thinks with a switch alone, or whose
+// levels reach high or above it, is written high, and the gateway fits what
+// is asked to the levels the model takes.
+func zedEffort(m catalog.Model) string {
+	if !m.Reasoning && len(m.Efforts) == 0 {
+		return ""
+	}
+	best := -1
+	for _, e := range m.Efforts {
+		i := slices.Index(zedLevels, e)
+		if i < 0 && slices.Contains([]string{"xhigh", "max", "ultra"}, e) {
+			i = len(zedLevels) - 1
+		}
+		best = max(best, i)
+	}
+	if best < 0 {
+		return "high"
+	}
+	return zedLevels[best]
+}
+
+// zedProviderJSON is magpie's provider in Zed's settings at path. A
+// reasoning_effort already on a model there is kept: the user may have
+// picked another level, or "none" to keep it from thinking.
+func zedProviderJSON(path string) map[string]any {
+	kept := map[string]json.RawMessage{}
+	if raw, ok := edit.GetJSON(path, zedProvider+".available_models"); ok {
+		var cur []struct {
+			Name   string          `json:"name"`
+			Effort json.RawMessage `json:"reasoning_effort"`
+		}
+		if json.Unmarshal([]byte(raw), &cur) == nil {
+			for _, c := range cur {
+				if len(c.Effort) > 0 && string(c.Effort) != "null" {
+					kept[c.Name] = c.Effort
+				}
+			}
+		}
+	}
 	models := []any{}
 	for _, m := range magpieModels("zed") {
 		context := m.Context
 		if context == 0 {
 			context = 128000 // Zed requires a context window for every custom model.
 		}
+		// Zed's max_tokens is the window a prompt and its reply share: it
+		// keeps max_output_tokens of it for the reply and lets the prompt
+		// fill the rest before it compacts. Context is what a prompt may
+		// hold, so the window is it and the reply together (#850); written
+		// as Context alone, a model whose reply may be as long as its
+		// prompt (glm-4.6) left Zed no room for a prompt at all.
 		entry := map[string]any{
 			"name": m.ID, "display_name": m.Name, "max_tokens": context,
 			"capabilities": map[string]any{
@@ -133,8 +223,18 @@ func zedProviderJSON() map[string]any {
 				"chat_completions": true,
 			},
 		}
-		if output := maxTokens(m); output > 0 {
-			entry["max_output_tokens"] = min(output, context)
+		if output := m.Output; output > 0 {
+			if m.Context == 0 {
+				// Keep the fallback reply cap when the prompt limit is unknown.
+				output = min(output, context)
+			}
+			entry["max_output_tokens"] = output
+			entry["max_tokens"] = context + output
+		}
+		if e, ok := kept[m.ID]; ok {
+			entry["reasoning_effort"] = e
+		} else if e := zedEffort(m); e != "" {
+			entry["reasoning_effort"] = e
 		}
 		models = append(models, entry)
 	}

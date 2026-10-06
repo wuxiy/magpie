@@ -28,7 +28,10 @@ const webdavUsage = `usage:
                                           (with a user) and the passphrase
   magpie webdav set k=v…                  change it: address, user, keys, agents, library, usage (yes|no);
                                           password= and passphrase= ask for a new one
-  magpie webdav now                       sync now (the gateway does every 3 minutes, while it runs)
+  magpie webdav now                       sync now (the gateway also syncs by itself while it runs: see auto)
+  magpie webdav auto off|3|15|30|60       how often the gateway syncs by itself, in minutes; off: only when asked
+  magpie webdav restore                   make this computer's setup the server's; what is here is kept first
+  magpie webdav undo                      put back what the last restore replaced
   magpie webdav dismiss                   clear what the last sync said it replaced
   magpie webdav off                       turn it off; the file on the server stays
 
@@ -65,7 +68,10 @@ const s3Usage = `usage:
   magpie s3 set k=v…                      change it: address, bucket, prefix, endpoint, region, access-key-id,
                                           path-style, keys, agents, library, usage (yes|no); secret= and passphrase=
                                           ask for a new one
-  magpie s3 now                           sync now (the gateway does every 3 minutes, while it runs)
+  magpie s3 now                           sync now (the gateway also syncs by itself while it runs: see auto)
+  magpie s3 auto off|3|15|30|60           how often the gateway syncs by itself, in minutes; off: only when asked
+  magpie s3 restore                       make this computer's setup the server's; what is here is kept first
+  magpie s3 undo                          put back what the last restore replaced
   magpie s3 dismiss                       clear what the last sync said it replaced
   magpie s3 off                           turn it off; the file in the bucket stays
 
@@ -126,6 +132,42 @@ func syncCmd(k syncKind, args []string) error {
 		return syncSet(k, args[1:], false)
 	case "now":
 		return syncNow(k)
+	case "auto":
+		if len(args) != 2 {
+			return fmt.Errorf("magpie %s auto off|3|15|30|60", k.cmd)
+		}
+		m := davsync.Manual
+		if args[1] != "off" {
+			if _, err := fmt.Sscan(args[1], &m); err != nil {
+				return fmt.Errorf("magpie %s auto off|3|15|30|60, not %q", k.cmd, args[1])
+			}
+		}
+		if err := davsync.SetAuto(m); err != nil {
+			return err
+		}
+		return syncShow(k)
+	case "restore", "undo":
+		if _, ok := davsync.Load(); !ok {
+			return fmt.Errorf("%s sync is off: %s", k.name, k.turnOn())
+		}
+		var parts []string
+		var err error
+		if args[0] == "restore" {
+			parts, err = davsync.Restore(context.Background())
+		} else {
+			parts, err = davsync.Undo()
+		}
+		if err != nil {
+			return err
+		}
+		if len(parts) == 0 {
+			fmt.Println("nothing differed: nothing was replaced")
+		} else if args[0] == "restore" {
+			fmt.Printf("restored from the server: %s; what was here is kept, and magpie %s undo puts it back\n", strings.Join(parts, ", "), k.cmd)
+		} else {
+			fmt.Printf("put back: %s\n", strings.Join(parts, ", "))
+		}
+		return nil
 	case "dismiss":
 		if err := davsync.Dismiss(); err != nil {
 			return err
@@ -410,7 +452,10 @@ func syncShow(k syncKind) error {
 	if v.UsageError != "" {
 		fmt.Println("  couldn't share usage:", v.UsageError)
 	}
-	if n := v.Notice; n != nil {
+	if n := v.Notice; n != nil && n.Restored {
+		fmt.Println("  Restored from the server:", partNames(n.Here))
+		fmt.Println(muted.Render("  This computer's setup from before is kept in " + tilde(n.Saved) + " (magpie " + cmd + " undo puts it back; magpie " + cmd + " dismiss clears this)"))
+	} else if n != nil {
 		if len(n.Here) > 0 {
 			fmt.Println("  Replaced here by newer ones from another computer:", partNames(n.Here))
 		}
@@ -423,8 +468,13 @@ func syncShow(k syncKind) error {
 		}
 		fmt.Println(muted.Render("  The copies replaced are kept in " + tilde(dir) + " (magpie restore opens one; magpie " + cmd + " dismiss clears this)"))
 	}
-	if !gateway.Running() {
-		fmt.Println(muted.Render("  No gateway runs here: nothing syncs by itself until one does (the app, magpie web or magpie serve), every 3 minutes; magpie " + cmd + " now syncs once"))
+	switch {
+	case v.Auto == 0:
+		fmt.Println(muted.Render("  Syncs only when asked: magpie " + cmd + " now syncs once (magpie " + cmd + " auto 3 syncs by itself again)"))
+	case !gateway.Running():
+		fmt.Println(muted.Render(fmt.Sprintf("  No gateway runs here: nothing syncs by itself until one does (the app, magpie web or magpie serve), every %d minutes; magpie %s now syncs once", v.Auto, cmd)))
+	default:
+		fmt.Println(muted.Render(fmt.Sprintf("  Syncs by itself every %d minutes (magpie %s auto changes it)", v.Auto, cmd)))
 	}
 	return nil
 }

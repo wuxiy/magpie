@@ -35,8 +35,8 @@ func TestGitHubTokenSetting(t *testing.T) {
 		if path == "/api/settings" {
 			code, body = call("GET", path, "")
 		}
-		if strings.Contains(body, tok) || !strings.Contains(body, `"githubTokenMask":"ghp_…0123"`) || !strings.Contains(body, `"githubTokenFrom":"settings"`) {
-			t.Errorf("%s told the page %s", path, body)
+		if code != http.StatusOK || strings.Contains(body, tok) || !strings.Contains(body, `"githubTokenMask":"ghp_…0123"`) || !strings.Contains(body, `"githubTokenFrom":"settings"`) {
+			t.Errorf("%s answered %d and told the page %s", path, code, body)
 		}
 	}
 	// a save of the Settings page keeps it

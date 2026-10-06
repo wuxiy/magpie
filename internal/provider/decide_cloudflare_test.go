@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -21,12 +22,15 @@ func TestCloudflareDecideModelsTested(t *testing.T) {
 	t.Setenv("USERPROFILE", h)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(h, ".config"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(h, ".cache"))
+	var mu sync.Mutex
 	asked := map[string]map[string]any{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var q map[string]any
 		b, _ := io.ReadAll(r.Body)
 		json.Unmarshal(b, &q)
+		mu.Lock()
 		asked[r.URL.Path] = q
+		mu.Unlock()
 		if r.Header.Get("Authorization") != "Bearer k" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -48,11 +52,13 @@ func TestCloudflareDecideModelsTested(t *testing.T) {
 			t.Fatalf("%s: %s", r.Model, r.Error)
 		}
 	}
+	mu.Lock()
 	jev := asked["/client/v4/accounts/acc7/ai/run"]
 	if in, _ := jev["input"].(map[string]any); jev["model"] != CloudflareJev || in == nil || in["questions"] == nil || in["model"] != nil {
 		t.Errorf("Jev was asked %v", jev)
 	}
 	clef := asked["/client/v4/accounts/acc7/ai/run/@cf/cloudflare/clef"]
+	mu.Unlock()
 	if clef["model"] != "clef" || clef["questions"] == nil || clef["input"] != nil {
 		t.Errorf("Clef was asked %v", clef)
 	}

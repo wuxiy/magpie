@@ -26,6 +26,18 @@ func TestOneMagpieAtATime(t *testing.T) {
 	if dev := instanceLock(dir, "/src/magpie/magpie-dev"); dev == lock {
 		t.Fatal("magpie-dev shares the app's lock")
 	}
+	// every installed copy shares the lock: another magpie.app (one the
+	// Mac reopens, one run translocated from Downloads) and Homebrew's of
+	// any version (inaction on Discord: two birds after a restart)
+	for _, other := range []string{
+		"/Users/u/Downloads/magpie.app/Contents/MacOS/magpie",
+		"/private/var/folders/x/T/AppTranslocation/1F2E/d/magpie.app/Contents/MacOS/magpie",
+		"/opt/homebrew/Cellar/magpie/0.1.900/bin/magpie",
+	} {
+		if instanceLock(dir, other) != lock {
+			t.Errorf("%s has a lock of its own", other)
+		}
+	}
 	if filepath.Dir(lock) != dir {
 		t.Fatalf("lock %s not in the config dir", lock)
 	}

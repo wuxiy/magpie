@@ -74,7 +74,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await browser.close();
         });
         await page.goto("http://magpie.test/?view=routing");
-        if (!live) await page.locator(".rt-day").nth(1).click();
+        if (!live) await page.locator(".rt-days .rt-day").nth(1).click();
         await page.locator(".rt-req").nth(routes.length - 1).waitFor();
 
         const row = page.locator(".rt-req").nth(1);

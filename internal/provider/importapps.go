@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"github.com/tidwall/jsonc"
 	"github.com/yetone/magpie/internal/appdir"
 	"github.com/yetone/magpie/internal/plugin"
+	"github.com/yetone/magpie/internal/settings"
 	_ "modernc.org/sqlite"
 )
 
@@ -323,10 +325,19 @@ func cleanBase(u string) string {
 	return u
 }
 
-// gatewayURL is magpie's own address: importing it would loop.
+// gatewayURL is magpie's own address, on the port it listens on now or
+// the one Settings has: importing it would loop.
 func gatewayURL(u *url.URL) bool {
 	h := u.Hostname()
-	return (h == "127.0.0.1" || h == "localhost") && u.Port() == "3425"
+	if h != "127.0.0.1" && h != "localhost" {
+		return false
+	}
+	for _, a := range []string{settings.GatewayAddr(), settings.SavedAddr()} {
+		if _, p, err := net.SplitHostPort(a); err == nil && u.Port() == p {
+			return true
+		}
+	}
+	return false
 }
 
 // presetAt finds the preset serving an entry's host, the region of it the

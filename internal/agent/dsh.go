@@ -10,7 +10,8 @@ package agent
 // magpie in the llm-pi-ai entry's providers (what dsh's Models page writes
 // for "Add model provider"), with the gateway as its endpoint, the catalog
 // as its models and, as the key, a credential named in apiKeyEnv, which
-// magpie puts in ~/.dsh/.env; agent-default-model names the model new
+// magpie puts in ~/.dsh/.env and dsh's own key store (the desktop app reads
+// only the store); agent-default-model names the model new
 // sessions start on. dsh's own DeepSeek row (llm-deepseek) is left to dsh:
 // taken over, it read as DeepSeek in dsh's Models page, and a DeepSeek key
 // entered there went to the gateway under magpie's credential name, over
@@ -106,6 +107,9 @@ func dshAt(at place) *Agent {
 					notes = append(notes, "dsh reads its config at start-up — restart open dsh sessions to use this.")
 				}
 			}
+			if dshSearchesHere(dir) && !gateway.CanSearch() {
+				notes = append(notes, "dsh's web search goes through magpie, which has nothing to search with yet: set up a provider that searches by itself (DeepSeek, Claude, Codex, …) or a search API under Settings › Web search.")
+			}
 			// only before 0.1.5 does magpie go through llm-deepseek
 			if len(dshProfiles(dir)) == 0 && dshSettingsEndpoint(filepath.Join(dir, "settings.yaml")) {
 				notes = append(notes, "~/.dsh/settings.yaml sets its own DeepSeek endpoint or key, which dsh puts over magpie's; clear it in dsh's Models page to go through magpie.")
@@ -141,14 +145,23 @@ func dshAt(at place) *Agent {
 			if err := dshMirrorHome(dir, nil, gw(), true); err != nil {
 				return err
 			}
-			return dshEnv(dir, false)
+			return dshEnv(dir, gw(), false)
 		},
 		Fields: []Field{{
 			Key: "model", Label: "model",
 			Get: func() string { return dshGet(dir) },
 			Set: func(v string) error { return dshSet(dir, v, gw()) },
 			Options: func(map[string]string) []Option {
-				return append(append([]Option{}, dshModels...), viaMagpie("dsh", magpieID+"/")...)
+				own := append([]Option{}, dshModels...)
+				// since 0.1.5 dsh's own go to DeepSeek on its own key, its
+				// llm-deepseek row left to it, and say so as every agent's
+				// own do (EZN7L2C3, #955); before, magpie took that row over
+				if len(dshProfiles(dir)) > 0 {
+					for i := range own {
+						own[i].Direct = "DeepSeek"
+					}
+				}
+				return append(own, viaMagpie("dsh", magpieID+"/")...)
 			},
 		}, {
 			// the thinking effort sessions start with: agent-default-model's
@@ -697,12 +710,15 @@ func dshCheck(dir, gw string) string {
 	}
 	env := filepath.Join(dir, ".env")
 	if off := wiringOff("DeepSeek Harness", env, func(k string) (string, bool) { return edit.GetEnvFile(env, k) },
-		dshKeyRef, gateway.Token); off != "" {
+		dshKeyRef, keyAt(gw)); off != "" {
 		return off
 	}
 	creds := filepath.Join(dir, ".credentials.yaml")
-	if v, ok := edit.GetYAML(creds, "refs."+dshKeyRef); ok && v != gateway.Token {
+	if v, ok := edit.GetYAML(creds, "refs."+dshKeyRef); ok && v != keyAt(gw) {
 		return "DeepSeek Harness's own key store (" + creds + ") holds another " + dshKeyRef + ", which it uses over magpie's; remove it there (dsh's Models page, Magpie's key) to go through magpie"
+	} else if !ok && dshCredsOurs(creds) {
+		// the desktop app doesn't read .env (#969)
+		return "DeepSeek Harness's own key store (" + creds + ") doesn't hold " + dshKeyRef + ": the desktop app reads the key from there, not from .env, and its sessions fail with no credential for provider route " + dshRoute + " until it is written (Apply again)"
 	}
 	return ""
 }
@@ -759,7 +775,7 @@ func dshSet(dir, v, gw string) error {
 			return err
 		}
 	}
-	if err := dshEnv(dir, viaGateway); err != nil {
+	if err := dshEnv(dir, gw, viaGateway); err != nil {
 		return err
 	}
 	// a model picked in dsh 0.1.x is saved in its settings and goes over
@@ -771,26 +787,90 @@ func dshSet(dir, v, gw string) error {
 	return nil
 }
 
-// dshEnv puts the key for the gateway in $DSH_HOME/.env, or with on false
-// takes it out; the name magpie's llm-deepseek entry used goes either way.
-func dshEnv(dir string, on bool) error {
+// dshEnv puts the key for the gateway in $DSH_HOME/.env and dsh's own key
+// store, or with on false takes it out; the name magpie's llm-deepseek entry
+// used goes either way.
+func dshEnv(dir, gw string, on bool) error {
+	if err := dshCreds(dir, gw, on); err != nil {
+		return err
+	}
 	env := filepath.Join(dir, ".env")
 	if on {
-		if v, ok := edit.GetEnvFile(env, dshKeyRef); !ok || v != gateway.Token {
-			if err := edit.SetEnvFile(env, edit.KV{Path: dshKeyRef, Value: gateway.Token}); err != nil {
+		if v, ok := edit.GetEnvFile(env, dshKeyRef); !ok || v != keyAt(gw) {
+			if err := edit.SetEnvFile(env, edit.KV{Path: dshKeyRef, Value: keyAt(gw)}); err != nil {
 				return err
 			}
 		}
 	}
 	for _, k := range []string{dshKeyRef, dshOldKeyRef} {
 		// the old name only as magpie left it
-		if v, ok := edit.GetEnvFile(env, k); ok && !(k == dshKeyRef && on) && (k == dshKeyRef || v == gateway.Token) {
+		if v, ok := edit.GetEnvFile(env, k); ok && !(k == dshKeyRef && on) && (k == dshKeyRef || ourKey(v)) {
 			if err := edit.DelEnvFile(env, k); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// dshCreds puts the key for the gateway in dsh's own key store,
+// $DSH_HOME/.credentials.yaml (refs), or with on false takes magpie's out.
+// Only the product CLI loads the .env files into what dsh resolves keys
+// from: the desktop app reads this store and its own environment, and with
+// the key in .env alone its sessions failed with "no credential for provider
+// route magpie" (#969). The store wins over .env, so a key of the user's
+// there is left as it is (the check says so). dsh refuses a store any other
+// user can read, so a new one is made owner-only; one in a layout other
+// than version 1 is dsh's to move and isn't touched.
+func dshCreds(dir, gw string, on bool) error {
+	creds := filepath.Join(dir, ".credentials.yaml")
+	raw, err := os.ReadFile(creds)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if !dshCredsOurs(creds) {
+		return nil
+	}
+	if on {
+		v, ok := edit.GetYAML(creds, "refs."+dshKeyRef)
+		if ok && (v == keyAt(gw) || !ourKey(v)) {
+			return nil
+		}
+		if len(bytes.TrimSpace(raw)) == 0 {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(creds, []byte("version: 1\n"), 0o600); err != nil {
+				return err
+			}
+		}
+		return edit.SetYAML(creds, edit.KV{Path: "refs." + dshKeyRef, Value: keyAt(gw)})
+	}
+	for _, k := range []string{dshKeyRef, dshOldKeyRef} {
+		if v, ok := edit.GetYAML(creds, "refs."+k); ok && ourKey(v) {
+			if err := edit.DelYAML(creds, "refs."+k); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// dshCredsOurs says whether magpie may write dsh's key store: there is none
+// yet, or it is in the version 1 layout.
+func dshCredsOurs(creds string) bool {
+	raw, err := os.ReadFile(creds)
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return true
+	}
+	v, ok := edit.GetYAML(creds, "version")
+	return ok && v == "1"
 }
 
 // dshSetFile writes v into one patch list; modern is the layout of dsh
@@ -840,6 +920,9 @@ func dshSetFile(path, v string, modern bool, models []catalog.Model, gw string) 
 		if items, err = dshPutRoute(items, false, nil, gw); err != nil {
 			return err
 		}
+		if modern {
+			items = dshPutSearch(items, dshProfileHome(path), "", gw)
+		}
 	case modern && viaGateway:
 		drop("llm-deepseek") // magpie's before it was a provider of its own
 		if items, err = dshPutRoute(items, true, models, gw); err != nil {
@@ -849,11 +932,13 @@ func dshSetFile(path, v string, modern bool, models []catalog.Model, gw string) 
 			effort = ""
 		}
 		put("agent-default-model", dshDefaultLines(dshRoute, ref, effort))
+		items = dshPutSearch(items, dshProfileHome(path), ref, gw)
 	case modern:
 		drop("llm-deepseek")
 		if items, err = dshPutRoute(items, false, nil, gw); err != nil {
 			return err
 		}
+		items = dshPutSearch(items, dshProfileHome(path), "", gw)
 		if !contains(dshEfforts, effort) {
 			effort = ""
 		}
@@ -1108,7 +1193,7 @@ func dshProviderLines(effort string, models []catalog.Model, gw string) []string
 	lines := []string{
 		"- id: llm-deepseek " + dshMark,
 		"  config:",
-		"    apiKey: " + yamlQuote(gateway.Token),
+		"    apiKey: " + yamlQuote(keyAt(gw)),
 		"    baseURL: " + yamlQuote(gw+"/v1"),
 		"    thinking: enabled",
 		"    reasoningEffort: " + effort,
@@ -1190,7 +1275,7 @@ func dshSync(dir, gw string) error {
 	defer func() {
 		// the key under the name the route gives it, moved from the old one
 		if _, items, err := dshRead(files[0]); err == nil && dshWired(items) {
-			dshEnv(dir, true)
+			dshEnv(dir, gw, true)
 		}
 	}()
 	for _, f := range files {
@@ -1218,7 +1303,8 @@ func dshSync(dir, gw string) error {
 }
 
 // dshRouteAgain writes magpie's route again in one patch list where it is no
-// longer what magpie would write, and says whether it wrote. It is the one
+// longer what magpie would write, and says whether it wrote; magpie's web
+// search entry in a profile goes to the gateway's address with it. It is the one
 // thing that may be done again at any time: the route is magpie's list of
 // its own models, while the model a session starts on is the user's pick
 // (see dshCheck). A patch list without magpie's route is left as it is —
@@ -1238,12 +1324,14 @@ func dshRouteAgain(f string, models []catalog.Model, gw string) (bool, error) {
 	if err != nil || !dshWired(items) {
 		return false, nil
 	}
-	i := dshConfigIndex(items, dshPiRow)
-	before := strings.Join(items[i].lines, "\n")
+	before := dshJoin(items)
 	if items, err = dshPutRoute(items, true, models, gw); err != nil {
 		return false, nil
 	}
-	if strings.Join(items[i].lines, "\n") == before {
+	if filepath.Base(filepath.Dir(filepath.Dir(f))) == "profiles" {
+		items = dshSearchAgain(items, dshProfileHome(f), gw)
+	}
+	if dshJoin(items) == before {
 		return false, nil
 	}
 	if now, err := edit.Read(f); err != nil || !bytes.Equal(now, raw) {

@@ -31,17 +31,12 @@ func TestSkillCopyFollowsTheLibrary(t *testing.T) {
 
 	ok(t)(InstallSkills("owner/repo", []string{"skills/pdf"}, []string{"claude"}))
 	p := filepath.Join(h, ".claude/skills/pdf")
-	// the copy link makes where it can't link, wherever this runs
-	if fi, err := os.Lstat(p); err != nil {
-		t.Fatal(err)
-	} else if fi.Mode()&os.ModeSymlink != 0 {
-		if err := os.Remove(p); err != nil {
-			t.Fatal(err)
-		}
-		if err := copyDir(skillDir("pdf"), p); err != nil {
-			t.Fatal(err)
-		}
-		write(t, filepath.Join(p, marker), "copied from "+skillDir("pdf")+"\n")
+	// the copy link makes where it can't link, wherever this runs: the
+	// library giving copies (a copy left where links are given is made a
+	// link again, #896)
+	ok(t)(SetSkillHow("", HowCopy))
+	if linked(p) {
+		t.Fatal("claude's pdf is still a link")
 	}
 	if !ours(p, "pdf") {
 		t.Fatal("the copy isn't magpie's")
@@ -103,16 +98,11 @@ func TestSkillCopySwapSurvivesAnUndeletableFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(skillDir("pdf"), "sub/forms.md"), "forms one")
-	if fi, err := os.Lstat(p); err != nil {
-		t.Fatal(err)
-	} else if fi.Mode()&os.ModeSymlink != 0 {
-		if err := os.Remove(p); err != nil {
-			t.Fatal(err)
-		}
-		if err := copyDir(skillDir("pdf"), p); err != nil {
-			t.Fatal(err)
-		}
-		write(t, filepath.Join(p, marker), "copied from "+skillDir("pdf")+"\n")
+	// a copy, as where magpie can't link (#896: a copy left where links are
+	// given is made a link again)
+	ok(t)(SetSkillHow("", HowCopy))
+	if linked(p) {
+		t.Fatal("claude's pdf is still a link")
 	}
 	// sub/forms.md in the agent's copy can't be removed
 	sub := filepath.Join(p, "sub")

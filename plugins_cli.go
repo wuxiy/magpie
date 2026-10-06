@@ -9,15 +9,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yetone/magpie/internal/middleware"
 	"github.com/yetone/magpie/internal/plugin"
 	"github.com/yetone/magpie/internal/provider"
 )
 
 const pluginUsage = `usage: magpie plugin [list] [--json]
-       magpie plugin add <npm | git | path>        install an OpenCode provider plugin or a pi package (opencode-gemini-auth, pi-antigravity, github:owner/repo, ./my-plugin.js)
+       magpie plugin add <npm | git | path>        install an OpenCode provider plugin, a pi package or a gateway middleware (opencode-gemini-auth, pi-antigravity, github:owner/repo, ./my-plugin.js, ./alias.middleware.js)
        magpie plugin rm <name>                     remove one
        magpie plugin update                        install the newest version of each
        magpie plugin on|off <name>                 turn one on or off
+       magpie plugin options <name> [<json> | off] show or set what a plugin is handed (a middleware's ctx.options)
        magpie plugin login <provider> [<method>]   sign in to a provider a plugin adds
        magpie plugin logout <provider>             forget the sign-in
        magpie plugin move|migrate <subscription>   run a built-in subscription's accounts on its community plugin
@@ -25,7 +27,7 @@ const pluginUsage = `usage: magpie plugin [list] [--json]
 
 // pluginCmd: `magpie plugin …` — OpenCode's provider plugins and pi's
 // packages, which sign in to a subscription and carry its requests
-// (internal/plugin).
+// (internal/plugin), and gateway middleware (internal/middleware).
 func pluginCmd(args []string) error {
 	sub := "list"
 	if len(args) > 1 {
@@ -56,6 +58,7 @@ func pluginCmd(args []string) error {
 		if len(rest) != 1 {
 			return errors.New(pluginUsage)
 		}
+		rest[0] = installedName(rest[0])
 		back := provider.MovedOnto(rest[0])
 		if err := provider.RemovePlugin(ctx, rest[0]); err != nil {
 			return err
@@ -76,6 +79,7 @@ func pluginCmd(args []string) error {
 		if len(rest) != 1 {
 			return errors.New(pluginUsage)
 		}
+		rest[0] = installedName(rest[0])
 		var back []string
 		if sub == "off" {
 			back = provider.MovedOnto(rest[0])
@@ -88,6 +92,11 @@ func pluginCmd(args []string) error {
 		}
 		fmt.Println(green.Render("✓"), rest[0], "is", sub)
 		return nil
+	case "options", "config":
+		if len(rest) < 1 || len(rest) > 2 {
+			return errors.New(pluginUsage)
+		}
+		return pluginOptions(rest[0], rest[1:])
 	case "login", "signin":
 		if len(rest) < 1 || len(rest) > 2 {
 			return errors.New(pluginUsage)
@@ -160,8 +169,9 @@ func listPlugins(ctx context.Context, asJSON bool) error {
 		errs[p.Spec] = p.Error
 	}
 	ps, perr := plugin.Providers(ctx)
+	mws := middleware.States()
 	if asJSON {
-		b, _ := json.MarshalIndent(map[string]any{"plugins": l.Plugins, "loaded": loaded, "providers": ps}, "", "  ")
+		b, _ := json.MarshalIndent(map[string]any{"plugins": l.Plugins, "loaded": loaded, "providers": ps, "middleware": mws}, "", "  ")
 		fmt.Println(string(b))
 		return nil
 	}
@@ -185,6 +195,14 @@ func listPlugins(ctx context.Context, asJSON bool) error {
 			what += " " + muted.Render("("+strings.TrimSpace(n+" "+plugin.Installed(e.Spec))+")")
 		}
 		fmt.Printf("%s  %s\n", what, state)
+		// its calls are counted in the gateway's process, not this one
+		if m, ok := mws[e.Spec]; ok && !e.Off {
+			if m.Error != "" {
+				fmt.Printf("  %s  %s\n", muted.Render("gateway middleware"), amber.Render("didn't load: "+m.Error))
+			} else {
+				fmt.Printf("  %s  %s\n", muted.Render("gateway middleware"), strings.Join(m.Hooks, ", "))
+			}
+		}
 		for _, p := range ps {
 			if p.Spec != e.Spec {
 				continue
@@ -206,6 +224,79 @@ func listPlugins(ctx context.Context, asJSON bool) error {
 		return lerr
 	}
 	return perr
+}
+
+// pluginOptions prints a plugin's options, or sets them from a JSON
+// object; off takes them away. With none set, it prints what its
+// package suggests.
+// installedName is the package name of the plugin a short name, as the
+// community's READMEs write it (think-tags for
+// @magpie-community/middleware-think-tags), stands for; a name a plugin
+// has itself, or one no plugin has, is kept as it is.
+func installedName(name string) string {
+	ps := plugin.Load().Plugins
+	for _, x := range ps {
+		if plugin.Name(x.Spec) == name || x.Spec == name {
+			return name
+		}
+	}
+	for _, x := range ps {
+		if plugin.ShortName(plugin.Name(x.Spec)) == name {
+			return plugin.Name(x.Spec)
+		}
+	}
+	return name
+}
+
+func pluginOptions(name string, set []string) error {
+	var e *plugin.Entry
+	ps := plugin.Load().Plugins
+	for i, x := range ps {
+		if plugin.Name(x.Spec) == name || x.Spec == name {
+			e = &ps[i]
+			break
+		}
+	}
+	// a short name, as the community's READMEs write it
+	for i, x := range ps {
+		if e == nil && plugin.ShortName(plugin.Name(x.Spec)) == name {
+			e = &ps[i]
+		}
+	}
+	if e == nil {
+		return fmt.Errorf("no plugin %q", name)
+	}
+	if len(set) == 0 {
+		if len(e.Options) == 0 {
+			ex := plugin.OptionsExample(plugin.Target(e.Spec))
+			if ex == nil {
+				fmt.Println(muted.Render("No options set."))
+				return nil
+			}
+			b, _ := json.MarshalIndent(ex, "", "  ")
+			fmt.Println(muted.Render("No options set. Its package suggests:"))
+			fmt.Println(string(b))
+			return nil
+		}
+		b, _ := json.MarshalIndent(e.Options, "", "  ")
+		fmt.Println(string(b))
+		return nil
+	}
+	var opts map[string]any
+	if set[0] != "off" {
+		if err := json.Unmarshal([]byte(set[0]), &opts); err != nil || opts == nil {
+			return errors.New(`options are a JSON object ('{"key": "value"}'), or off`)
+		}
+	}
+	if err := plugin.SetOptions(e.Spec, opts); err != nil {
+		return err
+	}
+	if opts == nil {
+		fmt.Println(green.Render("✓"), name, "has no options")
+	} else {
+		fmt.Println(green.Render("✓"), name, "options set")
+	}
+	return nil
 }
 
 // pluginProvider is the plugins' provider named by OpenCode's id or

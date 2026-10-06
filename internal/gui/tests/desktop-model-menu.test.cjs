@@ -77,7 +77,7 @@ function fixture(lang) {
 
 const W = {
   en: { said: "Connected · 3 models in Claude Desktop's model menu", after: "Connected · 2 models in Claude Desktop's model menu", title: "Claude Desktop's model list", restart: "quit and reopen it", last: "Its last pick", details: "Details" },
-  zh: { said: "已接入 · Claude Desktop 的模型菜单里有 3 个模型", after: "已接入 · Claude Desktop 的模型菜单里有 2 个模型", title: "Claude Desktop 的模型列表", restart: "退出并重新打开", last: "上次的选择", details: "详情" },
+  zh: { said: "已接入 · Claude Desktop 的模型菜单里有 3 个模型", after: "已接入 · Claude Desktop 的模型菜单里有 2 个模型", title: "Claude Desktop 的模型列表", restart: "退出重开", last: "上次的选择", details: "详情" },
 };
 const cd = '.row.agent[data-id="claude-desktop"]';
 

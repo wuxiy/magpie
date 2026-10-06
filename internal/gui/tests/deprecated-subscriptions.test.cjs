@@ -56,7 +56,7 @@ function serve(lang, calls) {
 const L = {
   en: { badge: "Deprecated", why: "So that magpie itself isn't banned over them", head: "These built-in subscriptions are deprecated: Cursor, Kiro", later: "Not now",
     more: "More in Plugins" },
-  zh: { badge: "已弃用", why: "为防止 magpie 本体因此被封禁", head: "以下内置订阅已弃用：Cursor、Kiro", later: "暂不",
+  zh: { badge: "已弃用", why: "为免 magpie 本体因此被封禁", head: "以下内置订阅已弃用：Cursor、Kiro", later: "暂不",
     more: "插件中还有更多" },
 };
 

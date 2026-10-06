@@ -270,3 +270,23 @@ func TestFetchPlanWithoutList(t *testing.T) {
 		t.Errorf("%d models, %v", len(ms), err)
 	}
 }
+
+// A model its vendor lists with no name is called by its id, in the
+// catalog and so in every agent's list (#955: an unnamed one showed as
+// magpie/antigravity/gemini-3.6-flash-tiered); a name the user gave it
+// still wins, its vendor's then being the id.
+func TestEntryForUnnamedModel(t *testing.T) {
+	p := Provider{ID: "acme", Name: "Acme"}
+	e := entryFor(p, catalog.Model{ID: "m-1"}, settings.Settings{})
+	if e.Name != "m-1" || e.Label() != "m-1 · Acme" {
+		t.Fatalf("name %q, label %q", e.Name, e.Label())
+	}
+	e = entryFor(p, catalog.Model{ID: "m-1", Name: "Model One"}, settings.Settings{})
+	if e.Name != "Model One" {
+		t.Fatalf("name %q", e.Name)
+	}
+	e = entryFor(p, catalog.Model{ID: "m-1"}, settings.Settings{ModelNames: map[string]string{"acme/m-1": "Mine"}})
+	if e.Name != "Mine" || e.Default != "m-1" {
+		t.Fatalf("name %q, default %q", e.Name, e.Default)
+	}
+}

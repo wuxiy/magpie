@@ -185,6 +185,9 @@ func accountsCmd(args []string) error {
 		for _, w := range r.Windows {
 			line += "  " + quotaCell(w)
 		}
+		if r.Balance != "" {
+			line += "  " + balanceCell(r.Balance, r.Agent, r.User)
+		}
 		if r.Resets != nil {
 			line += "  " + resetsCell(r.Resets, provider.AutoResets(r.Agent, r.User))
 		}
@@ -214,6 +217,9 @@ type accountRow struct {
 	ReadAt  *time.Time  `json:"readAt,omitempty"` // when what is shown was read, when known
 	// Resets are a Codex account's rate-limit resets, when it holds any.
 	Resets *provider.ResetCredits `json:"resets,omitempty"`
+	// Balance is what the account holds beside its windows, a ChatGPT
+	// account's credits, when the vendor tells it.
+	Balance string `json:"balance,omitempty"`
 }
 
 type quotaSpan = provider.QuotaSpan
@@ -253,7 +259,7 @@ func accountRows(ls []provider.Login, now time.Time) []accountRow {
 			if r.Plan == "" {
 				r.Plan = q.Plan
 			}
-			r.Error, r.Resets, r.AsOf, r.ReadAt = q.Error, q.Resets, q.AsOf, q.ReadAt
+			r.Error, r.Resets, r.AsOf, r.ReadAt, r.Balance = q.Error, q.Resets, q.AsOf, q.ReadAt, q.Balance
 			// a pool's own windows stand in for the models' drawing on it,
 			// as the usage page shows them
 			for _, w := range provider.PooledWindows(q.Windows) {
@@ -461,13 +467,15 @@ func refreshAccounts(asJSON bool) error {
 // checkinWorkBuddy: `magpie accounts checkin` — WorkBuddy's daily check-in
 // (签到) for each WorkBuddy (China) account not in yet today, and Trae CN's
 // (每日签到) for each Trae CN account, and MiniMax Code's for each MiniMax
-// Code (China) account, now, and how each stands. The
+// Code account, and Qoder's daily credits for each Qoder account, now, and
+// how each stands. The
 // settings do it on their own once a day.
 func checkinWorkBuddy(asJSON bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	rs := append(provider.CheckInWorkBuddy(ctx), provider.CheckInTrae(ctx)...)
 	rs = append(rs, provider.CheckInMiniMax(ctx)...)
+	rs = append(rs, provider.CheckInQoder(ctx)...)
 	if rs == nil {
 		rs = []provider.WorkBuddyCheckin{}
 	}
@@ -488,6 +496,8 @@ func checkinWorkBuddy(asJSON bool) error {
 			r.User = "Trae CN " + r.User
 		case "minimax":
 			r.User = "MiniMax Code " + r.User
+		case "qoder":
+			r.User = "Qoder " + r.User
 		}
 		switch r.Outcome {
 		case provider.CheckinClaimed, provider.CheckinDone:
@@ -511,7 +521,7 @@ func checkinWorkBuddy(asJSON bool) error {
 		}
 	}
 	if !asJSON && len(rs) == 0 {
-		fmt.Println(muted.Render("no WorkBuddy (China), Trae CN or MiniMax Code account is signed in"))
+		fmt.Println(muted.Render("no WorkBuddy (China), Trae CN, MiniMax Code or Qoder account is signed in"))
 	}
 	if failed > 0 {
 		return fmt.Errorf("%d of %d accounts couldn't check in", failed, len(rs))

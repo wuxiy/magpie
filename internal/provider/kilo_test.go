@@ -81,7 +81,7 @@ func TestKiloModels(t *testing.T) {
 		t.Fatalf("model: %+v", m)
 	}
 	// a free model by its flag alone costs nothing, not its maker's price
-	if pr, ok := p.ListPrice("stealth/space-bunny-alpha"); !ok || pr != (catalog.Price{}) {
+	if pr, ok := p.ListPrice("stealth/space-bunny-alpha"); !ok || !pr.Same(catalog.Price{}) {
 		t.Fatalf("free price: %+v %v", pr, ok)
 	}
 

@@ -140,7 +140,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await stage.waitFor();
       await page.waitForFunction((s) => document.body.innerText.includes(s), w.row);
       assert.match(await stage.textContent(), new RegExp(w.row));
-      await page.waitForFunction((s) => document.body.innerText.includes(s), zh ? "所以排到了最后" : "so it went to the back");
+      await page.waitForFunction((s) => document.body.innerText.includes(s), zh ? "已排到最后" : "so it went to the back");
 
       // the providers with several accounts: set at once
       const pool = page.locator(".rt-pool", { hasText: "WorkBuddy AI" });
@@ -160,6 +160,15 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const field = label.locator("xpath=following-sibling::div[1]");
       await label.waitFor();
       assert.match(await field.locator(".opt", { hasText: new RegExp(`^${w.back}$`) }).getAttribute("class"), /\bon\b/);
+      // the editor runs under the window's foot: wheeled to, as the reader
+      // would (WebKit's own scroll left a sliver of In turn over the footer
+      // and clicked the footer)
+      const turn = ed.locator(".segs .opt", { hasText: new RegExp(`^${w.turn}$`) }).first();
+      await page.mouse.move(550, 600);
+      for (let i = 0; i < 10 && (await turn.boundingBox()).y > 1400 - 260; i++) {
+        await page.mouse.wheel(0, 300);
+        await page.waitForTimeout(150);
+      }
       await ed.locator(".segs .opt", { hasText: new RegExp(`^${w.turn}$`) }).first().click();
       assert.equal(await label.isVisible(), false, "in turn: nothing to pick");
       await ed.locator(".segs .opt", { hasText: new RegExp(`^${w.order}$`) }).first().click();

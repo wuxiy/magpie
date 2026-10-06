@@ -218,6 +218,9 @@ func TestClaudeUsageUnavailableAfterAccountSwitch(t *testing.T) {
 	writeFile(t, filepath.Join(home, ".claude.json"), map[string]any{
 		"oauthAccount": map[string]any{"emailAddress": "b@example.com"},
 	})
+	writeFile(t, filepath.Join(home, ".claude", ".credentials.json"), map[string]any{"claudeAiOauth": map[string]any{
+		"accessToken": "tok-b", "refreshToken": "r-b", "expiresAt": time.Now().Add(time.Hour).UnixMilli(), "subscriptionType": "max"}})
+	forgetClaudeCredential()
 	forgetClaudeStatus()
 	rememberLogins(true)
 	out.Store(subscriptionNotice)

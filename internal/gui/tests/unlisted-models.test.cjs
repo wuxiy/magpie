@@ -39,10 +39,10 @@ const words = {
     lost: "In no routing group, so no agent can use them now: hy4.", makeOf: "Make a routing group of hy4",
   },
   zh: {
-    none: "Hunyuan 设为只通过路由分组使用，而 hy4 不在任何分组里，所以没有 Agent 能用到它。可以用它建一个分组，或在 Hunyuan 的模型里取消勾选「只通过路由分组使用」。",
+    none: "Hunyuan 设为只通过路由分组使用，而 hy4 不在任何分组中，没有 Agent 能用它。可为它建分组，或在 Hunyuan 的模型中取消勾选「只通过路由分组使用」。",
     via: "Hunyuan 设为只通过路由分组使用：选 Mine 即可用到 hy3。",
     make: "用它建路由分组", pick: "选 Mine", save: "添加",
-    lost: "不在任何路由分组里，所以现在没有 Agent 能用到：hy4。", makeOf: "用 hy4 建路由分组",
+    lost: "不在任何路由分组中，暂无 Agent 能用：hy4。", makeOf: "用 hy4 建路由分组",
   },
 };
 

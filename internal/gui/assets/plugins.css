@@ -75,6 +75,7 @@
 button.pm-chip { border: 0; font-family: inherit; cursor: pointer; }
 button.pm-chip.up:hover:not(:disabled) { background: var(--accent); color: var(--accent-fg); }
 button.pm-chip:disabled { cursor: default; opacity: .6; }
+.pm-mw-fail { color: var(--red); }
 .pm-chip.bad { background: var(--red-soft); color: var(--red); }
 .pm-chip.moved { gap: 4px; background: var(--accent-soft); color: var(--accent); }
 .pm-chip.moved .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
@@ -83,6 +84,10 @@ button.pm-chip:disabled { cursor: default; opacity: .6; }
 .pm-chip.warn .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .pm-foot .pm-check { display: inline-flex; align-items: center; gap: 5px; }
 .pm-foot .pm-check .spin { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
+.pm-chip.kind { gap: 3px; flex: none; }
+.pm-chip.kind svg { flex: none; }
+.pm-chip.kind.pv { background: var(--green-soft); color: var(--green); }
+.pm-chip.kind.mw { background: var(--accent-soft); color: var(--accent); }
 .pm-chip.soft { background: none; box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); }
 
 /* a plugin's one button */
@@ -140,6 +145,16 @@ button.pm-chip:disabled { cursor: default; opacity: .6; }
 .pm-sub { display: inline-flex; align-items: center; gap: 5px; }
 .pm-sub .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
 .pm-sub.in .dot { background: var(--green); }
+.pm-opts { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.pm-opts textarea {
+  width: 100%; box-sizing: border-box; resize: vertical; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); color: var(--fg); font: 12px/1.5 var(--code); tab-size: 2; outline: none;
+}
+.pm-opts textarea:focus { border-color: var(--accent); }
+.pm-opts-err { font-size: 11.5px; color: var(--red); }
+.pm-opts-err:empty { display: none; }
+.pm-opts-bar { display: flex; align-items: center; gap: 2px; }
+.pm-opts-bar > span { flex: 1; min-width: 0; font-size: 11.5px; color: var(--muted); }
 .pm-row .val { display: flex; align-items: center; gap: 2px; flex: none; }
 .pm-row.off .who, .pm-row.off .pm-logo { opacity: .5; }
 .pm-foot { display: flex; align-items: center; gap: 8px; padding: 0 4px; font-size: 11px; color: var(--faint); }

@@ -22,6 +22,7 @@
   let hits = null;       // npm's answer for query: { q, list } | { q, loading } | { q, error }
   let searchTimer = 0;
   const busy = new Map(); // package → "add" | "remove" | "upgrade" | "off"
+  let editing = null;    // { pkg, text, error }: a middleware's options being edited in its row
   let asking = null;     // { pkg, op }: a remove or switch-off waiting on the user's yes
   let checking = false;  // Check for updates: npm being asked now
   let checked = null;    // ...and what it said: { at, by: spec → check }
@@ -31,6 +32,8 @@
   const DOWN = "M8 3v7.5 M4.8 7.6 8 10.8l3.2-3.2 M3.5 13h9";
   const SHIELD = "M8 2.3 13 4v3.8c0 3-2.1 5.1-5 5.9-2.9-.8-5-2.9-5-5.9V4z M5.8 8l1.6 1.6 2.9-3";
   const OUTL = "M9.5 3.5h3v3 M12.5 3.5 7.5 8.5 M11 9.5v3H3.5V5h3";
+  const PLUG = "M6 2v3 M10 2v3 M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0z M8 11v3";
+  const PIPE = "M1.5 8h3 M11.5 8h3 M4.5 4.5h7v7h-7z";
   const FOLDER = "M14.7 12.7a1.3 1.3 0 0 1-1.3 1.3H2.6a1.3 1.3 0 0 1-1.3-1.3V3.3A1.3 1.3 0 0 1 2.6 2h3.3l1.3 2h6.2a1.3 1.3 0 0 1 1.3 1.3z";
 
   const name = (spec) => { const i = spec.lastIndexOf("@"); return i > 0 && !spec.startsWith(".") && !spec.includes("/", i) ? spec.slice(0, i) : spec; };
@@ -65,10 +68,19 @@
   };
 
   function glyph(d, size = 14, stroke = 1.5) { return svg(d, size, stroke); }
-  function logo(ic, big) {
+  // kindChip says what a plugin is: a provider signs in to a subscription
+  // and serves its models; middleware runs in the gateway on every agent's
+  // requests and replies, whatever serves them
+  function kindChip(mw) {
+    const c = el("span", "pm-chip kind " + (mw ? "mw" : "pv"));
+    c.append(glyph(mw ? PIPE : PLUG, 10, 1.5), el("span", "", mw ? t("Middleware") : t("Provider")));
+    c.title = mw ? t("Runs in magpie's gateway on the requests your agents send and on the replies") : t("Signs in to a subscription and serves its models");
+    return c;
+  }
+  function logo(ic, big, mw) {
     const box = el("span", "pm-logo" + (big ? " big" : ""));
     if (ic) box.append(icon(ic));
-    else box.append(glyph(PUZZLE, big ? 22 : 17, 1.4));
+    else box.append(glyph(mw ? PIPE : PUZZLE, big ? 22 : 17, 1.4));
     return box;
   }
 
@@ -358,9 +370,10 @@
       by.append(v);
     } else by.append(el("span", "", l.npm?.publisher || l.package));
     who.append(by);
-    top.append(logo(l.icon), who, actionFor(l.package, l.name, l));
+    top.append(logo(l.icon, false, l.kind === "middleware"), who, actionFor(l.package, l.name, l));
     const sum = el("p", "pm-sum", summary(l));
     const meta = el("div", "pm-meta");
+    meta.append(kindChip(l.kind === "middleware"));
     if (l.npm?.weekly) {
       const d = el("span", "pm-dl");
       d.append(glyph(DOWN, 11, 1.5), el("span", "", t("{n}/week", { n: count(l.npm.weekly) })));
@@ -532,8 +545,10 @@
     if (!f) {
       body.append(intro());
       // magpie's community's alone: others' plugins are found by a search
-      const ours = ls.filter((l) => l.community);
-      if (ours.length) body.append(section(t("magpie community"), t("written for magpie, checked against its own sign-ins"), ours));
+      const ours = ls.filter((l) => l.community && l.kind !== "middleware");
+      const mws = ls.filter((l) => l.community && l.kind === "middleware");
+      if (ours.length) body.append(section(t("Subscriptions"), t("written for magpie, checked against its own sign-ins"), ours));
+      if (mws.length) body.append(section(t("Gateway middleware"), t("runs in magpie's gateway on what every agent sends and gets back, whichever provider serves it"), mws));
       body.append(manual());
       return;
     }
@@ -559,10 +574,19 @@
   function intro() {
     const box = el("div", "pm-intro");
     const text = el("div", "pm-introtext");
-    text.append(el("h2", "", t("Subscriptions, as plugins")));
+    text.append(el("h2", "", t("Subscriptions and gateway middleware")));
     text.append(el("p", "", t("Plugins sign in to coding plans and make their requests; the models then work in every agent, like any provider's. They're OpenCode's provider plugins or pi's packages, run on Bun.")));
+    const mw = el("p", "");
+    mw.append(document.createTextNode(t("A plugin can also be middleware in magpie's gateway: it reads and rewrites what agents send and get back, for every provider.") + " "));
+    // the docs in the reader's language: the site has en, zh and ja
+    const how = el("a", "pm-link", "");
+    how.href = "https://usemagpie.ai/docs/" + ({ zh: "zh/", ja: "ja/" }[lang()] || "") + "plugins#middleware";
+    how.append(el("span", "", t("Write a middleware")), glyph(OUTL, 11, 1.5));
+    how.onclick = (ev) => { ev.preventDefault(); api("open", { url: how.href }).catch(() => {}); };
+    mw.append(how);
+    text.append(mw);
     const trust = el("p", "pm-trust");
-    trust.append(glyph(SHIELD, 12, 1.5), el("span", "", t("A plugin is someone else's code with your sign-in: install the ones you trust.")));
+    trust.append(glyph(SHIELD, 12, 1.5), el("span", "", t("A plugin is someone else's code with your sign-in or your requests: install the ones you trust.")));
     text.append(trust);
     const art = el("div", "pm-art");
     for (const ic of ["zcode", "githubcopilot", "gemini-color", "zed", "kiro-color"]) art.append(logo(ic));
@@ -633,7 +657,7 @@
     const es = mine.plugins || [];
     if (!es.length) {
       const none = el("div", "pm-none");
-      none.append(logo("", true), el("b", "", t("No plugins yet")), el("p", "", t("Find a subscription in Discover and install it; it signs in from here.")));
+      none.append(logo("", true), el("b", "", t("No plugins yet")), el("p", "", t("Install a subscription or a middleware from Discover; a subscription signs in from here.")));
       const b = el("button", "pm-act get", t("Discover plugins"));
       b.onclick = () => { tab = "discover"; draw(); };
       none.append(b);
@@ -719,6 +743,11 @@
       c.title = t("{names} runs on this plugin in place of the built-in", { names });
       nm.append(c);
     }
+    // gateway middleware runs in magpie's gateway, not as a subscription:
+    // the row says so, and how it is doing, on a line of its own
+    const mw = e.middleware;
+    if (mw || e.isMiddleware) nm.append(kindChip(true));
+    if (e.providers?.length || !(e.middlewareOnly || (mw && !e.isMiddleware))) nm.append(kindChip(false));
     who.append(nm);
     const subs = subsOf(pkg);
     const sub = el("div", "sub");
@@ -743,9 +772,13 @@
         else if (!x.signedIn && subs.some((y) => y.signedIn)) s.title = t("{name} is a subscription of its own; {other} works without it", { name: x.name, other: subs.find((y) => y.signedIn).name });
         sub.append(s);
       }
+    } else if (mw && !e.providers.length) {
+      // only middleware: its own line says what it does
     } else sub.textContent = e.providers.length ? t("Signs in to {names}", { names: e.providers.join(t(", ")) }) : t("Signs in to nothing magpie can use");
-    who.append(sub);
-    r.append(logo(l?.icon || subs[0]?.icon), who);
+    if (sub.textContent) who.append(sub);
+    if (mw && !e.off && !ask) who.append(mwLine(mw));
+    if (mw && !e.off && !ask && editing?.pkg === pkg) who.append(optionsEditor(e));
+    r.append(logo(l?.icon || subs[0]?.icon, false, e.middlewareOnly), who);
     const val = el("div", "val");
     const b = busy.get(pkg) || busy.get(e.spec);
     if (e.latest && e.version && newer(e.latest, e.version) && !e.off) {
@@ -797,17 +830,110 @@
       r.append(val);
       return r;
     }
+    if (mw && !e.off && !mw.error && editing?.pkg !== pkg) {
+      const o = el("button", "text", t("Options"));
+      o.title = e.options ? t("The options it runs with") : t("It runs with no options; its package suggests some");
+      o.disabled = !!b;
+      o.onclick = () => {
+        editing = { pkg, text: JSON.stringify(e.options || e.optionsExample || {}, null, 2), error: "" };
+        draw();
+        // the field the click opened takes the keys, where it is
+        page.querySelector(".pm-opts textarea")?.focus({ preventScroll: true });
+      };
+      val.append(o);
+    }
     const onoff = el("button", "text", b === "off" && !e.off && moved.length ? t("Moving back…") : t(e.off ? "Switch on" : "Switch off"));
     onoff.disabled = !!b;
     onoff.onclick = () => { if (!e.off && moved.length) { asking = { pkg, op: "off" }; draw(); } else off(); };
     const rm = el("button", "text quiet", b === "remove" ? t(moved.length ? "Moving back…" : "Removing…") : t("Remove"));
     rm.title = moved.length ? t("{names} goes back to the built-in first, then the plugin is removed", { names }) : t("Removes the plugin and what it installed; its sign-ins are kept until you sign out");
     rm.disabled = busy.size > 0;
-    rm.onclick = () => { if (moved.length) { asking = { pkg, op: "remove" }; draw(); } else remove(); };
+    rm.onclick = async () => {
+      if (moved.length) {
+        asking = { pkg, op: "remove" };
+        draw();
+        return;
+      }
+      if (await confirmRemoval(l?.name || pkg, rm.title)) remove();
+    };
     val.append(onoff, rm);
     r.append(val);
-    r.onclick = (ev) => { if (!ev.target.closest("button")) detail(l || (isGit(e.spec) ? { package: e.spec, name: e.package || e.spec, npm: { version: e.version, repository: gitWeb(e.spec) } } : { package: pkg, name: label(e.spec), npm: { version: e.latest } })); };
+    r.onclick = (ev) => { if (!ev.target.closest("button, .pm-opts")) detail(l || (isGit(e.spec) ? { package: e.spec, name: e.package || e.spec, npm: { version: e.version, repository: gitWeb(e.spec) } } : { package: pkg, name: label(e.spec), npm: { version: e.latest } })); };
     return r;
+  }
+
+  // optionsEditor is a middleware's options as JSON, in its row: what it
+  // runs with, or what its package suggests when it has none. The draft is
+  // kept in editing, so a redraw while typing doesn't lose it.
+  function optionsEditor(e) {
+    const box = el("div", "pm-opts");
+    const ta = document.createElement("textarea");
+    ta.setAttribute("aria-label", t("Options"));
+    ta.setAttribute("aria-describedby", "pluginOptionsNote pluginOptionsError");
+    ta.setAttribute("aria-invalid", String(!!editing.error));
+    ta.spellcheck = false;
+    ta.value = editing.text;
+    ta.rows = Math.min(14, Math.max(4, editing.text.split("\n").length + 1));
+    ta.oninput = () => { editing.text = ta.value; };
+    ta.onkeydown = (ev) => {
+      if (ev.key === "Escape") { editing = null; draw(); }
+      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); save(); }
+    };
+    const err = el("div", "pm-opts-err", editing.error);
+    err.id = "pluginOptionsError";
+    err.setAttribute("role", "alert");
+    const bar = el("div", "pm-opts-bar");
+    const note = el("span", "", e.options ? t("Applied to the next request") : t("Not set: these are its package's example"));
+    note.id = "pluginOptionsNote";
+    const save = () => {
+      let v;
+      try { v = JSON.parse(editing.text || "{}"); } catch (x) { editing.error = t("Not JSON: {error}", { error: x.message }); return draw(); }
+      if (!v || typeof v !== "object" || Array.isArray(v)) { editing.error = t("Options are a JSON object"); return draw(); }
+      editing = null;
+      act(name(e.spec), "options", { spec: e.spec, options: v }, () => status(t("{name}'s options saved", { name: shownName(e) }), "ok"));
+    };
+    const ok = el("button", "text primary", t("Save"));
+    ok.onclick = save;
+    const no = el("button", "text", t("Cancel"));
+    no.onclick = () => { editing = null; draw(); };
+    bar.append(note);
+    if (e.options) {
+      const clr = el("button", "text quiet", t("Clear"));
+      clr.title = t("Runs it with no options");
+      clr.onclick = async () => {
+        if (!await confirmAction(t("Clear"), t("Saved middleware options will be removed. The plugin will run with no options."), t("Clear"))) return;
+        editing = null;
+        act(name(e.spec), "options", { spec: e.spec, options: null }, () => status(t("{name}'s options cleared", { name: shownName(e) }), "ok"));
+      };
+      bar.append(clr);
+    }
+    bar.append(no, ok);
+    box.append(ta, err, bar);
+    return box;
+  }
+
+  // mwLine is a middleware's line in its plugin's row: its hooks, how many
+  // calls and how long each took, and the calls that failed (which went on
+  // as if it weren't there), or why it didn't load
+  function mwLine(m) {
+    const d = el("div", "sub pm-mw");
+    if (m.error) {
+      d.textContent = t("Middleware didn't load: {error}", { error: m.error });
+      d.classList.add("bad");
+      d.title = m.error;
+      return d;
+    }
+    const lang = document.documentElement.lang || undefined;
+    let s = t("Gateway middleware: {hooks}", { hooks: m.hooks.join(t(", ")) });
+    if (m.calls) s += " · " + t("{n} calls, {us} µs each", { n: m.calls.toLocaleString(lang), us: m.avgMicros < 10 ? m.avgMicros.toFixed(1) : Math.round(m.avgMicros).toLocaleString(lang) });
+    d.append(el("span", "", s));
+    if (m.events?.length) d.title = t("onEvent sees only {events} events", { events: m.events.join(t(", ")) });
+    if (m.failures) {
+      const f = el("span", "pm-mw-fail", t("{n} failed", { n: m.failures.toLocaleString(lang) }));
+      f.title = t("A failed call leaves the request or reply as it was") + (m.lastError ? "\n" + t("Last: {error}", { error: m.lastError }) : "");
+      d.append(el("span", "sep", " · "), f);
+    }
+    return d;
   }
 
   // the plugin's page: what it is, what npm says of it, and its README
@@ -817,7 +943,7 @@
     const local = isPath(l.package) || isGit(l.package);
     const ed = el("div", "editor pm-detail");
     const hd = el("div", "ehead pm-dhead");
-    hd.append(logo(l.icon, true));
+    hd.append(logo(l.icon, true, l.kind === "middleware"));
     const who = el("div", "pm-who");
     const nm = el("div", "pm-name");
     nm.append(el("b", "", l.name));
@@ -868,7 +994,7 @@
     main.append(readme);
     ed.append(main);
     const bar = el("div", "bar");
-    bar.append(el("span", "note", t("Plugins are other people's code: they sign in and make the requests.")), el("span", "grow"));
+    bar.append(el("span", "note", t("Plugins are other people's code: they sign in and make the requests, or see them as middleware.")), el("span", "grow"));
     const close = el("button", "text", t("Close"));
     close.onclick = () => { stop(); closeModal(); };
     bar.append(close);

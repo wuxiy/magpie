@@ -131,7 +131,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // the Usage page's chart, its ranking by provider with their icons
       await page.locator("#ledRank .rk").first().waitFor();
-      await page.locator("#ledSplit .opt").filter({ hasText: w.provider }).click();
+      await page.locator("#ledSplit").getByText(w.provider, { exact: true }).click();
       assert((await page.locator("#ledChart rect.col").count()) > 0, "the chart drew no columns");
       const icons = page.locator("#ledRank .rk .ic img");
       await page.waitForFunction(() => {

@@ -105,7 +105,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium"]
     await p.locator('[data-view="usage"]').first().click(); // Overview
     await gate.waitFor("usage", 1); // the opening read, held
     gate.release("usage", "all"); // let it settle, so the page is drawn and the button is idle
-    await p.locator("#stats .kpi").first().waitFor();
+    await p.locator("#stats .kpi:not(.loading-kpi)").first().waitFor();
     // the timer starts a read that is held; a second must not start behind it
     await p.clock.fastForward(6e3);
     await gate.waitFor("usage", 2);
@@ -157,7 +157,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium"]
     });
     await p.goto("http://magpie.test/");
     await p.locator('[data-view="usage"]').first().click(); // Overview
-    await p.locator("#stats .kpi").first().waitFor(); // the opening read settled
+    await p.locator("#stats .kpi:not(.loading-kpi)").first().waitFor(); // the opening read settled
     // the timer's read is held and will fail; the reader's own click (idle
     // button) must wait for it, not overlap it, and must go out when it fails
     fails.add(seq + 1);
@@ -204,7 +204,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium"]
     await p.locator('[data-view="usage"]').first().click();
     await gate.waitFor("usage", 1); // Overview's opening read, held
     gate.release("usage", "all");
-    await p.locator("#stats .kpi").first().waitFor();
+    await p.locator("#stats .kpi:not(.loading-kpi)").first().waitFor();
     // the reader asks for a refresh of today, held; then picks 30 days, whose
     // own read answers and is drawn. Today's late answer must not put its own
     // numbers over 30 days'
@@ -255,7 +255,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium"]
     await p.locator('[data-view="usage"]').first().click(); // Overview
     await gate.waitFor("usage", 1);
     gate.release("usage", "all"); // the opening read
-    await p.locator("#stats .kpi").first().waitFor();
+    await p.locator("#stats .kpi:not(.loading-kpi)").first().waitFor();
     assert.equal(await loading(), false, "the drawn page is not left loading");
     // the reader picks the period already shown: the skeleton goes up, its read held
     await p.locator("#period .opt").nth(0).click(); // today

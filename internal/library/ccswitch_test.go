@@ -71,7 +71,7 @@ func TestCCSwitchSkillUpdates(t *testing.T) {
 	if s := read(t, filepath.Join(ccs, "skills/pdf/SKILL.md")); !strings.Contains(s, "old") {
 		t.Errorf("CC Switch's folder changed: %q", s)
 	}
-	if fi, err := os.Lstat(skillDir("pdf")); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+	if fi, err := os.Lstat(skillDir("pdf")); err != nil || linkEntry(fi) {
 		t.Errorf("the library's pdf is still a link: %v", err)
 	}
 	l, _ := load()

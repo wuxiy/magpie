@@ -35,7 +35,7 @@ func TestImportSkills(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(shared, "grilling/SKILL.md")); err != nil {
 		t.Error("the shared folder's skill was moved")
 	}
-	if fi, err := os.Lstat(filepath.Join(h, ".claude/skills/notes")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+	if fi, err := os.Lstat(filepath.Join(h, ".claude/skills/notes")); err != nil || !linkEntry(fi) {
 		t.Errorf("notes isn't linked from the library now: %v", err)
 	}
 	if _, err := ImportSkills([]string{"gone"}); err == nil {

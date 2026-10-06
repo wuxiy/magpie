@@ -14,6 +14,11 @@ import (
 // endpoint and land in whatever test runs next. And the tests run in a
 // home of their own, never the user's real files.
 func TestMain(m *testing.M) {
+	// started by TestGatewayFixQuitsOnlyAMagpie as an older magpie
+	if addr := os.Getenv("MAGPIE_TEST_FAKE_GATEWAY"); addr != "" {
+		fakeOlderGateway(addr)
+		return
+	}
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err == nil {
 		addr := l.Addr().String()

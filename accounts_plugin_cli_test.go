@@ -65,16 +65,13 @@ func TestAccountsOfAPlugin(t *testing.T) {
 	if rows := list(); len(rows) != 2 || rows[0].User != second || !rows[0].Active {
 		t.Fatalf("after switching to %s: %+v", second, rows)
 	}
-	// the one in use isn't forgotten, as a built-in's isn't; the other is
-	if _, err := said(t, func() error { return accountsCmd([]string{"accounts", "forget", "fakeco", second}) }); err == nil {
-		t.Fatal("the account in use was forgotten")
-	}
+	// forgetting the one in use puts the other first, as a built-in's does
 	first := rows[0].User
-	if _, err := said(t, func() error { return accountsCmd([]string{"accounts", "forget", "fakeco", first}) }); err != nil {
+	if _, err := said(t, func() error { return accountsCmd([]string{"accounts", "forget", "fakeco", second}) }); err != nil {
 		t.Fatal(err)
 	}
-	if rows := list(); len(rows) != 1 || rows[0].User != second || !rows[0].Active {
-		t.Fatalf("after forgetting %s: %+v", first, rows)
+	if rows := list(); len(rows) != 1 || rows[0].User != first || !rows[0].Active {
+		t.Fatalf("after forgetting %s: %+v", second, rows)
 	}
 	if _, err := said(t, func() error { return accountsCmd([]string{"accounts", "switch", "nosuch", "a"}) }); err == nil || !strings.Contains(err.Error(), "can be added and switched") {
 		t.Fatalf("an unknown one: %v", err)

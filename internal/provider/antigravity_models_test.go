@@ -44,7 +44,8 @@ func TestCollapseAntigravityModels(t *testing.T) {
 		"gemini-3.5-flash|Gemini 3.5 Flash|low,medium",
 		"gemini-3.5-flash-lite|Gemini 3.5 Flash Lite|",
 		"gemini-3.7-flash|Gemini 3.7 Flash|low,medium,high",
-		"gemini-3.7-flash-tiered||",
+		// Antigravity names no -tiered id: it is named for its model
+		"gemini-3.7-flash-tiered|Gemini 3.7 Flash (Tiered)|",
 		"gemini-pro-agent|Gemini 3.1 Pro (High)|",
 		"gpt-oss-120b-medium|GPT-OSS 120B (Medium)|",
 	}
@@ -125,5 +126,26 @@ func TestAntigravityLegacyPicks(t *testing.T) {
 	}
 	if strings.Join(got, " ") != "gemini-3.7-flash|low,medium,high gemini-3.7-flash-tiered|" {
 		t.Fatalf("available %v", got)
+	}
+}
+
+// A model Antigravity leaves unnamed has a name all the same: a -tiered
+// id its model's with "(Tiered)" (EZN7L2C3, #955: agy's list showed
+// magpie/antigravity/gemini-3.6-flash-tiered), any other its id.
+func TestAntigravityUnnamedModels(t *testing.T) {
+	raw := []catalog.Model{
+		{ID: "gemini-3.6-flash-high", Name: "Gemini 3.6 Flash (High)"},
+		{ID: "gemini-3.6-flash-low", Name: "Gemini 3.6 Flash (Low)"},
+		{ID: "gemini-3.6-flash-tiered"},
+		{ID: "gemini-9-flash-tiered"},
+		{ID: "mystery-model"},
+	}
+	var got []string
+	for _, m := range collapseAntigravityModels(raw) {
+		got = append(got, m.ID+"|"+m.Name)
+	}
+	want := "gemini-3.6-flash|Gemini 3.6 Flash gemini-3.6-flash-tiered|Gemini 3.6 Flash (Tiered) gemini-9-flash-tiered|gemini-9-flash-tiered mystery-model|mystery-model"
+	if strings.Join(got, " ") != want {
+		t.Fatalf("got %s\nwant %s", strings.Join(got, " "), want)
 	}
 }

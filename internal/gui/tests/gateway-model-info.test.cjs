@@ -3,7 +3,7 @@
 // by id, name, provider and a group's models, and each row ends with what
 // agents are told of the model — its reasoning levels, whether it takes
 // images, its context, its reply limit — the full detail in the chips' tooltip; a routing
-// group's are what its models all have, its tooltip naming them.
+// group's levels are what its models all have, its images any one's and its context the largest, its tooltip naming them.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -102,7 +102,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     assert.equal(i.img, 1);
     i = await info("group/smart");
     assert.deepEqual(i.chips, ["low–high", "", "272K"]);
-    assert.equal(i.tip, "Reasoning: low, medium, high\nAccepts images (every model in it does)\nContext: 272,000 tokens (the largest of its models')\nOutput: up to 64,000 tokens\nModels: acme/gpt-5.5-mini, zeta/kimi-k3");
+    assert.equal(i.tip, "Reasoning: low, medium, high (the levels every model in it has)\nAccepts images (one of its models does)\nContext: 272,000 tokens (the largest of its models')\nOutput: up to 64,000 tokens\nModels: acme/gpt-5.5-mini, zeta/kimi-k3");
     // the chips sit at the row's end, before its copy button
     const [infoBox, copyBox, whoBox] = await Promise.all([".minfo", ".copy", ".who"].map((s) => rowOf(page, "acme/gpt-5.5").locator(s).boundingBox()));
     assert(infoBox.x > whoBox.x && infoBox.x + infoBox.width <= copyBox.x + 1, "info between the name and the copy button");

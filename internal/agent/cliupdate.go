@@ -403,17 +403,10 @@ func installedVersion(bin string) string {
 	})
 }
 
-// runVersion runs bin --version with nothing on its stdin; a var so tests
-// can fake it.
-var runVersion = func(bin string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := proc.ProbeContext(ctx, bin, "--version")
-	cmd.Stdin = nil // /dev/null: one that would ask something gets nothing
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
-	out, _ := cmd.CombinedOutput()
-	return string(out)
-}
+// runVersion is what bin says its version is (proc.Version: read from its
+// npm package, else bin --version, not run again after it failed); a var so
+// tests can fake it.
+var runVersion = proc.Version
 
 // latestVersion is the newest version where u would update from.
 func latestVersion(u *updater) string {

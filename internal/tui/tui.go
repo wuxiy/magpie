@@ -151,7 +151,15 @@ func Run(ready func()) error {
 	if len(m.agents) == 0 {
 		return fmt.Errorf("no supported agents found on this machine")
 	}
+	ctx, stop := context.WithCancel(context.Background())
+	wait := serveGateway(ctx)
 	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	served := gw.here.Load()
+	stop()
+	wait()
+	if served {
+		fmt.Fprintln(os.Stderr, gatewayGoneNote())
+	}
 	return err
 }
 
@@ -167,6 +175,9 @@ func newModel() model {
 	}
 	shown, hidden := settings.Arrange(settings.Load(), set, func(a *agent.Agent) string { return a.ID })
 	m := model{agents: append(shown, hidden...), hidden: len(shown), period: usage.Week, srange: 1}
+	// no model catalog yet: Init syncs it. Set here, as Init's receiver is
+	// a copy the program never sees.
+	m.syncing = catalog.Source() == ""
 	m.reload()
 	return m
 }
@@ -212,8 +223,7 @@ func (m *model) goTo(p page) tea.Cmd {
 }
 
 func (m model) Init() tea.Cmd {
-	if catalog.Source() == "" {
-		m.syncing = true
+	if m.syncing {
 		return syncCmd
 	}
 	return nil
@@ -730,6 +740,8 @@ func (m model) View() string {
 		status = sBad.Render("✗ ") + sText.Render(m.flash)
 	case m.syncing:
 		status = sMuted.Render("… syncing model catalog")
+	default:
+		status = gatewayStatus()
 	}
 
 	lines := strings.Count(body, "\n") + 1

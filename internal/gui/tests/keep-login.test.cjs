@@ -62,7 +62,7 @@ function serve(lang, first, posts) {
 
 const words = {
   en: { keep: "Keep Codex signed in to", first: "the first account", pickHead: "Account to stay signed in to", signed: "Signed in", firstLabel: "First", makeFirst: "Make first", keptAs: /Codex on its own stays signed in to spare@example.com/, kept: /Codex on its own stays signed in to the first account/, moves: /once it is 98% used/, usedUp: /once it is used up/ },
-  zh: { keep: "Codex 始终登录", first: "首选账号", pickHead: "始终登录的账号", signed: "已登录", firstLabel: "首选", makeFirst: "设为首选", keptAs: /Codex 自己直连时始终登录 spare@example.com/, kept: /Codex 自己直连时始终登录首选账号/, moves: /用到 98% 时/, usedUp: /额度用完时/ },
+  zh: { keep: "Codex 始终登录", first: "首选账号", pickHead: "始终登录的账号", signed: "已登录", firstLabel: "首选", makeFirst: "设为首选", keptAs: /Codex 直连时始终登录 spare@example.com/, kept: /Codex 直连时始终登录首选账号/, moves: /用到 98% 时/, usedUp: /额度用完时/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

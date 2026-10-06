@@ -65,7 +65,7 @@ func droidEntries() []droidEntry { return droidEntriesAt(gateway.URL()) }
 func droidEntriesAt(gw string) []droidEntry {
 	var out []droidEntry
 	for _, m := range magpieModels("droid") {
-		e := droidEntry{Model: m.ID, ID: droidID + m.ID, BaseURL: gw + "/v1", APIKey: gateway.Token,
+		e := droidEntry{Model: m.ID, ID: droidID + m.ID, BaseURL: gw + "/v1", APIKey: keyAt(gw),
 			Provider: "generic-chat-completion-api", MaxContextLimit: m.Context, MaxOutputTokens: maxTokens(m), NoImageSupport: !m.Images}
 		switch {
 		case slices.Contains(m.APIs, string(provider.Responses)):
@@ -238,7 +238,7 @@ func droidIn(at place) *Agent {
 				base = at.gw()
 			}
 			return wiringOff("Droid", path, func(k string) (string, bool) { g := r.Get(k); return g.String(), g.Exists() },
-				"baseUrl", base, "apiKey", gateway.Token)
+				"baseUrl", base, "apiKey", at.gwKey())
 		},
 		Fields: []Field{{
 			Key: "model", Label: "model",

@@ -57,7 +57,7 @@ const rows = (page) => page.locator("#view-library .lib-row").count();
 
 const words = {
   en: { rm: "Remove all", tip: "Take all 3 skills out of the library", ask: "Remove all 3 skills?", agents: /out of the library and out of Claude Code, Codex, Pi\./, kept: /2 folders are moved to magpie's backups/, linked: /1 linked from folders of your own are only unlinked/, cancel: "Cancel", go: "Remove all 3", done: "3 skills removed" },
-  zh: { rm: "全部删除", tip: "从资源库中删除全部 3 个技能", ask: "删除全部 3 个技能？", agents: /从资源库中删除，并从 Claude Code, Codex, Pi 中移除/, kept: /2 个技能文件夹会移到 magpie 的备份中/, linked: /1 个链接自你自己文件夹的技能只会删除链接/, cancel: "取消", go: "删除全部 3 个", done: "已删除 3 个技能" },
+  zh: { rm: "全部删除", tip: "从资源库中删除全部 3 个技能", ask: "删除全部 3 个技能？", agents: /从资源库中删除，并从 Claude Code, Codex, Pi 中移除/, kept: /2 个技能文件夹将移到 magpie 的备份/, linked: /1 个链接自你文件夹的技能只取消链接/, cancel: "取消", go: "删除全部 3 个", done: "已删除 3 个技能" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -79,7 +79,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.route("**/*", server(lang, posts));
       await page.goto("http://magpie.test/");
       await page.locator('button[data-view="library"]').click();
-      await page.locator("#view-library .lib-row").first().waitFor();
+      await page.locator("#view-library .lib-body:not(.lib-skel) .lib-row").first().waitFor();
       return page;
     };
 

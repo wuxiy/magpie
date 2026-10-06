@@ -39,6 +39,10 @@ type Managed struct {
 	Messages  int   `json:"messages"`
 	Files     int   `json:"files"`
 	Deletable bool  `json:"deletable"`
+	// Codex: the provider the session was made with, and the one its Codex
+	// uses now, whose sessions alone its history lists (#887)
+	Provider     string `json:"provider,omitempty"`
+	UsesProvider string `json:"uses_provider,omitempty"`
 }
 
 // AgentCount is an agent with sessions on this computer, and how many.
@@ -122,9 +126,8 @@ func ListAgent(agent string) []Managed {
 			s.Carry = carries(s)
 		}
 		s.Transcript = HasTranscript(s.Agent)
-		// a WSL distro's are listed and resumed, not deleted: magpie moves
-		// no files out of a distro
-		m := Managed{Session: s, Files: len(fs), Deletable: Deletable(agent) && !s.ReadOnly && s.WSL == ""}
+		// a WSL distro's too (TJHHHH): moved out over \\wsl.localhost
+		m := Managed{Session: s, Files: len(fs), Deletable: Deletable(agent) && !s.ReadOnly}
 		for _, f := range fs {
 			m.Size += f.size
 			if st := cache[f.path]; st != nil && f.main {
@@ -134,6 +137,9 @@ func ListAgent(agent string) []Managed {
 			}
 		}
 		out = append(out, m)
+	}
+	if agent == "codex" {
+		codexProviders(out, groups)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if !out[i].Last.Equal(out[j].Last) {
@@ -175,7 +181,9 @@ const manifest = "session.json"
 // Codex session's later segments, its subagents' elsewhere) and, for Claude
 // Code, the file history, todos and environment it keeps by the session's
 // id. A session any file of which was written in the last minute is not
-// touched (ErrActive).
+// touched (ErrActive). One in a WSL distro is moved out of it over
+// \\wsl.localhost the same way, its Claude Code files from the distro's
+// ~/.claude, and Restore puts it back there.
 func Delete(agent, id string) (Trashed, error) {
 	if !Deletable(agent) {
 		return Trashed{}, fmt.Errorf("magpie can't delete %s sessions", agent)
@@ -212,10 +220,12 @@ func Delete(agent, id string) (Trashed, error) {
 	if len(fs) == 0 {
 		return Trashed{}, errors.New("no such session")
 	}
-	if s.WSL != "" {
-		return Trashed{}, fmt.Errorf("magpie doesn't delete sessions in WSL %s: delete it there", s.WSL)
-	}
 	paths := sessionPaths(agent, id, fs)
+	if len(paths) == 0 {
+		// a stopped distro's listing, of files since gone
+		wslForget(fs)
+		return Trashed{}, errors.New("no such session")
+	}
 	now := time.Now()
 	for _, p := range paths {
 		if recent(p, now) {
@@ -252,6 +262,7 @@ func Delete(agent, id string) (Trashed, error) {
 		delete(cache, f.path)
 	}
 	saveCache()
+	wslForget(fs)
 	return t, nil
 }
 
@@ -304,6 +315,13 @@ func sessionPaths(agent, id string, fs []file) []string {
 	}
 	if agent == "claude" {
 		dir := ClaudeDir()
+		if fs[0].wsl != "" {
+			// the distro's own ~/.claude
+			if dir = wslHomeOf(fs[0].wsl); dir == "" {
+				return out
+			}
+			dir = filepath.Join(dir, ".claude")
+		}
 		add(filepath.Join(dir, "file-history", id))
 		add(filepath.Join(dir, "session-env", id))
 		todos, _ := filepath.Glob(filepath.Join(dir, "todos", id+"-*.json"))
@@ -511,5 +529,6 @@ func Restore(key string) (Trashed, error) {
 		}
 	}
 	os.RemoveAll(dir)
+	wslRelistNow(t.Items)
 	return t, nil
 }

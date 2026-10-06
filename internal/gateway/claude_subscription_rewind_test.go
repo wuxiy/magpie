@@ -121,6 +121,22 @@ func (h *rewindHarness) giveUp(msgs string) {
 	}
 }
 
+// rewindAsked waits for the run given up on to be told to rewind. letGo
+// runs on its own once the request has returned, and keeps the run for the
+// resend just before it asks: a resend sent before that finds no run kept
+// and starts a new one, and a rewind still under way reads rewindLongest
+// as the next case sets it. A user rewording a message is never that quick.
+func (h *rewindHarness) rewindAsked() {
+	h.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(h.read(), "rewind_conversation") {
+		if time.Now().After(deadline) {
+			h.t.Fatalf("Claude Code was never told to rewind:\n%s", h.read())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func (h *rewindHarness) read() string {
 	b, _ := os.ReadFile(h.log)
 	return string(b)
@@ -168,6 +184,7 @@ func TestClaudeTurnGivenUpOnIsRewound(t *testing.T) {
 	}
 	conv += `,` + rmsg("assistant", second)
 	h.giveUp(`[` + conv + `,` + rmsg("user", "SLOW, go on") + `]`)
+	h.rewindAsked()
 	again := h.ask(`[` + conv + `,` + rmsg("user", "go on instead") + `]`)
 	if again != "pid "+pid+" turn 4" {
 		t.Fatalf("the resend went to another Claude Code: %q (first %q)\n%s", again, first, h.read())
@@ -220,6 +237,7 @@ func TestClaudeTurnGivenUpOnNotRewound(t *testing.T) {
 			second := h.ask(`[` + conv + `]`)
 			conv += `,` + rmsg("assistant", second)
 			h.giveUp(`[` + conv + `,` + rmsg("user", "SLOW, go on") + `]`)
+			h.rewindAsked()
 			again := h.ask(`[` + conv + `,` + rmsg("user", "go on instead") + `]`)
 			if pidOf(t, again) == pid || !strings.HasSuffix(again, " turn 1") {
 				t.Fatalf("the resend: %q, first %q", again, first)

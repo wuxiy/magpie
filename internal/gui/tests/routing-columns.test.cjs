@@ -84,6 +84,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert(acts.left >= reqs.right, "side by side");
       assert(Math.abs(acts.bottom - reqs.bottom) <= 1, `the lists end on one line: ${reqs.bottom} / ${acts.bottom}`);
       assert(acts.scroll, "the rest of the accounts scroll");
+      for (const width of [940, 1100, 1440, 1920]) {
+        await page.setViewportSize({ width, height: 1400 });
+        await page.waitForTimeout(200);
+        const requests = await box(".rt-col:first-child"), accounts = await box(".rt-col:last-child");
+        const rw = requests.right - requests.left, aw = accounts.right - accounts.left;
+        assert(rw > aw * 1.6, `${width}px: requests should have more room than accounts (${rw} / ${aw})`);
+        assert(aw >= 280 && aw <= 400.5, `${width}px: account column stays readable and capped (${aw})`);
+        const rightList = await box(".rt-acts"), leftList = await box(".rt-reqs");
+        assert(Math.abs(rightList.bottom - leftList.bottom) <= 1, `${width}px: list bottoms stay aligned`);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}px: no horizontal overflow`);
+        const clipped = await page.locator(".rt-act .mdls code").evaluateAll((es) => es.some((e) => e.getBoundingClientRect().right > e.closest(".rt-act").getBoundingClientRect().right + 1));
+        assert.equal(clipped, false, `${width}px: models stay inside the narrower account column`);
+      }
 
       // the Codex account's three models on their own line, none in the tally
       const codex = page.locator(".rt-act", { hasText: "ann@example.com" });

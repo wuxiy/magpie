@@ -12,7 +12,9 @@
 // 也有每天签到送100积分) has the same row, with its own switch
 // (POST /api/settings/trae-checkin) and press (POST /api/usage/trae-checkin),
 // the WorkBuddy one left as it was; so has a MiniMax Code account's (#811,
-// POST /api/settings/minimax-checkin and /api/usage/minimax-checkin).
+// POST /api/settings/minimax-checkin and /api/usage/minimax-checkin), and
+// a Qoder account's, its daily credits (ARNO on Discord,
+// POST /api/settings/qoder-checkin and /api/usage/qoder-checkin).
 // English and Chinese; the API is faked here.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
@@ -34,10 +36,12 @@ const quotas = () => [
     checkins: true, checkinBy: "trae", checkin: { user: "hu", day: "2026-09-30", outcome: "claimed", credit: 100 } },
   { provider: "minimax-code", name: "MiniMax Code", plan: "Plus", user: "mm", windows: [{ name: "5 hours", used: 10 }],
     checkins: true, checkinBy: "minimax", checkin: { user: "mm", day: "2026-10-04", outcome: "claimed", credit: 800, streak: 1 } },
+  { provider: "qoder", name: "Qoder", plan: "Pro", user: "arno", windows: [{ name: "Credits", used: 12 }],
+    checkins: true, checkinBy: "qoder", checkin: { user: "arno", day: "2026-10-05", outcome: "claimed", credit: 100 } },
 ];
 
 function serve(lang, asked) {
-  const settings = { theme: "light", lang, quotaLeft: false, currency: "usd", workbuddyCheckin: false, traeCheckin: false, minimaxCheckin: false };
+  const settings = { theme: "light", lang, quotaLeft: false, currency: "usd", workbuddyCheckin: false, traeCheckin: false, minimaxCheckin: false, qoderCheckin: false };
   return async (route) => {
     const url = new URL(route.request().url());
     const json = (data) => route.fulfill({ json: data });
@@ -67,6 +71,15 @@ function serve(lang, asked) {
     if (url.pathname === "/api/usage/minimax-checkin") {
       asked.push(["mm-now"]);
       return json([{ user: "mm", by: "minimax", day: today, outcome: "claimed", credit: 800, streak: 2 }]);
+    }
+    if (url.pathname === "/api/settings/qoder-checkin") {
+      asked.push(["qd-set", route.request().postDataJSON()]);
+      settings.qoderCheckin = route.request().postDataJSON().on;
+      return json(settings);
+    }
+    if (url.pathname === "/api/usage/qoder-checkin") {
+      asked.push(["qd-now"]);
+      return json([{ user: "arno", by: "qoder", day: today, outcome: "claimed", credit: 100 }]);
     }
     if (url.pathname === "/api/usage/workbuddy-checkin") {
       asked.push(["now"]);
@@ -153,7 +166,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal((await card.locator(".ci-say").innerText()).trim(), lang === "en" ? "Auto check-in is off · last checked in 2026-09-30" : "自动签到已关闭 · 上次签到于 2026-09-30");
       assert.match(await card.locator(".ci-say").getAttribute("title"), /Trae/);
       // its own switch and press, beside WorkBuddy's
-      assert.equal(await page.locator(".ci-auto").count(), 3);
+      assert.equal(await page.locator(".ci-auto").count(), 4);
       const auto = card.locator(".ci-auto");
       assert.equal((await auto.innerText()).trim(), w.auto);
       assert.match(await auto.getAttribute("title"), /Trae CN/);
@@ -231,6 +244,82 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.match(await page.locator("#minimaxCheckinSub").innerText(), /MiniMax Code/);
       const saved = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/settings" && r.method() === "POST");
       await page.locator("#minimaxCheckinSegs button").nth(1).click();
+      await saved;
+      assert.deepEqual(asked, [true]);
+      assert.deepEqual(errors, []);
+    });
+    test(`${engine} ${lang}: the Qoder card has its own check-in`, async (t) => {
+      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+      t.after(() => browser.close());
+      const page = await (await browser.newContext({ viewport: { width: 900, height: 900 }, reducedMotion: "reduce" })).newPage();
+      page.setDefaultTimeout(5000);
+      const errors = [], asked = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.route("**/*", serve(lang, asked));
+      await page.goto("http://magpie.test/?view=usage");
+      const card = page.locator(".subscription-card", { hasText: "arno" });
+      await card.locator(".wb-checkin").first().waitFor();
+      assert.equal(await card.locator(".wb-checkin").count(), 1);
+      assert.equal((await card.locator(".ci-say").innerText()).trim(), lang === "en" ? "Auto check-in is off · last checked in 2026-10-05" : "自动签到已关闭 · 上次签到于 2026-10-05");
+      assert.match(await card.locator(".ci-say").getAttribute("title"), /Qoder/);
+      const auto = card.locator(".ci-auto");
+      assert.match(await auto.getAttribute("title"), /Qoder/);
+      const y = await scrolls(page);
+      await auto.click();
+      await page.waitForFunction(() => document.querySelectorAll(".ci-auto[aria-pressed=true]").length === 1);
+      assert.equal(await auto.getAttribute("aria-pressed"), "true");
+      assert.deepEqual(asked, [["qd-set", { on: true }]]);
+      assert.equal(await scrolls(page), y, "the toggle moved the page");
+      assert.equal(await page.locator(".subscription-card", { hasText: "MiniMax Code" }).locator(".ci-auto").getAttribute("aria-pressed"), "false", "MiniMax's switch changed too");
+      const before = asked.length;
+      const reread = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/usage/quotas");
+      await card.locator(".ci-now").click();
+      await reread;
+      assert.deepEqual(asked.slice(before), [["qd-now"]]);
+      assert.deepEqual(errors, []);
+    });
+    test(`${engine} ${lang}: Settings has a Qoder check-in tab`, async (t) => {
+      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+      t.after(() => browser.close());
+      const page = await (await browser.newContext({ viewport: { width: 440, height: 900 }, reducedMotion: "reduce" })).newPage();
+      page.setDefaultTimeout(5000);
+      const errors = [], asked = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.route("**/*", async (route) => {
+        const url = new URL(route.request().url());
+        const settings = { theme: "light", lang, qoder: true, qoderCheckin: false,
+          qoderCheckins: [{ user: "arno", by: "qoder", day: today, outcome: "claimed", credit: 100 }] };
+        if (url.pathname === "/api/state") return route.fulfill({ json: { agents: [], profiles: [], settings } });
+        if (url.pathname === "/api/settings" && route.request().method() === "POST") {
+          asked.push(route.request().postDataJSON().qoderCheckin);
+          return route.fulfill({ json: { ...settings, qoderCheckin: true } });
+        }
+        if (url.pathname === "/api/settings") return route.fulfill({ json: settings });
+        return serve(lang, [])(route);
+      });
+      await page.goto("http://magpie.test/?view=settings&tab=usage");
+      const tab = page.locator("#warmTab-qoder");
+      await tab.waitFor();
+      assert.equal(await tab.isHidden(), false);
+      assert.equal(await page.locator("#warmTab-minimax").isHidden(), true, "MiniMax's tab with no MiniMax account");
+      // at 440x900 the tabs are below the fold: the reader scrolls to them
+      // with the wheel (a scroll of the script's own is put back, by design)
+      await page.mouse.move(220, 400);
+      for (let i = 0; i < 10; i++) {
+        const r = await tab.boundingBox(), foot = await page.locator("footer.foot").boundingBox();
+        if (r.y + r.height < foot.y - 8) break;
+        await page.mouse.wheel(0, 200);
+        await page.waitForTimeout(100);
+      }
+      await tab.click();
+      await page.locator("#qoderList").waitFor();
+      const sub = await page.locator("#qoderCheckinSub").innerText();
+      assert.match(sub, /Qoder/);
+      assert.match(sub, /arno/);
+      const box = await page.locator("#qoderCheckinRow").boundingBox();
+      assert(box.width > 0 && box.x + box.width <= 440, "the row fits at 440px");
+      const saved = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/settings" && r.method() === "POST");
+      await page.locator("#qoderCheckinSegs button").nth(1).click();
       await saved;
       assert.deepEqual(asked, [true]);
       assert.deepEqual(errors, []);

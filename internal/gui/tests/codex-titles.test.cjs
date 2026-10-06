@@ -65,7 +65,7 @@ function server(lang, posted) {
 
 const want = {
   en: { name: "Codex thread titles", own: "Codex’s own (ChatGPT)", off: "Off", subOwn: /through its ChatGPT sign-in/, subOff: /sent nowhere/, subModel: /go to this model/ },
-  zh: { name: "Codex 会话标题", own: "Codex 自带（ChatGPT）", off: "关闭", subOwn: /ChatGPT 登录/, subOff: /不发往任何地方/, subModel: /改由这个模型/ },
+  zh: { name: "Codex 会话标题", own: "Codex 自带（ChatGPT）", off: "关闭", subOwn: /ChatGPT 登录/, subOff: /不外发/, subModel: /改由此模型/ },
 };
 const view = (page) => page.locator("#view-settings").evaluate((v) => v.scrollTop);
 

@@ -46,7 +46,7 @@ function serve(lang, list) {
 
 const words = {
   en: { first: "First", now: "First for now", again: "First again once it has room", note: /and back to the first once that has room again/, why: /work@example\.com was nearly used up/ },
-  zh: { first: "首选", now: "暂为首选", again: "额度恢复后切回首选", note: /等首选账号额度恢复后再切回去/, why: /work@example\.com 额度快用完了/ },
+  zh: { first: "首选", now: "暂为首选", again: "额度恢复后切回首选", note: /首选账号恢复后切回/, why: /work@example\.com 额度将尽/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

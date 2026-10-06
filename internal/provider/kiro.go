@@ -246,13 +246,6 @@ func readKiroAt(key, home string) (kiroCred, bool) {
 	return readKiroIDE()
 }
 
-// kiroSignedIn is whether there is a Kiro sign-in to use, without asking
-// anyone.
-func kiroSignedIn(key string) bool {
-	_, ok := readKiro(key)
-	return ok
-}
-
 // KiroAuth is what a call to Kiro's API is made with.
 type KiroAuth struct {
 	Token     string
@@ -832,8 +825,9 @@ func kiroIdentity(key, home string) (user, plan string) {
 	}
 	if time.Since(s.at) > 5*time.Minute && !s.refreshing {
 		s.refreshing = true
+		ask := askKiroIdentity // read here: a test puts its own back meanwhile
 		go func() {
-			u, p := askKiroIdentity(key, home)
+			u, p := ask(key, home)
 			kiroStatus.Lock()
 			if u != "" || p != "" {
 				s.user, s.plan = u, p

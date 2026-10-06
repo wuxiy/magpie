@@ -59,6 +59,16 @@ const words = {
   zh: { auto: "协议：自动…", resp: "协议：Responses…", head: "这个模型请求所用的协议", autoNote: "按供应商模型列表：Anthropic", save: "保存", staged: "保存后 deepseek-v4.1-flash 将使用 Responses 协议" },
 };
 
+// a right-click on a chip out of sight: Playwright scrolls it in first, and
+// Chromium sends that scroll's event a frame later, which closes the menu
+// the click opened (a menu closes on a scroll). Scroll it in, let the
+// frame pass, then click.
+async function rclick(loc) {
+  await loc.click({ button: "right", trial: true }); // scrolls it in, clicks nothing
+  await loc.page().evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await loc.click({ button: "right" });
+}
+
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {
     const w = words[lang];
@@ -88,7 +98,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       await open("OpenCode Go");
       // MiniMax's Auto says what the vendor's list says
-      await chip("MiniMax M3").click({ button: "right" });
+      await rclick(chip("MiniMax M3"));
       await rowMenu.getByRole("menuitem", { name: w.auto }).click();
       await apiMenu.waitFor();
       assert.equal(await apiMenu.locator(".pm-head").textContent(), w.head);
@@ -102,7 +112,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const top = () => page.evaluate(() => [scrollY, ...[...document.querySelectorAll(".editor, .editor *")].filter((e) => e.scrollTop).map((e) => e.scrollTop)].join());
       const before = await top();
       const picked = await page.locator(".editor .mchips .mchip.on").count();
-      await ds.click({ button: "right" });
+      await rclick(ds);
       await rowMenu.getByRole("menuitem", { name: w.auto }).click();
       await apiMenu.waitFor();
       const names = await apiMenu.locator(".pm-name").allTextContents();
@@ -118,7 +128,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(await page.locator(".editor .mchips .mchip.on").count(), picked, "nothing picked or unpicked");
       assert.equal(posts.length, 0, "staged, not saved");
       // the menu now says it, and Names & levels shows it too
-      await chip("DeepSeek V4.1 Flash").click({ button: "right" });
+      await rclick(chip("DeepSeek V4.1 Flash"));
       await rowMenu.getByRole("menuitem", { name: w.resp }).waitFor();
       await page.keyboard.press("Escape");
       await page.locator(".editor").getByRole("button", { name: w.save, exact: true }).click();
@@ -128,7 +138,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // a subscription's model: its pick shown, and Names & levels has the row
       await open("GitHub Copilot");
       assert.equal(await chip("GPT-9").locator(".mapi-tag").textContent(), "Responses");
-      await chip("GPT-9").click({ button: "right" });
+      await rclick(chip("GPT-9"));
       await rowMenu.getByRole("menuitem", { name: w.resp }).waitFor();
       await page.keyboard.press("Escape");
       await page.locator(".editor").getByRole("button", { name: lang === "en" ? "Names & levels" : /名称/ }).click();
@@ -137,9 +147,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // one API: nothing to pick
       await page.keyboard.press("Escape");
       await open("Solo");
-      await chip("solo-1").click({ button: "right" });
+      await rclick(chip("solo-1"));
       await rowMenu.waitFor();
-      assert.equal(await rowMenu.getByRole("menuitem").count(), 1, "only the test");
+      // its test and Copy model ID (81879b90), no API to pick
+      assert.equal(await rowMenu.getByRole("menuitem").count(), 2, "the test and the copy only");
+      assert.equal(await rowMenu.getByRole("menuitem", { name: /Asked on|协议/ }).count(), 0, "no API to pick");
       assert.deepEqual(errors, []);
     });
   }

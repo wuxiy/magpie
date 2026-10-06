@@ -303,6 +303,7 @@ func TestOTelRetryAfterBound(t *testing.T) {
 				e := newOTelExporter()
 				defer e.cancel()
 				start := time.Now()
+				var first time.Time
 				calls := 0
 				want := 60 * time.Second
 				if value == "30" {
@@ -320,7 +321,13 @@ func TestOTelRetryAfterBound(t *testing.T) {
 					if calls == 3 {
 						status = http.StatusOK
 					}
-					if elapsed := time.Since(start); elapsed != time.Duration(calls-1)*want {
+					// timed from the first attempt: on Windows a settings
+					// file not there is waited on a moment before it is
+					// taken as gone (steady), which the bubble's clock counts
+					if calls == 1 {
+						first = time.Now()
+					}
+					if elapsed := time.Since(first); elapsed != time.Duration(calls-1)*want {
 						t.Errorf("attempt %d after %v, want %v", calls, elapsed, time.Duration(calls-1)*want)
 					}
 					return &http.Response{StatusCode: status, Header: h, Body: io.NopCloser(strings.NewReader("{}"))}, nil

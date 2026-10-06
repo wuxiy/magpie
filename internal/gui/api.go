@@ -12,6 +12,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"mime"
@@ -98,6 +99,27 @@ func cliBehindRoutes(mux *http.ServeMux) {
 		cliBehindMu.Unlock()
 		rw.WriteHeader(http.StatusNoContent)
 	})
+	// Settings' Command line: what `magpie` runs in each shell, and this
+	// app's put there when asked (update.AddCLI); shell names the one whose
+	// profile gets ~/.local/bin
+	mux.HandleFunc("GET /api/cli", func(rw http.ResponseWriter, r *http.Request) {
+		writeJSON(rw, update.ReadCLI())
+	})
+	mux.HandleFunc("POST /api/cli", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Shell string `json:"shell"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		v, err := update.AddCLI(in.Shell)
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, v)
+	})
 }
 
 var cliBehindOnce = new(sync.Once) // a var so tests can ask again
@@ -177,7 +199,8 @@ type agentJSON struct {
 	Joined bool `json:"joined,omitempty"`
 	// CLIMissing: its settings are here, its CLI isn't (#843), which
 	// the row says, and Install another agent offers it again
-	CLIMissing bool `json:"cliMissing,omitempty"`
+	CLIMissing bool               `json:"cliMissing,omitempty"`
+	Native     *agent.NativeState `json:"native,omitempty"`
 }
 
 // clientJSON is an agent, or another client the gateway knows, as a
@@ -286,12 +309,19 @@ type settingsJSON struct {
 	Version string `json:"version"`
 	Dir     string `json:"dir"`     // where magpie keeps its files, as shown
 	Gateway string `json:"gateway"` // the local endpoint
+	// MAGPIE_ADDR, when it sets the gateway's address over Settings' port
+	AddrEnv string `json:"addrEnv,omitempty"`
 	// Dir is the data folder beside a portable magpie (#508)
 	Portable bool `json:"portable,omitempty"`
 	// Mac apps that explicitly handle .command files, for resumed sessions.
 	TerminalApps    []terminalChoice `json:"terminalApps,omitempty"`
 	TerminalDefault string           `json:"terminalDefault,omitempty"`
 	OTelEnv         bool             `json:"otelEnv,omitempty"`
+	// whether the page is in gateway mode and why (gatewayMode); Web says
+	// it is served by magpie web, where the mode can be set
+	GatewayOn  bool   `json:"gatewayOn,omitempty"`
+	GatewayWhy string `json:"gatewayWhy,omitempty"`
+	Web        bool   `json:"web,omitempty"`
 	// the proxy vendor requests go through now, and where it came from:
 	// settings, environment, system, off or none
 	ProxyNow    string `json:"proxyNow"`
@@ -337,6 +367,9 @@ type settingsJSON struct {
 	CodexWarmed *time.Time `json:"codexWarmed,omitempty"`
 	// and the Claude warm-up
 	ClaudeWarmed *time.Time `json:"claudeWarmed,omitempty"`
+	// the ChatGPT accounts signed in, each of which can have a daily
+	// warm-up time of its own (#957)
+	CodexUsers []string `json:"codexUsers,omitempty"`
 	// whether a WorkBuddy (China) account is signed in, and each one's
 	// last daily check-in
 	WorkBuddy         bool                        `json:"workbuddy"`
@@ -347,6 +380,9 @@ type settingsJSON struct {
 	// and a MiniMax Code (China) account (its plugin's), and theirs (#811)
 	MiniMax         bool                        `json:"minimax"`
 	MiniMaxCheckins []provider.WorkBuddyCheckin `json:"minimaxCheckins,omitempty"`
+	// and a Qoder or Qoder CN account (its plugin's), and theirs
+	Qoder         bool                        `json:"qoder"`
+	QoderCheckins []provider.WorkBuddyCheckin `json:"qoderCheckins,omitempty"`
 	// FX is the dollar-to-yuan rate the cny currency choice shows costs at
 	FX fxJSON `json:"fx"`
 	// NotifyProblem is why a usage alert set wouldn't be seen: "denied"
@@ -426,6 +462,9 @@ func searchState(s *settingsJSON) {
 
 func settingsState() settingsJSON {
 	s := settingsJSON{Settings: settings.Load(), Version: Version, Dir: tilde(settings.Dir()), Portable: settings.Portable() != "", Gateway: gateway.URL()}
+	s.AddrEnv = os.Getenv("MAGPIE_ADDR")
+	s.Web = webPage.Load()
+	s.GatewayOn, s.GatewayWhy = gatewayMode(s.Web)
 	s.LANKey = "" // the retained credential belongs on disk, not in UI state
 	// the GitHub token, masked, and where the library's requests take one
 	// from: Settings, or the environment variable named
@@ -440,7 +479,7 @@ func settingsState() settingsJSON {
 		s.TerminalDefault = found.Default
 	}
 	s.FX = currentFX()
-	if (s.UsageAlert > 0 || s.BalanceAlert > 0) && notifyProblem != nil {
+	if (s.UsageAlert > 0 || s.BalanceAlert > 0 || s.ResetReminder > 0) && notifyProblem != nil {
 		s.NotifyProblem = notifyProblem()
 	}
 	s.ProxyNow, s.ProxySource = netproxy.Describe()
@@ -454,9 +493,11 @@ func settingsState() settingsJSON {
 		s.LANURLs, s.LANContainer = gateway.LANURLs(), gateway.ContainerAddrs()
 	}
 	s.CodexWarmed, s.ClaudeWarmed = latest(provider.CodexWarmed()), latest(provider.ClaudeWarmed())
+	s.CodexUsers = codexUsers()
 	s.WorkBuddy, s.WorkBuddyCheckins = provider.HasWorkBuddy(), provider.WorkBuddyCheckins()
 	s.Trae, s.TraeCheckins = provider.HasTrae(), provider.TraeCheckins()
 	s.MiniMax, s.MiniMaxCheckins = provider.HasMiniMax(), provider.MiniMaxCheckins()
+	s.Qoder, s.QoderCheckins = provider.HasQoder(), provider.QoderCheckins()
 	s.VisionAuto, s.VisionModels = gateway.AutoVision(), []modelRef{}
 	for _, e := range provider.Served() {
 		if e.Images && (e.ImageInput == nil || *e.ImageInput) && (e.Group != "" || e.Provider.Ready()) {
@@ -587,6 +628,9 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 	if gw != nil {
 		served.Store(gw)
 	}
+	if isWeb(w) {
+		webPage.Store(true)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/", devPage(revalidated(http.FileServer(http.FS(staticFS())))))
 	devRoutes(mux)
@@ -597,6 +641,11 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		// and the text size, which the Mac's header measures against the
 		// traffic lights
 		boot := map[string]any{"lang": s.Lang, "theme": s.Theme, "textSize": s.TextSize, "web": isWeb(w)}
+		// and whether it is a gateway's page alone (gatewaymode.go), so the
+		// pages left out never show
+		if on, _ := gatewayMode(isWeb(w)); on {
+			boot["gateway"] = true
+		}
 		// on Omarchy the page takes its theme's look before it paints
 		if th, ok := omarchyTheme(); ok {
 			boot["omarchy"] = th
@@ -680,6 +729,33 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 	mux.HandleFunc("GET /api/agents/install", func(rw http.ResponseWriter, r *http.Request) {
 		writeJSON(rw, agent.Installs())
 	})
+	// Aside's explicit offline model write. Normal model changes require its runtime.
+	mux.HandleFunc("POST /api/agents/stage/{id}", func(rw http.ResponseWriter, r *http.Request) {
+		a, err := agent.Find(r.PathValue("id"))
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		var in struct{ Field, Value string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		if a.Native == nil || a.Native.Stage == nil {
+			fail(rw, fmt.Errorf("this agent does not support staged model settings"))
+			return
+		}
+		value, err := a.Spell(in.Field, in.Value)
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		if err := a.Native.Stage(in.Field, value); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, state())
+	})
 	// updates one the way it was installed; what it is afterwards comes
 	// back with an error too
 	mux.HandleFunc("POST /api/agents/cli/{id}", func(rw http.ResponseWriter, r *http.Request) {
@@ -709,12 +785,55 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
+		if a.Native != nil {
+			plan, err := a.Native.Disconnect()
+			if err != nil {
+				writeJSON(rw, map[string]any{"error": err.Error()})
+				return
+			}
+			writeJSON(rw, map[string]any{"changes": plan.Preview(), "revision": plan.Revision(a.ID)})
+			return
+		}
 		changes, err := agent.DisconnectPreview(a, exe)
 		out := map[string]any{"changes": changes}
 		if err != nil {
 			out["error"] = err.Error()
 		}
 		writeJSON(rw, out)
+	})
+	mux.HandleFunc("POST /api/agents/disconnect-offline/{id}", func(rw http.ResponseWriter, r *http.Request) {
+		a, err := agent.Find(r.PathValue("id"))
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		if a.Native == nil || a.Native.ExecuteOffline == nil {
+			fail(rw, fmt.Errorf("this agent does not support offline disconnect"))
+			return
+		}
+		var in struct {
+			Revision string `json:"revision"`
+		}
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		plan, err := a.Native.Disconnect()
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		if in.Revision == "" || in.Revision != plan.Revision(a.ID) {
+			fail(rw, fmt.Errorf("Disconnect preview changed; preview it again"))
+			return
+		}
+		if err := a.Native.ExecuteOffline(plan); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, state())
 	})
 	mux.HandleFunc("POST /api/agents/{action}/{id}", func(rw http.ResponseWriter, r *http.Request) {
 		a, err := agent.Find(r.PathValue("id"))
@@ -817,6 +936,8 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 	updateRoutes(mux, w)
 	whatsNewRoutes(mux)
 	cliBehindRoutes(mux)
+	gatewayFixRoutes(mux)
+	gatewayModeRoutes(mux)
 	mux.HandleFunc("GET /api/settings", func(rw http.ResponseWriter, r *http.Request) {
 		access.MigrateLegacyLANKeyBestEffort()
 		writeJSON(rw, settingsState())
@@ -837,13 +958,15 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		// its own. The per-model maps are carried whole rather than named one
 		// by one, so a map added later is not silently dropped here.
 		//
-		// HiddenModels is the other way round — keyed by agent, not by
-		// "<provider>/<model>" — so it is not one of them, and belongs to the
-		// Agents page.
-		in.Visible, in.HiddenModels = cur.Visible, cur.HiddenModels
+		// HiddenModels and OrderedModels are the other way round — keyed by
+		// agent, not by "<provider>/<model>" — so they are not among them,
+		// and belong to the Agents page.
+		in.Visible, in.HiddenModels, in.OrderedModels = cur.Visible, cur.HiddenModels, cur.OrderedModels
+		in.FastPicks = cur.FastPicks // switched in the agents' pickers (#954)
 		settings.CarryPerModel(&in, &cur)
 		in.LAN, in.LANKey = cur.LAN, cur.LANKey
 		in.LANKeyID = cur.LANKeyID
+		in.Port = cur.Port                               // set on its own (port below), which moves the gateway
 		in.GitHubToken = cur.GitHubToken                 // set on its own (github-token below), never sent to the page
 		in.RequestArchive = cur.RequestArchive           // the Gateway page's, set on its own
 		in.RequestArchiveMaxMB = cur.RequestArchiveMaxMB // in settings.json only
@@ -855,16 +978,26 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		in.PlainNames, in.PlainOwnNames = cur.PlainNames, cur.PlainOwnNames
 		in.CodexAgentsV1 = cur.CodexAgentsV1
 		in.FullContext = cur.FullContext // set on its own (full-context below)
+		in.CompactAt = cur.CompactAt     // and so is the threshold
+
 		in.CodexTitles = cur.CodexTitles // set on its own (codex-titles below)
+		// and so is the model Codex's auto-review runs on (codex-auto-review)
+		in.CodexAutoReview = cur.CodexAutoReview
 		in.ChinaMirror = cur.ChinaMirror // the Plugins page's, set on its own
 		// which Codex accounts spend a reset by themselves, set on the Usage card
 		in.CodexAutoReset = cur.CodexAutoReset
+		// and which of them spend their credits, set there too
+		in.CodexNoCredits = cur.CodexNoCredits
+		// and each Codex account's own daily warm-up (codex-warm-at below)
+		in.CodexWarmAtOf = cur.CodexWarmAtOf
 		// and the text size, which the keyboard changes too (text-size below)
 		in.TextSize = cur.TextSize
 		// the version the Update pill was hidden for, set from the pill
 		in.UpdateSkip = cur.UpdateSkip
 		// the GitHub mirror updates come through, set by magpie update mirror
 		in.UpdateMirror = cur.UpdateMirror
+		// gateway mode, set on its own (gateway-mode)
+		in.GatewayMode = cur.GatewayMode
 		if v := strings.TrimSpace(in.Vision); v != "" && v != "off" && v != cur.Vision {
 			if _, _, ok := provider.Resolve(v); !ok {
 				fail(rw, fmt.Errorf("no model %s to describe images", v))
@@ -904,8 +1037,8 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		}
 		// an alert turned on or moved is looked at now, the Mac asked for its
 		// leave to notify as it is turned on (#368)
-		if (in.UsageAlert != cur.UsageAlert || in.BalanceAlert != cur.BalanceAlert) &&
-			(in.UsageAlert > 0 || in.BalanceAlert > 0) && onAlerts != nil {
+		if (in.UsageAlert != cur.UsageAlert || in.BalanceAlert != cur.BalanceAlert || in.ResetReminder != cur.ResetReminder) &&
+			(in.UsageAlert > 0 || in.BalanceAlert > 0 || in.ResetReminder > 0) && onAlerts != nil {
 			onAlerts()
 		}
 		// the tray menu follows the page's language (#301)
@@ -998,12 +1131,21 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 	// or the working one (settings.FullContext): their lists are written
 	// again
 	mux.HandleFunc("POST /api/settings/full-context", func(rw http.ResponseWriter, r *http.Request) {
-		var in struct{ On bool }
+		// At, when given, is a threshold to compact at instead, in
+		// tokens: 0 is the working window again (#876)
+		var in struct {
+			On bool
+			At *int
+		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			fail(rw, err)
 			return
 		}
-		if err := provider.SetFullContext(in.On); err != nil {
+		err := provider.SetFullContext(in.On)
+		if err == nil && !in.On && in.At != nil {
+			err = provider.SetCompactAt(*in.At)
+		}
+		if err != nil {
 			fail(rw, err)
 			return
 		}
@@ -1032,8 +1174,46 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		}
 		writeJSON(rw, settingsState())
 	})
+	// the model Codex's auto-review runs on (#938): "" as Codex picks it,
+	// or a model's id, named in every entry of Codex's list
+	mux.HandleFunc("POST /api/settings/codex-auto-review", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ Model string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		v := strings.TrimSpace(in.Model)
+		if v != "" {
+			// Resolve intentionally accepts arbitrary names under a known
+			// provider. An approval reviewer must be a model or group magpie
+			// actually lists, including providers kept unlisted for routing.
+			if !slices.ContainsFunc(provider.Served(), func(e provider.Entry) bool { return e.ID == v }) {
+				fail(rw, fmt.Errorf("no model %s for Codex's auto-review", v))
+				return
+			}
+		}
+		if err := provider.SetCodexAutoReview(v); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, settingsState())
+	})
 	// whether a Codex account spends one of its resets by itself once its
 	// week is used up, the Usage card's toggle, set on its own
+	// a Codex account's own daily warm-up time: "06:00", "off", or "" to
+	// follow the one for all (#957)
+	mux.HandleFunc("POST /api/settings/codex-warm-at", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ User, At string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		if err := provider.SetCodexWarmAt(in.User, in.At); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, settingsState())
+	})
 	mux.HandleFunc("POST /api/settings/codex-auto-reset", func(rw http.ResponseWriter, r *http.Request) {
 		var in struct {
 			User string
@@ -1048,6 +1228,27 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			return
 		}
 		if err := provider.SetCodexAutoReset(in.User, in.On); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, settingsState())
+	})
+	// whether a Codex account spends its credits once its allowance is
+	// used up, the Usage card's toggle, set on its own
+	mux.HandleFunc("POST /api/settings/codex-credits", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct {
+			User string
+			On   bool
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		if strings.TrimSpace(in.User) == "" {
+			fail(rw, fmt.Errorf("which Codex account?"))
+			return
+		}
+		if err := provider.SetCodexCredits(in.User, in.On); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -1093,6 +1294,21 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		}
 		s := settings.Load()
 		s.MiniMaxCheckin = in.On
+		if err := settings.Save(s); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, settingsState())
+	})
+	// and Qoder's daily credits
+	mux.HandleFunc("POST /api/settings/qoder-checkin", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ On bool }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		s := settings.Load()
+		s.QoderCheckin = in.On
 		if err := settings.Save(s); err != nil {
 			fail(rw, err)
 			return
@@ -1181,6 +1397,21 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		}
 		writeJSON(rw, settingsState())
 	})
+	// the gateway's port (Magic_zero on Discord), set on its own: it moves
+	// the gateway and every agent connected to it
+	mux.HandleFunc("POST /api/settings/port", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ Port int }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		res, err := setPort(in.Port)
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, map[string]any{"settings": settingsState(), "port": res})
+	})
 	// the user's own masking rules, all of them each time: set on their own,
 	// so a pattern that doesn't compile is said and the rest are kept (#195)
 	mux.HandleFunc("POST /api/settings/redact-rules", func(rw http.ResponseWriter, r *http.Request) {
@@ -1214,6 +1445,32 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		}
 		s := settings.Load()
 		s.GitHubToken = tok
+		if err := settings.Save(s); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, settingsState())
+	})
+	// the GitHub download mirror updates come through (#893), the same
+	// setting `magpie update mirror` sets: a full https:// prefix, or ""
+	// for GitHub itself. The feed and its checksums are never the mirror's.
+	mux.HandleFunc("POST /api/settings/update-mirror", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Mirror string `json:"mirror"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		m := strings.TrimSpace(in.Mirror)
+		if m != "" {
+			if err := update.CheckMirrorURL(m); err != nil {
+				fail(rw, err)
+				return
+			}
+		}
+		s := settings.Load()
+		s.UpdateMirror = m
 		if err := settings.Save(s); err != nil {
 			fail(rw, err)
 			return
@@ -1298,14 +1555,22 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 
 // held has a page's reads share one build of the catalog, which every row
 // resolving its model rebuilt (provider.Hold): /api/state took 4s with a
-// few hundred models. Anything else may have written, and drops it.
+// few hundred models. A write shares it too: a save answers with the whole
+// state it wrote — every group's members, every model's facts — and that
+// was a build per look-up, seconds on a slow disk. The write's own
+// catalog.Touched drops what is held as it happens, so the answer is never
+// what was read before it, and the request leaves nothing held for the next.
 func held(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/") {
+		api := strings.HasPrefix(r.URL.Path, "/api/")
+		if api {
 			defer provider.Hold()()
 			// and the files read, not looked at again for each look-up
 			defer filememo.Hold()()
-		} else {
+		}
+		if !(api && r.Method == http.MethodGet) {
+			// anything that may have written drops what was held, once it
+			// has answered with it
 			defer provider.Changed()
 		}
 		h.ServeHTTP(rw, r)
@@ -1347,6 +1612,10 @@ func state() stateJSON {
 			aj.Launch = a.Launch()
 		}
 		aj.CLIMissing = a.CLIMissing()
+		if a.Native != nil {
+			native := a.Native.Read()
+			aj.Native = &native
+		}
 		s.Agents = append(s.Agents, aj)
 	}
 	if ps, err := profile.Load(); err == nil {
@@ -1370,7 +1639,22 @@ func writeJSON(rw http.ResponseWriter, v any) {
 func fail(rw http.ResponseWriter, err error) {
 	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(http.StatusBadRequest)
-	_ = json.NewEncoder(rw).Encode(map[string]string{"error": err.Error()})
+	out := map[string]string{"error": err.Error()}
+	var unavailable *agent.RuntimeUnavailableError
+	if errors.As(err, &unavailable) {
+		out["code"] = "runtime_unavailable"
+		out["offline"] = string(unavailable.Offline)
+	}
+	var noModels *agent.NoModelsError
+	if errors.As(err, &noModels) {
+		out["code"] = "no_models"
+		out["agent"] = noModels.Agent
+	}
+	var signedIn *provider.SignedInError
+	if errors.As(err, &signedIn) {
+		out["code"], out["agent"], out["user"] = "signed_in", signedIn.Agent, signedIn.User
+	}
+	_ = json.NewEncoder(rw).Encode(out)
 }
 
 func tilde(p string) string {
@@ -1378,4 +1662,15 @@ func tilde(p string) string {
 		return "~" + p[len(home):]
 	}
 	return p
+}
+
+// codexUsers is the ChatGPT accounts signed in, by name, each once.
+func codexUsers() []string {
+	var out []string
+	for _, l := range provider.Logins("codex") {
+		if l.User != "" && !slices.ContainsFunc(out, func(u string) bool { return strings.EqualFold(u, l.User) }) {
+			out = append(out, l.User)
+		}
+	}
+	return out
 }

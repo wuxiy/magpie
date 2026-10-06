@@ -46,8 +46,10 @@ func runningAlready(showMain bool, link string) bool {
 		}
 		os.WriteFile(stamp, nil, 0o600)
 		os.Chtimes(stamp, time.Now(), time.Now())
-		if b := update.Bundle(); b != "" {
-			proc.Command("open", b).Run()
+		// by its bundle id: the magpie running may be another copy of the
+		// app, which opening this one's path wouldn't reach
+		if update.Bundle() != "" {
+			proc.Command("open", "-b", "com.yetone.magpie").Run()
 		}
 	}
 	return true

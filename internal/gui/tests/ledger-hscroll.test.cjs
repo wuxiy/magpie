@@ -51,13 +51,15 @@ const L = {
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   test(engine + ": the Requests table's scrollbar and a row's status", async (t) => {
     assert(["chromium", "webkit"].includes(engine), "BROWSER must be chromium or webkit");
-    const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+    const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium", ignoreDefaultArgs: ["--hide-scrollbars"] }));
     t.after(() => browser.close());
     for (const lang of ["en", "zh"]) {
       const w = L[lang];
       await t.test(lang, async () => {
         const errors = [], asked = [];
-        const ctx = await browser.newContext({ viewport: { width: 900, height: 640 }, reducedMotion: "reduce" });
+        // narrower than the table even with the columns a narrow window
+        // leaves out (#860)
+        const ctx = await browser.newContext({ viewport: { width: 700, height: 640 }, reducedMotion: "reduce" });
         const p = await ctx.newPage();
         p.setDefaultTimeout(5000);
         p.on("pageerror", (e) => errors.push(e.message));

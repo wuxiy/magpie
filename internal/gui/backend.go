@@ -39,7 +39,7 @@ func stopServing() {
 func startBackend() (gw *gateway.Server) {
 	gateway.Window = true // the routing this process serves is shown on its page
 	gw = serveGateway()
-	go watchGateway()
+	go watchGateway(backendCtx, gatewayWatch)
 	// Model lists are fetched, never compiled in: whatever the agents can see
 	// comes from the models.dev catalog plus each vendor's own /models answer.
 	// Keep both halves warm without making the user click anything.
@@ -63,21 +63,49 @@ func startBackend() (gw *gateway.Server) {
 	return gw
 }
 
-var gatewayWatch = 15 * time.Second
+// gatewayWatch is how often a magpie without the gateway looks for it gone.
+const gatewayWatch = 15 * time.Second
 
-// watchGateway takes the gateway up once the magpie that had it is gone.
-func watchGateway() {
+// watchGateway takes the gateway up once the magpie that had it is gone,
+// looking every so often until ctx ends: a watch that outlived it would
+// start a gateway after this one has stopped serving.
+func watchGateway(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
 	for {
-		time.Sleep(gatewayWatch)
-		if served.Load() == nil && !gateway.Running() {
-			serveGateway()
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
 		}
+		gatewayMu.Lock()
+		if ctx.Err() == nil && served.Load() == nil && !gateway.Running() {
+			serveGatewayLocked()
+		}
+		gatewayMu.Unlock()
 	}
+}
+
+// gatewayMu keeps one start of the gateway here at a time: the watch's,
+// a restart's, a take-over's (takeover.go).
+var gatewayMu sync.Mutex
+
+// servedRun ends the gateway this process serves, and is closed once it
+// has, for a restart; under gatewayMu.
+var servedRun struct {
+	stop context.CancelFunc
+	done chan struct{}
 }
 
 // serveGateway starts the gateway here when no magpie has it: the one
 // started, or nil.
 func serveGateway() *gateway.Server {
+	gatewayMu.Lock()
+	defer gatewayMu.Unlock()
+	return serveGatewayLocked()
+}
+
+func serveGatewayLocked() *gateway.Server {
 	// handing over, the one there is this one's predecessor, which lets go
 	// once this one listens beside it
 	if !gateway.Handover {
@@ -91,9 +119,14 @@ func serveGateway() *gateway.Server {
 	gw := gateway.New()
 	served.Store(gw)
 	serving.Add(1)
+	ctx, stop := context.WithCancel(backendCtx)
+	done := make(chan struct{})
+	servedRun.stop, servedRun.done = stop, done
 	go func() {
 		defer serving.Done()
-		if err := gw.ListenAndServe(backendCtx); err != nil {
+		defer close(done)
+		defer stop()
+		if err := gw.ListenAndServe(ctx); err != nil {
 			log.Println("gateway:", err)
 			served.CompareAndSwap(gw, nil) // another took the port first
 		}

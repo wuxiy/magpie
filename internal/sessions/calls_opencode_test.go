@@ -34,7 +34,7 @@ func checkOCCalls(t *testing.T, cs map[string]Call) {
 		t.Fatalf("no call for OpenCode's own reply: %+v", cs)
 	}
 	if a.Model != "gpt-6-astra" || a.Upstream != "openai" || a.Session != ocMain || a.Cwd != "/work/oc" ||
-		a.Tokens != (Tokens{1000, 120, 5000, 0}) || a.Reasoning != 20 || a.Millis != 24000 ||
+		a.Tokens != (Tokens{1000, 120, 5000, 0, 0}) || a.Reasoning != 20 || a.Millis != 24000 ||
 		!a.Time.Equal(at("2026-09-26T10:00:30Z")) {
 		t.Fatalf("astra: %+v", a)
 	}
@@ -44,7 +44,7 @@ func checkOCCalls(t *testing.T, cs map[string]Call) {
 	}
 	o, ok := cs["msg_0004"]
 	if !ok || o.Model != "claude-opus-5-5" || o.Upstream != "anthropic" || o.Session != ocMain ||
-		o.Tokens != (Tokens{40, 60, 700, 300}) || o.Millis != 30000 || o.Effort != "" {
+		o.Tokens != (Tokens{40, 60, 700, 300, 0}) || o.Millis != 30000 || o.Effort != "" {
 		t.Fatalf("the subagent's opus: %+v", o)
 	}
 	if len(cs) != 2 {
@@ -118,11 +118,11 @@ func TestOpenCodeCallsV2(t *testing.T) {
 	if _, ok := cs["msg_0005"]; ok {
 		t.Fatalf("a compaction through magpie counted: %+v", cs["msg_0005"])
 	}
-	if c := cs["msg_0007"]; c.Model != "big-pickle" || c.Upstream != "opencode" || c.Tokens != (Tokens{7, 3, 0, 0}) || c.Effort != "xhigh" {
+	if c := cs["msg_0007"]; c.Model != "big-pickle" || c.Upstream != "opencode" || c.Tokens != (Tokens{7, 3, 0, 0, 0}) || c.Effort != "xhigh" {
 		t.Fatalf("an OpenCode Zen reply: %+v", c)
 	}
 	// a compaction is made with the model and effort last replied with
-	if c := cs["msg_0008"]; c.Model != "big-pickle" || c.Upstream != "opencode" || c.Tokens != (Tokens{11, 2, 0, 0}) || c.Effort != "xhigh" {
+	if c := cs["msg_0008"]; c.Model != "big-pickle" || c.Upstream != "opencode" || c.Tokens != (Tokens{11, 2, 0, 0, 0}) || c.Effort != "xhigh" {
 		t.Fatalf("its compaction: %+v", c)
 	}
 }

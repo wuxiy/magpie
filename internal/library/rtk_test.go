@@ -412,3 +412,33 @@ func TestCodexSandbox(t *testing.T) {
 		}
 	}
 }
+
+// TestRTKNoHookListed (Discord, lc: rtk 没有识别 deepseek harness): an
+// agent RTK has no hook for, DeepSeek Harness, is listed all the same with
+// why, not left out as if magpie hadn't seen it, and it can't be switched on.
+func TestRTKNoHookListed(t *testing.T) {
+	h := sandbox(t)
+	bin := filepath.Join(h, "bin")
+	write(t, filepath.Join(bin, "dsh"), "#!/bin/sh\n")
+	os.Chmod(filepath.Join(bin, "dsh"), 0o755)
+	write(t, filepath.Join(bin, "dsh.exe"), "")
+	var dsh *RTKAgent
+	for _, a := range ReadRTK().Agents {
+		if a.ID == "dsh" {
+			dsh = &a
+		}
+	}
+	if dsh == nil {
+		t.Fatal("DeepSeek Harness isn't listed")
+	}
+	// what the page reads: noHook, and Blocked saying why
+	if b, _ := json.Marshal(dsh); dsh.On || !strings.Contains(string(b), `"noHook":true`) || !strings.Contains(dsh.Blocked, "rewriting the shell command") {
+		t.Fatalf("listed as %s", b)
+	}
+	if _, err := SetRTK("dsh", true); err == nil || !strings.Contains(err.Error(), "DeepSeek Harness") {
+		t.Fatalf("switched on: %v", err)
+	}
+	if _, err := RTKTakes("dsh"); err == nil || !strings.Contains(err.Error(), "rewriting the shell command") {
+		t.Fatalf("magpie library rtk on dsh: %v", err)
+	}
+}

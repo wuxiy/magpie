@@ -173,13 +173,17 @@ func TestKiroSeveralAccounts(t *testing.T) {
 			home = l.Home
 		}
 	}
-	if err := ForgetLogin("kiro", "two@example.com"); err == nil {
-		t.Fatal("forgot the account in use first")
+	// the first removed, the next is put first
+	if err := ForgetLogin("kiro", "two@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if ls := Logins("kiro"); len(ls) != 1 || ls[0].User != "me@example.com" || !ls[0].Active {
+		t.Fatalf("after removing the first: %+v", ls)
 	}
 	if err := ForgetLogin("kiro", "me@example.com"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(home); !os.IsNotExist(err) || len(Logins("kiro")) != 1 {
+	if _, err := os.Stat(home); !os.IsNotExist(err) || len(Logins("kiro")) != 0 {
 		t.Fatalf("home %s left: %v, %+v", home, err, Logins("kiro"))
 	}
 }

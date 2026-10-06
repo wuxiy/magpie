@@ -110,7 +110,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // on Overview it reads the summary, and the allowances are read now too
       await p.locator("#usageTab .opt").nth(0).click();
-      await p.locator("#stats .kpi").first().waitFor();
+      await p.locator("#stats .kpi:not(.loading-kpi)").first().waitFor();
       const o = calls.overview, q = calls.quotas, a = calls.asked;
       await p.locator("#usageReload").click();
       await p.waitForTimeout(200);

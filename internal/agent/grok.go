@@ -25,7 +25,6 @@ import (
 
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/edit"
-	"github.com/yetone/magpie/internal/gateway"
 )
 
 // grokEfforts are the reasoning efforts Grok knows.
@@ -43,7 +42,7 @@ func grokModelTables(v1 string) []edit.Table {
 			{Path: "model", Value: m.ID},
 			{Path: "name", Value: m.Name},
 			{Path: "base_url", Value: v1},
-			{Path: "api_key", Value: gateway.Token},
+			{Path: "api_key", Value: keyAt(v1)},
 			{Path: "api_backend", Value: "chat_completions"},
 		}
 		if m.Context > 0 {
@@ -153,7 +152,7 @@ func grokIn(at place) *Agent {
 				return "Grok Build's [model." + strconv.Quote(v) + "] (config.toml) is gone, so it no longer reaches magpie"
 			}
 			return wiringOff("Grok Build", path, func(k string) (string, bool) { v, ok := t[k]; return v, ok },
-				"base_url", at.v1(), "api_key", gateway.Token)
+				"base_url", at.v1(), "api_key", at.gwKey())
 		},
 		Fields: []Field{
 			{

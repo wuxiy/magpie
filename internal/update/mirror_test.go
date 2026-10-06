@@ -167,3 +167,45 @@ func TestUpdateThroughAProxyGiven(t *testing.T) {
 		}
 	}
 }
+
+// A download that fails through a mirror says it is the mirror's (#893):
+// one that doesn't answer, answers 404, or sends another file, which is
+// never kept; the GUI then offers GitHub itself. One from GitHub is no
+// mirror's. Settings take a full https:// mirror only.
+func TestMirrorFailuresAreTheMirrors(t *testing.T) {
+	updateHome(t)
+	body := []byte("new magpie")
+	sum := sha256.Sum256(body)
+	asset := Asset{URL: "https://github.com/yetone/magpie-releases/releases/download/v9.9.9/magpie-cli-linux-amd64", SHA256: hex.EncodeToString(sum[:])}
+	tampered := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("not magpie")) }))
+	defer tampered.Close()
+	missing := httptest.NewServer(http.NotFoundHandler())
+	defer missing.Close()
+	gone := httptest.NewServer(http.NotFoundHandler())
+	gone.Close()
+	for _, m := range []string{tampered.URL + "/", missing.URL + "/", gone.URL + "/"} {
+		path := filepath.Join(t.TempDir(), "magpie.new")
+		err := fetch(WithMirror(context.Background(), m), asset, path)
+		if err == nil || MirrorOf(err) != m || !strings.Contains(err.Error(), strings.TrimSuffix(m, "/")) {
+			t.Errorf("through %s: %v (mirror %q)", m, err, MirrorOf(err))
+		}
+		if _, serr := os.Stat(path); !os.IsNotExist(serr) {
+			t.Errorf("through %s the file was kept", m)
+		}
+	}
+	// straight from a host that fails: no mirror's
+	direct := Asset{URL: missing.URL + "/asset", SHA256: asset.SHA256}
+	if err := fetch(context.Background(), direct, filepath.Join(t.TempDir(), "x")); err == nil || MirrorOf(err) != "" {
+		t.Errorf("a direct failure: %v (mirror %q)", err, MirrorOf(err))
+	}
+	for _, bad := range []string{"", "http://mirror.example/", "mirror.example", "https://", "ftp://mirror.example/", "https://mirror.example/ x"} {
+		if CheckMirrorURL(bad) == nil {
+			t.Errorf("%q taken as a mirror", bad)
+		}
+	}
+	for _, good := range []string{"https://mirror.example/", "https://mirror.example/gh", " https://mirror.example "} {
+		if err := CheckMirrorURL(good); err != nil {
+			t.Errorf("%q: %v", good, err)
+		}
+	}
+}

@@ -174,7 +174,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     });
 
     test(`${engine} ${lang}: a key is kept for some models by its id`, async (t) => {
-      const { page, errors, posts } = await open(t, "Relay", ".editor .accts .acc .amodels");
+      const { page, errors, posts } = await open(t, "Relay", ".editor .accts .acc");
+      // a key's All models badge takes no room till its row is hovered (#841)
+      await row(page, "aaaaaaaaaa").hover();
       assert.equal(await pill(page, "aaaaaaaaaa").textContent(), w.all);
       await still(page, "aaaaaaaaaa", pill(page, "aaaaaaaaaa"));
       assert.deepEqual(await chips(page, "aaaaaaaaaa"), ["big", "Cheap one"], "a model's own name, as the provider's chips");

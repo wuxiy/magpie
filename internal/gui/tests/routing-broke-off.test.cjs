@@ -63,7 +63,7 @@ function serve(lang) {
 
 const want = {
   en: { broke: /began answering, then broke off/ },
-  zh: { broke: /已开始回答，随后中断/ },
+  zh: { broke: /开始回答后中断/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

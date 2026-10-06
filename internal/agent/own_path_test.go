@@ -11,7 +11,7 @@ import (
 // Codex's go to OpenAI directly until it is routed through magpie, then
 // via magpie; Grok Build lists the models it last listed itself, straight
 // to xAI, and its own tables' to their endpoint; Antigravity CLI's own
-// custom models go to their provider.
+// custom models go to their provider; DeepSeek Harness's go to DeepSeek.
 func TestOwnModelsSayTheirPath(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -20,6 +20,7 @@ func TestOwnModelsSayTheirPath(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 	t.Setenv("CODEX_HOME", "")
 	t.Setenv("GROK_HOME", filepath.Join(home, "grok"))
+	t.Setenv("DSH_HOME", "")
 
 	// Codex
 	dir := filepath.Join(home, ".codex")
@@ -85,5 +86,20 @@ func TestOwnModelsSayTheirPath(t *testing.T) {
 	os.WriteFile(filepath.Join(ag, "settings.json"), []byte(`{"customModelsConfig":{"customModels":{"mine":{"apiProvider":"API_PROVIDER_ANTHROPIC","modelName":"claude-x"}}}}`), 0o644)
 	if o := ownOf(agy(home), "Antigravity CLI"); len(o) != 1 || o[0].Direct != "Anthropic" {
 		t.Errorf("agy's own: %+v", o)
+	}
+
+	// DeepSeek Harness 0.1.5 and after (#955): its own go to DeepSeek,
+	// its llm-deepseek row left to it
+	ds := filepath.Join(home, ".dsh")
+	os.MkdirAll(filepath.Join(ds, "profiles", "default"), 0o755)
+	os.WriteFile(filepath.Join(ds, "profiles", "default", "cordis.patch.yml"), []byte("[]\n"), 0o644)
+	own = ownOf(dsh(home), "DeepSeek Harness")
+	if len(own) == 0 {
+		t.Fatal("dsh lists none of its own")
+	}
+	for _, o := range own {
+		if o.Direct != "DeepSeek" || o.Via {
+			t.Errorf("dsh's own %s goes straight to DeepSeek: %+v", o.Value, o)
+		}
 	}
 }

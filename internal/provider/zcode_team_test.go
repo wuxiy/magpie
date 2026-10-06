@@ -34,7 +34,9 @@ func newZCodeTeamUpstream(t *testing.T) *zcodeTeamUpstream {
 	u.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		org, proj := r.Header.Get("Bigmodel-Organization"), r.Header.Get("Bigmodel-Project")
-		ok := func(data any) { json.NewEncoder(w).Encode(map[string]any{"code": 200, "msg": "ok", "data": data, "success": true}) }
+		ok := func(data any) {
+			json.NewEncoder(w).Encode(map[string]any{"code": 200, "msg": "ok", "data": data, "success": true})
+		}
 		deny := func() { w.WriteHeader(401) }
 		switch p := r.URL.Path; {
 		case p == "/api/v1/oauth/cli/init":
@@ -231,6 +233,11 @@ func TestZCodeTeamSignIn(t *testing.T) {
 	r := q.Resets
 	if r == nil || !r.ByWindow || r.FiveHour != 2 || r.Weekly != 1 || r.Count != 3 || r.Until == nil || r.Until.Format("2006-01-02") != "2026-10-05" {
 		t.Fatalf("resets: %+v", r)
+	}
+	if len(r.Each) != 3 || r.Each[0].Window != "fiveHour" || r.Each[0].Until.Format("2006-01-02") != "2026-10-05" ||
+		r.Each[1].Window != "weekly" || r.Each[1].Until.Format("2006-01-02") != "2026-10-10" ||
+		r.Each[2].Window != "fiveHour" || r.Each[2].Until.Format("2006-01-02") != "2026-10-20" {
+		t.Fatalf("each reset: %+v", r.Each)
 	}
 	if got := r.Words(); got != "2 five-hour resets · 1 weekly reset" {
 		t.Fatalf("resets in words: %q", got)

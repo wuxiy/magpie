@@ -165,9 +165,198 @@ func TestVSCodeRoundTrip(t *testing.T) {
 	}
 }
 
+// a window on one of VS Code's own profiles reads that profile's
+// chatLanguageModels.json and settings.json, not the default's: magpie's
+// group and default model go in each profile's too, a profile that uses the
+// default's is left alone, and switched off every file is as it was
+// (TJHHHH on Discord: the Agents window listed magpie, the side Chat didn't)
+func TestVSCodeProfiles(t *testing.T) {
+	home := syncHome(t)
+	dir := filepath.Join(home, "vscode", "User")
+	a := vscodeAt(dir)
+	work := filepath.Join(dir, "profiles", "-5f1c2a")
+	shared := filepath.Join(dir, "profiles", "3b9e")
+	writeFile(t, filepath.Join(dir, "globalStorage", "storage.json"), `{
+	"userDataProfiles": [
+		{"location": "-5f1c2a", "name": "Work", "icon": "briefcase"},
+		{"location": "3b9e", "name": "Shared", "useDefaultFlags": {"settings": true, "languageModels": true}},
+		{"location": "gone", "name": "Removed"}
+	]
+}`)
+	workSettings := "{\n\t// work\n\t\"chat.defaultModel\": \"gpt-4.1\"\n}\n"
+	workGroups := "[\n\t{\n\t\t\"name\": \"Ollama\",\n\t\t\"vendor\": \"ollama\"\n\t}\n]\n"
+	writeFile(t, filepath.Join(work, "settings.json"), workSettings)
+	writeFile(t, filepath.Join(work, "chatLanguageModels.json"), workGroups)
+	writeFile(t, filepath.Join(shared, "keybindings.json"), "[]\n")
+
+	if err := a.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	wlm := filepath.Join(work, "chatLanguageModels.json")
+	g, ok := edit.GetJSONItem(wlm, vscodeGroup)
+	if !ok || gjson.Get(g, "models.0.id").String() != "relay/glm-4.6" || !strings.Contains(readFile(wlm), `"ollama"`) {
+		t.Fatalf("work profile's models:\n%s", readFile(wlm))
+	}
+	if v, _ := edit.GetJSON(filepath.Join(work, "settings.json"), vscodeDefault); v != "relay/glm-4.6" {
+		t.Fatalf("work profile's chat.defaultModel %q", v)
+	}
+	for _, f := range []string{"settings.json", "chatLanguageModels.json"} {
+		if isFile(filepath.Join(shared, f)) || isFile(filepath.Join(dir, "profiles", "gone", f)) {
+			t.Fatalf("wrote %s of a profile that uses the default's, or of none", f)
+		}
+	}
+
+	// a profile made after: given the group when synced
+	writeFile(t, filepath.Join(dir, "globalStorage", "storage.json"), `{"userDataProfiles": [{"location": "-5f1c2a", "name": "Work"}, {"location": "new1", "name": "New"}]}`)
+	writeFile(t, filepath.Join(dir, "profiles", "new1", "keybindings.json"), "[]\n")
+	if err := a.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := edit.GetJSONItem(filepath.Join(dir, "profiles", "new1", "chatLanguageModels.json"), vscodeGroup); !ok {
+		t.Fatal("new profile not given magpie's group")
+	}
+
+	if err := a.Disconnect(); err != nil {
+		t.Fatal(err)
+	}
+	if readFile(filepath.Join(work, "settings.json")) != workSettings || readFile(wlm) != workGroups {
+		t.Fatalf("work profile not as it was:\n%s\n%s", readFile(filepath.Join(work, "settings.json")), readFile(wlm))
+	}
+	if _, ok := edit.GetJSONItem(filepath.Join(dir, "profiles", "new1", "chatLanguageModels.json"), vscodeGroup); ok {
+		t.Fatal("new profile kept magpie's group")
+	}
+}
+
 // its requests come with GitHubCopilotChat/<version>
 func TestVSCodeUA(t *testing.T) {
 	if got := usage.AgentOf("GitHubCopilotChat/0.69.0"); got != "vscode" {
 		t.Fatalf("%q", got)
+	}
+}
+
+// VS Code Insiders is its own row (wani on Discord): its User folder is
+// "Code - Insiders" beside VS Code's "Code", connected it writes only there,
+// and its models send a token of its own, since its chat's User-Agent is
+// Stable's; VS Code's files are left alone
+func TestVSCodeInsiders(t *testing.T) {
+	home := syncHome(t)
+	ins, err := Find("vscode-insiders")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := Find("vscode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ins.Name != "VS Code Insiders" || ins.Bin != "code-insiders" || filepath.Base(filepath.Dir(ins.Dir)) != "Code - Insiders" || filepath.Base(ins.Dir) != "User" ||
+		filepath.Dir(filepath.Dir(ins.Dir)) != filepath.Dir(filepath.Dir(st.Dir)) || ins.UA != nil {
+		t.Fatalf("insiders: %+v\nstable dir %s", ins, st.Dir)
+	}
+	if !strings.HasPrefix(ins.Dir, home) {
+		t.Fatalf("insiders dir %s outside %s", ins.Dir, home)
+	}
+	for _, n := range []string{"code-insiders", "vs-code-insiders"} {
+		if a, err := Find(n); err != nil || a.ID != "vscode-insiders" {
+			t.Fatalf("Find(%q): %v %v", n, a, err)
+		}
+	}
+	writeFile(t, ins.Path, "{}\n")
+	writeFile(t, st.Path, `{"chat.defaultModel": "gpt-5"}`+"\n")
+	if !ins.Detected() {
+		t.Fatal("not detected")
+	}
+	if err := ins.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	g, ok := edit.GetJSONItem(filepath.Join(ins.Dir, "chatLanguageModels.json"), vscodeGroup)
+	if !ok || gjson.Get(g, "models.0.requestHeaders.Authorization").String() != "Bearer magpie-vscode-insiders" || !ins.Wired() || ins.Check() != "" {
+		t.Fatalf("connected: %s %v %q", g, ins.Wired(), ins.Check())
+	}
+	if readFile(st.Path) != `{"chat.defaultModel": "gpt-5"}`+"\n" || isFile(filepath.Join(st.Dir, "chatLanguageModels.json")) || st.Wired() {
+		t.Fatalf("VS Code touched:\n%s", readFile(st.Path))
+	}
+	// its requests are its own, Stable's still Stable's
+	if got := usage.AgentOf("vscode-insiders"); got != "vscode-insiders" {
+		t.Fatalf("token: %q", got)
+	}
+	if got := usage.AgentOf("GitHubCopilotChat/0.69.0"); got != "vscode" {
+		t.Fatalf("UA: %q", got)
+	}
+	if err := ins.Disconnect(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := edit.GetJSONItem(filepath.Join(ins.Dir, "chatLanguageModels.json"), vscodeGroup); ok || ins.Wired() {
+		t.Fatal("disconnected, magpie's group kept")
+	}
+}
+
+func TestVSCodium(t *testing.T) {
+	syncHome(t)
+	c, err := Find("vscodium")
+	if err != nil {
+		t.Fatal(err)
+	}
+	vs, err := Find("vscode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Name != "VSCodium" || c.Bin != "codium" || c.UA != nil || !strings.Contains(c.Dir, filepath.Join("VSCodium", "User")) {
+		t.Fatalf("vscodium: %+v", c)
+	}
+	for _, alias := range []string{"codium", "vscodium-chat"} {
+		a, err := Find(alias)
+		if err != nil || a.ID != "vscodium" {
+			t.Fatalf("Find(%q): %v %v", alias, a, err)
+		}
+	}
+	writeFile(t, c.Path, "{}\n")
+	writeFile(t, vs.Path, `{"chat.defaultModel":"gpt-5"}`+"\n")
+	if !c.Detected() {
+		t.Fatal("VSCodium not detected")
+	}
+	if err := c.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	g, ok := edit.GetJSONItem(filepath.Join(c.Dir, "chatLanguageModels.json"), vscodeGroup)
+	if !ok || gjson.Get(g, "models.0.requestHeaders.Authorization").String() != "Bearer magpie-vscodium" || !c.Wired() || c.Check() != "" {
+		t.Fatalf("connected: %s %v %q", g, c.Wired(), c.Check())
+	}
+	if isFile(filepath.Join(vs.Dir, "chatLanguageModels.json")) || readFile(vs.Path) != `{"chat.defaultModel":"gpt-5"}`+"\n" || vs.Wired() {
+		t.Fatalf("VS Code touched:\n%s", readFile(vs.Path))
+	}
+	if got := usage.AgentOf("vscodium"); got != "vscodium" {
+		t.Fatalf("token: %q", got)
+	}
+	if err := c.Disconnect(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := edit.GetJSONItem(filepath.Join(c.Dir, "chatLanguageModels.json"), vscodeGroup); ok || c.Wired() {
+		t.Fatal("disconnected, magpie's group kept")
+	}
+}
+
+func TestVSCodiumModelsUseTheirOwnVisibility(t *testing.T) {
+	syncHome(t)
+	if err := provider.Save(provider.Provider{ID: "relay", Name: "Relay", Key: "k", Chat: "http://127.0.0.1:1/v1", Models: []string{"visible", "hidden"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.SetHiddenModels("vscodium", []string{"relay/hidden"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.SetHiddenModels("vscode", []string{"relay/visible"}); err != nil {
+		t.Fatal(err)
+	}
+	has := func(k vscodeKind, id string) bool {
+		b, err := json.Marshal(vscodeGroupJSON(k))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return gjson.GetBytes(b, "models.#(id==\""+id+"\")").Exists()
+	}
+	if has(vscodiumKind, "relay/hidden") || !has(vscodiumKind, "relay/visible") {
+		t.Fatal("VSCodium did not use its own hidden-model list")
+	}
+	if !has(vscodeStable, "relay/hidden") || has(vscodeStable, "relay/visible") {
+		t.Fatal("VS Code did not retain its own hidden-model list")
 	}
 }

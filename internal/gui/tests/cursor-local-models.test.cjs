@@ -75,7 +75,7 @@ function fixture(lang) {
 
 const W = {
   en: { said: "Connected · 3 models in Cursor Private Inference's model menu", after: "Connected · 2 models in Cursor Private Inference's model menu", title: "Cursor Private Inference's model list", restart: "quit and reopen it", details: "Details" },
-  zh: { said: "已接入 · Cursor Private Inference 的模型菜单里有 3 个模型", after: "已接入 · Cursor Private Inference 的模型菜单里有 2 个模型", title: "Cursor Private Inference 的模型列表", restart: "退出并重新打开", details: "详情" },
+  zh: { said: "已接入 · Cursor Private Inference 的模型菜单里有 3 个模型", after: "已接入 · Cursor Private Inference 的模型菜单里有 2 个模型", title: "Cursor Private Inference 的模型列表", restart: "退出重开", details: "详情" },
 };
 const cd = '.row.agent[data-id="cursor-local"]';
 

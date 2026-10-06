@@ -14,7 +14,7 @@ import (
 func isLink(t *testing.T, p string) bool {
 	t.Helper()
 	fi, err := os.Lstat(p)
-	return err == nil && fi.Mode()&os.ModeSymlink != 0
+	return err == nil && linkEntry(fi)
 }
 
 func gone(t *testing.T, p string) {

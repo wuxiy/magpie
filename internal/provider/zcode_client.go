@@ -25,8 +25,8 @@ package provider
 // Plan, and every other provider, get the agent's request as it is.
 
 import (
-	_ "embed"
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"os"
 	"path/filepath"

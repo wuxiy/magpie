@@ -84,8 +84,8 @@ func TestSessionsCmd(t *testing.T) {
 	now := sessionsHome(t)
 
 	list := runSessions(t, now)
-	wantAll(t, list, "ago", "Codex", "it's", "Add a README", "Claude Code", "app", "Fix the login bug in auth.go", "latest 2")
-	if strings.Index(list, "Add a README") > strings.Index(list, "Fix the login") {
+	wantAll(t, list, "ago", "Codex", "it's", "Add a README", "Claude Code", "app", "Fix login bug", "latest 2")
+	if strings.Index(list, "Add a README") > strings.Index(list, "Fix login bug") {
 		t.Error("not the latest first")
 	}
 	if got := runSessions(t, now, "--folder", "app"); strings.Contains(got, "README") || !strings.Contains(got, "login") {

@@ -514,6 +514,11 @@ func TestAPIErrorShapes(t *testing.T) {
 	if got := APIError(nil, "400 Bad Request"); got != "400 Bad Request" {
 		t.Fatal(got)
 	}
+	// Command Code's refusal of a Go plan's key says where it works (#969)
+	goKey := `{"error":{"type":"forbidden","message":"Your Go plan doesn't include API access. Upgrade to Provider or higher at https://commandcode.ai/billing to use these endpoints."}}`
+	if got := APIError([]byte(goKey), "403 Forbidden"); got != "Your Go plan doesn't include API access. Upgrade to Provider or higher at https://commandcode.ai/billing to use these endpoints. — "+CommandCodeGoHint {
+		t.Fatal(got)
+	}
 }
 
 // A backend that only streams is tested with a streamed request: WorkBuddy

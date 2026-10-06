@@ -73,7 +73,7 @@ const words = {
     kept: "app removed, its skills and servers kept", removed: "bare removed", remove: "Remove",
   },
   zh: {
-    keep: "保留项目里的技能和 MCP 服务器", gone: "会被移除", stays: "原样保留",
+    keep: "保留项目里的技能和 MCP 服务器", gone: "移除 magpie 放入的", stays: "原样保留",
     kept: "已移除 app，项目里的技能和服务器已保留", removed: "已移除 bare", remove: "移除",
   },
 };

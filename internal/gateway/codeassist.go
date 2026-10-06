@@ -52,6 +52,14 @@ func antigravityTurnsAway(system string) bool {
 		strings.Contains(system, "built on Anthropic's Claude Agent SDK")
 }
 
+// antigravityRefuses is what Antigravity says when it turns such a request
+// away, on either shape the refusal arrives in: a 429's body, or the reply's
+// own error event, where the Code Assist decoder keeps the message and leaves
+// the status and its code out of the event.
+func antigravityRefuses(said string) bool {
+	return strings.Contains(strings.ToLower(said), "resource has been exhausted")
+}
+
 const antigravityTurnedAwayHint = "not a quota: Antigravity turns away Claude Code's and the Claude Agent SDK's system prompt (Claude Code, Claude Desktop's chats) with this 429; use another provider for them"
 
 // codeAssistID is the id a request on the account's app goes out under: on

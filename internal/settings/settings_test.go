@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yetone/magpie/internal/filememo"
 	"github.com/yetone/magpie/internal/redact"
 )
 
@@ -56,8 +57,8 @@ func TestRoundTrip(t *testing.T) {
 	if Save(Settings{SessionTerminal: "Ghostty; rm -rf /"}) == nil {
 		t.Fatal("bad terminal app id accepted")
 	}
-	// the text size is 100% until one of the sizes is chosen
-	if Save(Settings{}) != nil || Load().TextSize != 100 {
+	// the text size is the system's default until one of the sizes is chosen
+	if Save(Settings{}) != nil || Load().TextSize != DefaultTextSize() {
 		t.Fatalf("default text size: %+v", Load())
 	}
 	if Save(Settings{TextSize: 125}) != nil || Load().TextSize != 125 {
@@ -498,5 +499,39 @@ func TestAlertsChecked(t *testing.T) {
 	}
 	if s := Load(); s.UsageAlert != 80 || s.BalanceAlert != 2.5 {
 		t.Fatalf("read back %d %v", s.UsageAlert, s.BalanceAlert)
+	}
+}
+
+// Windows and Linux start at 110% (#914), the Mac at 100%; a size saved
+// before, 100% too, is kept on any of them.
+func TestDefaultTextSize(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	orig := DefaultTextSize
+	t.Cleanup(func() { DefaultTextSize = orig })
+	for _, c := range []struct {
+		goos string
+		want int
+	}{{"windows", 110}, {"linux", 110}, {"darwin", 100}} {
+		DefaultTextSize = func() int { return c.want }
+		if err := os.Remove(Path()); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		filememo.Forget()
+		if got := Load().TextSize; got != c.want {
+			t.Fatalf("%s, nothing saved: text size %d, want %d", c.goos, got, c.want)
+		}
+		if err := Save(Settings{TextSize: 100}); err != nil {
+			t.Fatal(err)
+		}
+		if got := Load().TextSize; got != 100 {
+			t.Fatalf("%s: a saved 100%% became %d", c.goos, got)
+		}
+	}
+	want := 100
+	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
+		want = 110
+	}
+	if orig() != want {
+		t.Fatalf("on %s the default is %d, want %d", runtime.GOOS, orig(), want)
 	}
 }

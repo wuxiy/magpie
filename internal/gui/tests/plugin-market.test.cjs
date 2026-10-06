@@ -96,10 +96,10 @@ function server(lang, asked) {
 }
 
 const L = {
-  en: { tab: "Plugins", ours: "magpie community", install: "Install", soon: "Coming soon", signIn: "Sign in", onNpm: "On npm",
+  en: { tab: "Plugins", ours: "Subscriptions", install: "Install", soon: "Coming soon", signIn: "Sign in", onNpm: "On npm",
     installed: "Installed", failed: /Didn't load: Cannot find module/, update: "Update", remove: "Remove", moreTile: "More in Plugins",
     lookFor: "look for a plugin", week: "48k/week", readme: "Install", signing: "GitHub Copilot" },
-  zh: { tab: "插件", ours: "magpie 社区", install: "安装", soon: "即将上线", signIn: "登录", onNpm: "npm 上的插件",
+  zh: { tab: "插件", ours: "订阅", install: "安装", soon: "即将上线", signIn: "登录", onNpm: "npm 上的插件",
     installed: "已安装", failed: /没有加载成功：Cannot find module/, update: "更新", remove: "移除", moreTile: "插件中还有更多",
     lookFor: "找找插件", week: "48k/周", readme: "Install", signing: "GitHub Copilot" },
 };
@@ -222,6 +222,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await cp.locator(".pm-chip.up").waitFor({ state: "detached" });
         assert.deepEqual(asked.find(([k]) => k === "upgrade")[1], { spec: "opencode-copilot-auth" });
         await rows.filter({ hasText: "opencode-broken" }).locator("button", { hasText: w.remove }).click();
+        assert.deepEqual(asked.filter(([k]) => k === "remove"), [], "Remove waits for confirmation");
+        await page.locator("dialog.action-confirm[open] button").last().click();
         await page.waitForFunction(() => document.querySelectorAll("#view-plugins .pm-row").length === 1);
         assert.equal(await view.evaluate((e) => e.scrollTop), top, "a click doesn't move the page");
 

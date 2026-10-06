@@ -90,8 +90,8 @@ func TestTooFewTokensSaidWithSigns(t *testing.T) {
 	var asked []int
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var q struct {
-			MaxTokens           int `json:"max_tokens"`
-			MaxCompletionTokens int `json:"max_completion_tokens"`
+			MaxTokens           int  `json:"max_tokens"`
+			MaxCompletionTokens int  `json:"max_completion_tokens"`
 			Stream              bool `json:"stream"`
 		}
 		b, _ := io.ReadAll(r.Body)

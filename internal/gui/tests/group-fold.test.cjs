@@ -63,7 +63,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     const w = words[lang];
     test(`${engine} ${lang}: an open group folds back from its heading`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
-      const page = await (await browser.newContext({ viewport: { width: 1100, height: 1400 }, reducedMotion: "reduce" })).newPage();
+      // tall enough for the whole editor, its Cancel clicked where it is
+      // (under the names setting over the groups)
+      const page = await (await browser.newContext({ viewport: { width: 1100, height: 1600 }, reducedMotion: "reduce" })).newPage();
       t.after(() => browser.close());
       page.setDefaultTimeout(5000);
       const errors = [], posts = [];
@@ -95,6 +97,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator("#status").filter({ hasText: w.first }).waitFor();
       assert.equal(await ed.locator("input").first().inputValue(), "Sol 2", "the edit is kept");
       await ed.locator("button", { hasText: new RegExp("^" + w.cancel + "$") }).click();
+      await page.locator("dialog.action-confirm[open] button").last().click();
       await closed();
 
       assert.deepEqual(posts, [], "folding saves nothing");

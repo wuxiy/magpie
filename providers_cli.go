@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +41,12 @@ const providerUsage = `usage:
   magpie provider account-cap <id> [account [percent|off]]
                                           use a subscription account up to a share of each usage window (e.g. 70):
                                           at it, routing takes the account for used up until the window renews
+  magpie provider account-concurrency <id> [account|key [n|off|default]]
+                                          how many requests one account or key has out at once, over every model,
+                                          routing group and agent: its own, off for none, default for the provider's
+  magpie provider queue <id> [length [seconds]]
+                                          how many may wait for each account or key past its limit, and how long;
+                                          past either a request is turned away with a 429 (0: no bound)
   magpie provider listed <id> yes|no      no: its models serve only through routing groups, not in the list
   magpie provider off|on <id>             switch it off (kept, but no agent or request uses it), or on again
   magpie provider test <id> [model…]      send a tiny request through each endpoint, or to each model
@@ -115,6 +122,9 @@ func providers() error {
 		}
 		if u := uses[p.ID]; len(u) > 0 {
 			r.uses = green.Render("← " + strings.Join(u, ", "))
+		}
+		if e := p.ListError(); e != "" {
+			r.uses += amber.Render("  ! couldn't list its models: " + e)
 		}
 		if len(p.Fallback) > 0 {
 			r.uses += muted.Render("  ⤷ " + strings.Join(p.Fallback, " → "))
@@ -417,6 +427,10 @@ func providerCmd(args []string) error {
 		return accountModelsCmd(rest)
 	case "account-cap", "account-caps":
 		return accountCapCmd(rest)
+	case "account-concurrency", "account-limit":
+		return accountConcurrencyCmd(rest)
+	case "queue":
+		return queueCmd(rest)
 	case "listed":
 		// no: the provider's models leave the list agents see and serve
 		// only through the routing groups they are in
@@ -1070,6 +1084,121 @@ func accountCapCmd(rest []string) error {
 			fmt.Println(r, muted.Render("· no cap: used to 100%"))
 		}
 	}
+	return nil
+}
+
+// accountConcurrencyCmd shows, or sets, the limit on requests at once of a
+// provider's accounts or keys (#892): each one's own, else the provider's
+// Concurrency. What runs and waits now is the gateway's, at GET
+// /v1/magpie/concurrency and on the app's account rows.
+func accountConcurrencyCmd(rest []string) error {
+	if len(rest) < 1 {
+		return fmt.Errorf("magpie provider account-concurrency <id> [account|key [n|off|default]]")
+	}
+	p, err := provider.Find(rest[0])
+	if err != nil {
+		return err
+	}
+	if len(rest) > 2 {
+		limit, err := provider.ParseLimit(rest[2])
+		if err != nil {
+			return err
+		}
+		if err := provider.SetAccountConcurrency(p.ID, rest[1], limit); err != nil {
+			return err
+		}
+		if p, err = provider.Find(p.ID); err != nil {
+			return err
+		}
+	}
+	refs := p.AccountRefs()
+	if len(rest) > 1 {
+		ref, ok := p.AccountRefOf(rest[1])
+		if !ok {
+			return fmt.Errorf("%s has no account or key %q", p.Name, rest[1])
+		}
+		refs = []string{ref}
+	}
+	if len(refs) == 0 {
+		fmt.Println(muted.Render(p.Name + " has no account or key"))
+		return nil
+	}
+	label := map[string]string{}
+	for _, k := range p.KeyList() {
+		if k.Name != "" {
+			label[k.ID] = k.Name + " " + muted.Render(k.Masked+" · "+k.ID)
+		} else {
+			label[k.ID] = k.Masked + " " + muted.Render(k.ID)
+		}
+	}
+	base := p.Concurrency()
+	for _, r := range refs {
+		name := r
+		if l, ok := label[r]; ok {
+			name = l
+		}
+		n, own := p.AccountConcurrencyOf(r)
+		switch {
+		case own && n > 0:
+			fmt.Printf("%s · at most %d at once (its own)\n", name, n)
+		case own:
+			fmt.Println(name, "· no limit at once (its own)")
+		case base > 0:
+			fmt.Println(name, muted.Render(fmt.Sprintf("· at most %d at once (%s's)", base, p.Name)))
+		default:
+			fmt.Println(name, muted.Render("· no limit at once"))
+		}
+	}
+	return nil
+}
+
+// queueCmd shows, or sets, how many requests may wait for each of a
+// provider's accounts or keys past its limit, and for how many seconds
+// (#892).
+func queueCmd(rest []string) error {
+	if len(rest) < 1 || len(rest) > 3 {
+		return fmt.Errorf("magpie provider queue <id> [length [seconds]]")
+	}
+	p, err := provider.Find(rest[0])
+	if err != nil {
+		return err
+	}
+	if len(rest) > 1 {
+		num := func(s, what string) (int, error) {
+			if s == "off" || s == "none" || s == "-" {
+				return 0, nil
+			}
+			n, err := strconv.Atoi(s)
+			if err != nil {
+				return 0, fmt.Errorf("the %s is a whole number, or off, not %q", what, s)
+			}
+			return n, nil
+		}
+		ql, err := num(rest[1], "queue length")
+		if err != nil {
+			return err
+		}
+		qw := p.QueueWait
+		if len(rest) > 2 {
+			if qw, err = num(rest[2], "wait in seconds"); err != nil {
+				return err
+			}
+		}
+		if err := provider.SetQueue(p.ID, ql, qw); err != nil {
+			return err
+		}
+		if p, err = provider.Find(p.ID); err != nil {
+			return err
+		}
+	}
+	length, wait := "no bound", "as long as it takes"
+	if p.QueueLimit > 0 {
+		length = fmt.Sprintf("%d", p.QueueLimit)
+	}
+	if p.QueueWait > 0 {
+		wait = fmt.Sprintf("%ds", p.QueueWait)
+	}
+	fmt.Printf("%s · queue for each account or key: %s waiting, each for %s\n", p.Name, length, wait)
 	return nil
 }
 

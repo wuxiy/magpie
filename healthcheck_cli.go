@@ -14,7 +14,8 @@ import (
 )
 
 // healthcheck: magpie healthcheck — exits 0 when a magpie gateway answers
-// at MAGPIE_ADDR (127.0.0.1:3425 unless set), for a container's
+// at its address (MAGPIE_ADDR, else Settings' Gateway port on 127.0.0.1,
+// 3425 unless set), for a container's
 // HEALTHCHECK, which has no curl to ask it with.
 func healthcheck() error {
 	c := &http.Client{Timeout: 3 * time.Second}

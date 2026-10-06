@@ -2,6 +2,7 @@ package agent
 
 import (
 	"cmp"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -422,10 +423,24 @@ func claudeIn(at place) *Agent {
 			forget(compactKey)
 			return nil
 		}
-		if settings.Load().FullContext || claudeModel(mainModel()) {
+		// a threshold the user set on the main model or its provider comes
+		// first (#876), a Claude model's included; then the one for every
+		// model (settings.Compact), none under Full window
+		main := mainModel()
+		n := provider.CompactSet(main)
+		if s := settings.Load(); n == 0 && !claudeModel(main) {
+			n = s.Compact()
+			// magpie's default gives way to an autoCompactWindow the user
+			// set in Claude Code (/autocompact, its settings), which the env
+			// would take precedence over; one typed in magpie doesn't (#876)
+			if s.CompactAt == 0 && claudeOwnCompact(path, main) {
+				n = 0
+			}
+		}
+		if n == 0 {
 			return dropCompact()
 		}
-		w := strconv.Itoa(settings.WorkingWindow)
+		w := strconv.Itoa(n)
 		stash(map[string]string{compactKey: w})
 		if env(claudeCompactEnv) == w {
 			return nil
@@ -572,7 +587,7 @@ func claudeIn(at place) *Agent {
 				return err
 			}
 			keys := []string{"model"}
-			if env("ANTHROPIC_AUTH_TOKEN") == gateway.Token {
+			if ourKey(env("ANTHROPIC_AUTH_TOKEN")) {
 				// magpie's, left at a gateway address since changed
 				for _, k := range claudeEnv {
 					keys = append(keys, "env."+k)
@@ -651,7 +666,7 @@ func claudeIn(at place) *Agent {
 		}
 		kvs := []edit.KV{
 			{Path: "env.ANTHROPIC_BASE_URL", Value: at.gw()},
-			{Path: "env.ANTHROPIC_AUTH_TOKEN", Value: gateway.Token},
+			{Path: "env.ANTHROPIC_AUTH_TOKEN", Value: at.gwKey()},
 			{Path: "env.ANTHROPIC_SMALL_FAST_MODEL", Value: tiers["haiku"]},
 			{Path: "model", Value: main},
 		}
@@ -1042,7 +1057,7 @@ func claudeIn(at place) *Agent {
 				return "Claude Code's managed settings (" + at.native(managed) + ") set ANTHROPIC_BASE_URL to " + u + ", which wins over magpie's"
 			}
 			return wiringOff("Claude Code", path, func(k string) (string, bool) { return edit.GetJSON(path, "env."+k) },
-				"ANTHROPIC_BASE_URL", at.gw(), "ANTHROPIC_AUTH_TOKEN", gateway.Token)
+				"ANTHROPIC_BASE_URL", at.gw(), "ANTHROPIC_AUTH_TOKEN", at.gwKey())
 		},
 		// every prompt typed into Claude Code goes into history.jsonl
 		LastUsed: func() time.Time {
@@ -1280,6 +1295,33 @@ func claudeModel(ref string) bool {
 	m := strings.TrimSuffix(ref, "[1m]")
 	m = m[strings.LastIndex(m, "/")+1:]
 	return strings.HasPrefix(strings.ToLower(m), "claude")
+}
+
+// claudeOwnCompact says the settings.json at path has an auto-compact
+// window of the user's for model: autoCompactWindow, or one under
+// modelSettings for it (as /autocompact saves it), a number or "auto".
+// Claude Code takes CLAUDE_CODE_AUTO_COMPACT_WINDOW before either.
+func claudeOwnCompact(path, model string) bool {
+	if _, ok := edit.GetJSON(path, "autoCompactWindow"); ok {
+		return true
+	}
+	raw, ok := edit.GetJSON(path, "modelSettings")
+	if !ok {
+		return false
+	}
+	var per map[string]struct {
+		Window any `json:"autoCompactWindow"`
+	}
+	if json.Unmarshal([]byte(raw), &per) != nil {
+		return false
+	}
+	model = strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(model, "magpie/"), "[1m]"))
+	for k, v := range per {
+		if v.Window != nil && strings.ToLower(strings.TrimSuffix(k, "[1m]")) == model {
+			return true
+		}
+	}
+	return false
 }
 
 // claudeWindow is the context window to tell Claude Code for the models it

@@ -70,7 +70,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           assert.equal(await page.locator(`#${id} .opt.on`).textContent(), off);
         }
         const consent = await page.locator("#otelSessionsRow").textContent();
-        for (const phrase of (lang === "zh" ? ["所有本地会话", "未通过 Magpie", "文件内容", "命令输出", "遮蔽敏感信息"] : ["all local sessions", "not routed through Magpie", "file contents", "command output", "secrets masked"])) assert(consent.includes(phrase), phrase);
+        for (const phrase of (lang === "zh" ? ["全部本地会话", "未经 Magpie", "文件内容", "命令输出", "遮蔽敏感信息"] : ["all local sessions", "not routed through Magpie", "file contents", "command output", "secrets masked"])) assert(consent.includes(phrase), phrase);
         const mode = page.locator("#otelBodiesRow .opt.on");
         assert.equal(await mode.textContent(), modes[0]);
         assert.equal(await mode.getAttribute("aria-pressed"), "true");

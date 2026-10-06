@@ -82,3 +82,24 @@ func TestCLISignInFirstLinkAsPrinted(t *testing.T) {
 		t.Errorf("link %q", got)
 	}
 }
+
+// 𝕏 on Discord: "grok login gave no link to open", without what the CLI
+// said. A login that fails says its last line, and the endpoint its error
+// names isn't taken for the page to open.
+func TestCLISignInSaysWhyNoLink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake CLI is a shell script")
+	}
+	said := "Error: error sending request for url (https://auth.x.ai/oauth2/device/code): client error (Connect): tunnel error: failed to create underlying connection: tcp connect error: Connection refused (os error 61)"
+	exe := filepath.Join(t.TempDir(), "login")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho '"+said+"' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := &signInFlow{done: make(chan struct{})}
+	s.st = SignInState{State: "waiting"}
+	err := runCLISignIn(s, "grok login", nil, true, nil, func() (string, string, bool) { return "", "", false }, nil, exe)
+	if err == nil || err.Error() != "grok login gave no link to open: "+said {
+		s.mu.Lock()
+		t.Fatalf("err %v, link %q", err, s.st.URL)
+	}
+}

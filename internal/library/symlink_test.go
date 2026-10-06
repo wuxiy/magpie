@@ -20,7 +20,7 @@ func linkIn(t *testing.T, target, link string) {
 func stillLink(t *testing.T, p string) {
 	t.Helper()
 	fi, err := os.Lstat(p)
-	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+	if err != nil || !linkEntry(fi) {
 		t.Fatalf("%s is no longer a symlink (%v)", p, err)
 	}
 }

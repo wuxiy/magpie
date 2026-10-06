@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -16,13 +17,28 @@ import (
 var heldInstance *os.File
 
 // instanceLock is where the magpie running exe on the config in dir holds
-// its lock. A copy elsewhere (the owner's magpie-dev) has its own.
+// its lock. A copy elsewhere (the owner's magpie-dev) has its own, but
+// every installed magpie — a magpie.app wherever it is, or Homebrew's,
+// whose path has its version in it — shares one: the Mac reopening the
+// copy the user ran after a shutdown while Open at login starts the one
+// it was turned on for, or a copy run translocated from Downloads, put
+// two birds in the menu bar (inaction on Discord).
 func instanceLock(dir, exe string) string {
 	if r, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = r
 	}
+	if installedCopy(exe) {
+		exe = "installed"
+	}
 	sum := sha256.Sum256([]byte(dir + "\x00" + exe))
 	return filepath.Join(dir, "app-"+hex.EncodeToString(sum[:6])+".lock")
+}
+
+// installedCopy is whether exe is an installed magpie: the program of an
+// app bundle, or Homebrew's.
+func installedCopy(exe string) bool {
+	exe = filepath.ToSlash(exe)
+	return strings.Contains(exe, ".app/Contents/MacOS/") || strings.Contains(exe, "/Cellar/magpie/")
 }
 
 // holdInstance takes the lock at path for this process, or reports that

@@ -270,13 +270,6 @@ func placeholder(kind, v string) string {
 	return p
 }
 
-// Known says there are values to put back.
-func Known() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return len(values) > 0
-}
-
 // ---- masking --------------------------------------------------------------------
 
 type span struct {
@@ -402,6 +395,10 @@ func Restore(s string, escaped bool) string {
 	})
 }
 
+// maxPlaceholder is the longest placeholder Mask writes: {{, a kind (a
+// user's rule may name one up to maxKind long), _, the 8 of the hash, }}.
+const maxPlaceholder = len("{{") + maxKind + len("_") + 8 + len("}}")
+
 // partialTail is how much of the end of s may be the start of a
 // placeholder the next piece of a stream finishes.
 func partialTail(s string) int {
@@ -414,7 +411,7 @@ func partialTail(s string) int {
 		i--
 	}
 	t := s[i:]
-	if len(t) > 32 || strings.Contains(t, "}}") {
+	if len(t) >= maxPlaceholder || strings.Contains(t, "}}") {
 		return 0
 	}
 	// {, {{, {{A…, {{API_KEY_ab…, {{API_KEY_abcdefgh}

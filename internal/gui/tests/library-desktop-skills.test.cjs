@@ -44,7 +44,7 @@ function server(lang, desktopSkills) {
 
 const words = {
   en: { note: "Claude Desktop shows skill changes once its window is reloaded", none: "Claude Desktop has no skills folder." },
-  zh: { note: "Claude Desktop 在窗口刷新", none: "Claude Desktop 没有技能文件夹。" },
+  zh: { note: "Claude Desktop 刷新窗口", none: "Claude Desktop 没有技能文件夹。" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

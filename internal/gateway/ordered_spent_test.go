@@ -13,6 +13,7 @@ import (
 // not until the week renews; Smart keeps it for when nothing else can take
 // a request, as before. A week used up is out either way (#530).
 func TestOrderedKeepsAnAccountAt98(t *testing.T) {
+	forgetRouting()
 	old := allowances
 	defer func() { allowances = old }()
 	now := time.Now()

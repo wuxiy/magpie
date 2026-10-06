@@ -52,7 +52,7 @@ function server(lang, calls) {
 
 const words = {
   en: { note: "RTK is in ~/.local/bin, which isn't on your PATH", how: "Put RTK on PATH links it into ~/bin.", tag: "Not on PATH", button: "Put RTK on PATH", done: "RTK is on your PATH — restart your agents, and the terminals they run in, to use it" },
-  zh: { note: "RTK 在 ~/.local/bin，但这个目录不在你的 PATH 中", how: "“加到 PATH”会在 ~/bin 里建一个指向它的链接。", tag: "不在 PATH 中", button: "加到 PATH", done: "RTK 已在 PATH 中，重启 Agent 及其所在的终端后生效" },
+  zh: { note: "RTK 位于 ~/.local/bin，该目录不在 PATH 中", how: "“加到 PATH”会在 ~/bin 里建一个指向它的链接。", tag: "不在 PATH 中", button: "加到 PATH", done: "RTK 已在 PATH 中，重启 Agent 及其所在的终端后生效" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

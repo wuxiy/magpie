@@ -47,6 +47,7 @@
     <a href="/docs/zh/intent">意图路由</a>
     <a href="/docs/zh/plugins">插件开发</a>
     <a href="/docs/zh/import">Add to magpie</a>
+    <a href="/docs/zh/integrate">接入应用</a>
     <a href="https://github.com/yetone/magpie-releases/releases">版本发布</a>
   </div>
   <div class="langs">
@@ -79,6 +80,7 @@
     <a href="#ids">供应商 id</a>
     <a href="#test">测试</a>
     <a href="#publish">发布与上架</a>
+    <a href="#middleware">网关中间件</a>
     <a href="#pi">pi 扩展包</a>
     <a href="#protocol">宿主协议</a>
     <a href="#faq">答疑</a>
@@ -578,14 +580,78 @@ m plugin logout acme</pre>
   <span class="s">"providers"</span>: [<span class="s">"acme"</span>],
   <span class="s">"summary"</span>: { <span class="s">"en"</span>: <span class="s">"Your Acme Coding Plan."</span>, <span class="s">"zh"</span>: <span class="s">"使用你的 Acme Coding Plan。"</span> } }</pre>
         </div>
-        <code>MAGPIE_PLUGIN_MARKET=&lt;url&gt;</code> 让 magpie 改用另一份列表，可以用来检查你的条目；设为 <code>off</code> 则只用内置副本。</li>
+        中间件的条目写 <code>"kind": "middleware"</code>，不写 <code>providers</code>，列在<span class="ui">网关中间件</span>下。<code>MAGPIE_PLUGIN_MARKET=&lt;url&gt;</code> 让 magpie 改用另一份列表，可以用来检查你的条目；设为 <code>off</code> 则只用内置副本。</li>
       <li><b>社区包。</b>想把插件贡献到 <a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a>：
         <ul>
-          <li>放在 <code>packages/&lt;name&gt;</code> 下，包名为 <code>@magpie-community/opencode-&lt;name&gt;-auth</code>，除非确实需要，不要有运行时依赖。</li>
+          <li>放在 <code>packages/&lt;name&gt;</code> 下，包名为 <code>@magpie-community/opencode-&lt;name&gt;-auth</code>（供应商）或 <code>@magpie-community/middleware-&lt;name&gt;</code>（中间件），除非确实需要，不要有运行时依赖。</li>
           <li>把版本号的改动推到 <code>main</code> 就会发布。</li>
           <li>这些包在每个 magpie 里都会自动更新。</li>
         </ul></li>
     </ul>
+
+    <h2 id="middleware"><a class="anchor" href="#middleware">网关中间件</a></h2>
+    <p>插件还可以是<em>网关中间件</em>：agent 发给 magpie 网关的每个请求，在路由之前先经过它；回复在返回的路上也经过它。它可以给模型起别名、往系统提示词里加内容、拒绝请求、改写或隐藏模型说的话，或者自己统计经过的流量。它对所有供应商都起作用，不管是不是插件提供的。</p>
+    <div class="code">
+      <span class="lang">alias.middleware.js</span>
+      <button class="copy" data-copy="mw-ex">复制</button>
+      <pre id="mw-ex"><span class="c">// alias.middleware.js</span>
+<span class="k">export const</span> events = [<span class="s">"message_start"</span>]
+
+<span class="k">export function</span> onRequest(body, ctx) {
+  ctx.state.asked = body.model
+  <span class="k">if</span> (body.model === <span class="s">"fast"</span>) body.model = <span class="s">"deepseek/deepseek-chat"</span>
+  <span class="k">if</span> ((ctx.options.blocked ?? []).includes(body.model)) <span class="k">return</span> ctx.reject(403, <span class="s">"not this model"</span>)
+  <span class="k">return</span> body
+}
+
+<span class="k">export function</span> onEvent(ev, ctx) {
+  ev.message.model = ctx.state.asked  <span class="c">// the agent sees the name it asked for</span>
+  <span class="k">return</span> ev
+}</pre>
+    </div>
+    <div class="code">
+      <span class="lang">shell</span>
+      <button class="copy" data-copy="mw-cli">复制</button>
+      <pre id="mw-cli">magpie plugin add ./alias.middleware.js   <span class="c"># 或者 package.json 里写了 "magpie": { "middleware": "./mw.js" } 的包</span></pre>
+    </div>
+    <h3 id="middleware-community"><a class="anchor" href="#middleware-community">现成的中间件</a></h3>
+    <p>社区仓库里有现成的中间件可以直接添加，大多是 <a href="https://github.com/QuantumNous/new-api">New API</a> 为渠道提供的功能，用的也是同样的 JSON。它们在<span class="ui">插件 → 发现 → 网关中间件</span>里，那里每张卡片都标明它是供应商还是中间件。</p>
+    <div class="table-wrap"><table>
+      <tr><th>包</th><th>作用</th></tr>
+      <tr><td><a href="https://github.com/magpie-community/plugins/tree/main/packages/param-override"><code>param-override</code></a></td><td>New API 的参数覆盖（<code>param_override</code>）：设置、删除、移动、复制或改写请求里的字段，可以只对某些模型或在满足条件时生效，也可以拒绝请求。从 New API 复制来的 <code>param_override</code> 不用改。</td></tr>
+      <tr><td><a href="https://github.com/magpie-community/plugins/tree/main/packages/model-map"><code>model-map</code></a></td><td>New API 的模型重定向（<code>model_mapping</code>）：把一个模型换成另一个名字发出，按名字或 <code>/正则/</code>。回复里仍是 agent 请求的模型名。</td></tr>
+      <tr><td><a href="https://github.com/magpie-community/plugins/tree/main/packages/system-prompt"><code>system-prompt</code></a></td><td>给每个请求（或只给某些 agent、某些模型）加上你的系统提示词，放在各个 API 自己的位置。请求自带系统提示词时保留原样，除非打开 <code>override</code>。</td></tr>
+      <tr><td><a href="https://github.com/magpie-community/plugins/tree/main/packages/word-guard"><code>word-guard</code></a></td><td>New API 的敏感词过滤：用户发送的内容里出现所列词语或正则时拒绝或打码，也可以对回复打码。</td></tr>
+      <tr><td><a href="https://github.com/magpie-community/plugins/tree/main/packages/think-tags"><code>think-tags</code></a></td><td>去掉回复正文开头的 <code>&lt;think&gt;…&lt;/think&gt;</code>，或把 Chat 回复的 <code>reasoning_content</code> 放进正文（New API 的 <code>thinking_to_content</code>）。</td></tr>
+    </table></div>
+    <div class="code">
+      <span class="lang">shell</span>
+      <button class="copy" data-copy="mw-add">复制</button>
+      <pre id="mw-add">magpie plugin add @magpie-community/middleware-model-map
+magpie plugin options model-map '{"mapping": {"fast": "deepseek/deepseek-chat"}}'</pre>
+    </div>
+    <h3 id="middleware-options"><a class="anchor" href="#middleware-options">选项</a></h3>
+    <p>中间件从 <code>ctx.options</code> 读取设置，也就是 <code>plugins.json</code> 里它那一项的 <code>options</code>。可以在<span class="ui">插件 → 已安装</span>里点中间件的<span class="ui">选项</span>按钮，在它那一行里以 JSON 编辑；也可以用 <code>magpie plugin options &lt;名字&gt; '&lt;json&gt;'</code>（<code>off</code> 清除）。名字可以是包名、spec 或短名：<code>@magpie-community/middleware-model-map</code> 的短名是 <code>model-map</code>。从下一个请求起生效。包可以在 <code>package.json</code> 里用 <code>"magpie": { "options": { … } }</code> 给出建议的选项：没有设置时编辑框以它为起点，但在你保存之前，中间件运行时没有选项。</p>
+    <h3>运行方式</h3>
+    <p>中间件不在 Bun 里运行，而是在网关自己的进程里，用 Go 写的 JavaScript 引擎 <a href="https://github.com/Calcium-Ion/moejs">moejs</a> 运行。原因是一个回复会流式传输成千上万个事件，每个事件都要等它处理完。在一个事件上调用一次钩子大约耗时 1 微秒，而和 Bun 往返一次要几十微秒。每个中间件只编译一次，每个请求有自己的运行时，所以请求之间可以并行，同一个请求的各个钩子共享 <code>ctx.state</code>。</p>
+    <ul>
+      <li><b>声明方式。</b>在 <code>package.json</code> 里写 <code>"magpie": { "middleware": "./mw.js" }</code>，或者用一个名为 <code>*.middleware.js</code>（或 <code>.mjs</code>）的单文件。没有 <code>main</code> 也没有 <code>exports</code> 的包只是中间件，插件宿主不会加载它；两者都有的包既是供应商插件，也是中间件。</li>
+      <li><b>导入。</b>只能用相对路径导入插件目录里的文件。这里没有 <code>node_modules</code>，用到的依赖请打包进文件。</li>
+      <li><b>能用什么。</b>标准 JavaScript 和 <code>console.log</code>（写进 magpie 的日志，每分钟最多 60 行）。没有定时器、没有 <code>fetch</code>，也没有 Node API。钩子可以是 <code>async</code> 的，但没有什么可等待的。</li>
+      <li><b>修改后。</b>magpie 每秒检查一次这些文件和 <code>plugins.json</code>，有变化就重新加载中间件。</li>
+    </ul>
+    <h3>钩子</h3>
+    <p>每个钩子是一个具名导出，或者 <code>export default { … }</code> 的一个成员。请求体和事件都是 agent 自己的 API 格式（<code>ctx.protocol</code>），不是供应商的。返回要继续发送的对象；什么都不返回，就按原样发送。</p>
+    <div class="table-wrap"><table>
+      <tr><th>钩子</th><th>拿到的内容</th><th>返回</th></tr>
+      <tr><td><code>onRequest(body, ctx)</code></td><td>路由之前的请求体：改了 <code>model</code>，请求就会路由到别处。</td><td>请求体，或者不返回。<code>ctx.reject(status, message)</code> 会拒绝这个请求，并用 agent 的 API 格式返回这个错误（不给状态码时是 403）。</td></tr>
+      <tr><td><code>onEvent(event, ctx)</code></td><td>流式回复里的每个事件：它的 <code>data:</code> JSON。</td><td>事件、不返回，或者 <code>null</code> 表示丢掉这个事件。</td></tr>
+      <tr><td><code>onResponse(body, ctx)</code></td><td>非流式的完整回复；<code>ctx.status</code> 是它的状态码。</td><td>回复体，或者不返回。</td></tr>
+    </table></div>
+    <p><code>export const events = ["content_block_delta"]</code> 让 <code>onEvent</code> 只处理这些名字的事件（Anthropic Messages 和 Responses 的事件有名字）。Chat Completions 和 Gemini 的事件没有名字，处理它们时不要写 <code>events</code>。一个事件只是回复的一小段，一个词可能被拆在两个事件里。<code>data: [DONE]</code> 行和注释直接放行，不经过钩子。压缩过的回复原样放行。</p>
+    <p><code>ctx</code> 里有 <code>protocol</code>（<code>anthropic</code>、<code>chat</code>、<code>responses</code> 或 <code>gemini</code>）、agent 请求的 <code>model</code> 和 <code>stream</code>、<code>path</code>、magpie 知道时的 <code>agent</code>、<code>options</code>（这个插件的<a href="#middleware-options">选项</a>），以及 <code>state</code>：每个请求独有的对象。</p>
+    <h3>钩子出错时</h3>
+    <p>处理请求或完整回复时，钩子有 250 毫秒；处理一个事件时有 50 毫秒；加载有 1 秒。钩子抛出异常、超时或返回了别的东西，都当作它不存在：请求或事件按原样发送。设置 → 插件会显示每个中间件的钩子、调用次数、平均每次耗时和失败次数，以及最近一次错误。钩子看到的是 agent 发出和收到的原始内容：发出时在 magpie 脱敏之前，返回时在还原之后。magpie 自己的请求（会话标题、路由分类器）不经过中间件。</p>
 
     <h2 id="pi"><a class="anchor" href="#pi">pi 扩展包</a></h2>
     <p>magpie 也运行 <a href="https://github.com/earendil-works/pi">pi</a> 的扩展包。用 <code>pi.registerProvider</code> 注册了供应商的 pi 扩展，在 magpie 里和在 pi 里一样工作，不用改任何东西，添加方式和其他插件相同（<code>magpie plugin add pi-antigravity</code>）。</p>
@@ -642,6 +708,7 @@ m plugin logout acme</pre>
     <a href="/docs/zh/intent">意图路由</a>
     <a href="/docs/zh/plugins">插件开发</a>
     <a href="/docs/zh/import">Add to magpie</a>
+    <a href="/docs/zh/integrate">接入应用</a>
     <a href="https://github.com/yetone/magpie">GitHub</a>
     <a href="https://discord.gg/vGSnD3ZKQF">Discord</a>
     <a href="https://github.com/yetone/magpie-releases/releases">版本发布</a>

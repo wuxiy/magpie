@@ -130,8 +130,13 @@ func TestClaudeDesktopSkills(t *testing.T) {
 	if len(es) != 3 || es["frontend-design"].CreatorType != "anthropic" || es["frontend-design"].Enabled || es["test"].Description != "Test" {
 		t.Errorf("Desktop's own entries changed: %+v", es)
 	}
-	if _, ok := desktopEntries(t, b)["pdf"].UpdatedAt.(float64); !ok {
-		t.Errorf("a manifest of millisecond times got another kind: %+v", desktopEntries(t, b)["pdf"])
+	// #863: a skill's updatedAt is an ISO time even where lastUpdated is
+	// milliseconds, which stays so
+	if u, ok := desktopEntries(t, b)["pdf"].UpdatedAt.(string); !ok || !strings.HasSuffix(u, "Z") {
+		t.Errorf("updatedAt isn't an ISO time: %+v", desktopEntries(t, b)["pdf"])
+	}
+	if !strings.Contains(read(t, filepath.Join(b, desktopManifest)), `"lastUpdated": 17`) {
+		t.Errorf("lastUpdated's milliseconds changed kind:\n%s", read(t, filepath.Join(b, desktopManifest)))
 	}
 	// the other keys of a manifest, and its layout, stay
 	if s := read(t, filepath.Join(a, desktopManifest)); !strings.HasPrefix(s, "{\n  \"lastUpdated\"") {
@@ -205,5 +210,23 @@ func TestClaudeDesktopSkills(t *testing.T) {
 	ok(t)(Sync())
 	if _, err := os.Stat(filepath.Join(b, "skills", "pdf", "SKILL.md")); err != nil {
 		t.Error(err)
+	}
+
+	// #863: an updatedAt magpie wrote as milliseconds before is written as
+	// an ISO time at the next sync, the same moment, the entry's other keys
+	// and Desktop's own entries as they were
+	write(t, m, strings.Replace(read(t, m), `"skills": [`, `"skills": [{"skillId":"ponytail","name":"ponytail","syncManaged":true,"updatedAt":1759536000000,"enabled":true},`, 1))
+	ok(t)(Sync())
+	es = desktopEntries(t, b)
+	if es["ponytail"].UpdatedAt != "2025-10-04T00:00:00.000Z" || !es["ponytail"].SyncManaged || !es["ponytail"].Enabled {
+		t.Errorf("the old entry: %+v\n%s", es["ponytail"], read(t, m))
+	}
+	for id, e := range es {
+		if _, num := e.UpdatedAt.(float64); num {
+			t.Errorf("%s: updatedAt is still a number", id)
+		}
+	}
+	if !strings.Contains(read(t, m), `{"skillId":"ponytail","name":"ponytail","syncManaged":true,"updatedAt":"2025-10-04T00:00:00.000Z","enabled":true}`) {
+		t.Errorf("the entry's keys moved:\n%s", read(t, m))
 	}
 }

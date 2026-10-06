@@ -205,7 +205,7 @@ func TestSubscriptionStreamErrorIsTheEnd(t *testing.T) {
 		body := `{"model":"m","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"hi"}],"input":"hi"}`
 		rec := httptest.NewRecorder()
 		var u Usage
-		code, failed := s.serveSubscription(rec, httptest.NewRequest("POST", "/", strings.NewReader(body)), from, "Agent", "m", []byte(body), &u, start)
+		code, failed := s.serveSubscription(rec, httptest.NewRequest("POST", "/", strings.NewReader(body)), from, "Agent", "m", "", []byte(body), &u, start)
 		out := rec.Body.String()
 		if code != 200 || failed != "it died" || !strings.Contains(out, "it died") {
 			t.Fatalf("%s: %d %q\n%s", from, code, failed, out)
@@ -412,6 +412,53 @@ func TestSweepBridgeProjectsTakesOnlyTheBridgesFolders(t *testing.T) {
 		}
 	}
 	sweepBridgeProjects(filepath.Join(base, "missing"), real) // no projects folder: nothing to do
+}
+
+// A gateway quit for an update, or killed, leaves its runs' temp folders;
+// the next one removes those untouched for long, and leaves a run's still
+// in use (another gateway's), the shared work folder and anything else
+// (#958).
+func TestBridgeTempsSwept(t *testing.T) {
+	tmp := t.TempDir()
+	old := time.Now().Add(-tempLongest - time.Hour)
+	mk := func(name string, stale bool) string {
+		dir := filepath.Join(tmp, name)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		f := filepath.Join(dir, "tools.json")
+		if err := os.WriteFile(f, []byte("[]"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if stale {
+			for _, p := range []string{f, dir} {
+				if err := os.Chtimes(p, old, old); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		return dir
+	}
+	gone := []string{mk("magpie-claude-1097091858", true), mk("magpie-claude-42", true)}
+	kept := []string{
+		mk("magpie-claude-777", false), // a run still going
+		mk("magpie-claude-work-501", true),
+		mk("magpie-claude-", true),
+		mk("magpie-claude-12-x", true),
+		mk("other-1", true),
+	}
+	sweepBridgeTemps(tmp)
+	for _, d := range gone {
+		if _, err := os.Stat(d); !os.IsNotExist(err) {
+			t.Fatalf("%s should be swept", d)
+		}
+	}
+	for _, d := range kept {
+		if _, err := os.Stat(d); err != nil {
+			t.Fatalf("%s should be kept: %v", d, err)
+		}
+	}
+	sweepBridgeTemps(filepath.Join(tmp, "missing")) // nothing to do
 }
 
 // Out of quota, Claude Code ends the turn with an error result and no

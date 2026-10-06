@@ -192,9 +192,6 @@ func TestPluginAccounts(t *testing.T) {
 	if a := also(); len(a) != 1 || a[0] != "blue@fake@fakeco" {
 		t.Fatalf("also on %v", a)
 	}
-	if err := ForgetLogin("fakeco", "red@fake"); err == nil {
-		t.Fatal("the first account was removed")
-	}
 	if err := ForgetLogin("fakeco", "blue@fake"); err != nil {
 		t.Fatal(err)
 	}

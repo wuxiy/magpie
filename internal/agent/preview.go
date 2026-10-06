@@ -88,6 +88,13 @@ type LineDiff struct {
 // agent's files outside home, a WSL agent): the dialog then says it in
 // words.
 func DisconnectPreview(a *Agent, exe string) ([]FileChange, error) {
+	if a.Native != nil {
+		plan, err := a.Native.Disconnect()
+		if err != nil {
+			return nil, err
+		}
+		return plan.Preview(), nil
+	}
 	if a.WSL != "" || a.Path == "" {
 		return nil, errors.New("no preview for this agent")
 	}
@@ -258,7 +265,7 @@ func notConfig(name string) bool {
 // previewEnv is this process's environment with home, and the folders under
 // it, moved to the copy.
 func previewEnv(home, tmp string) []string {
-	moved := map[string]bool{"HOME": true, "USERPROFILE": true, "XDG_CONFIG_HOME": true, "XDG_DATA_HOME": true, "XDG_STATE_HOME": true, "APPDATA": true, "LOCALAPPDATA": true}
+	moved := map[string]bool{"HOME": true, "USERPROFILE": true, "XDG_CONFIG_HOME": true, "XDG_CACHE_HOME": true, "XDG_DATA_HOME": true, "XDG_STATE_HOME": true, "APPDATA": true, "LOCALAPPDATA": true}
 	for _, k := range agentenv.Vars {
 		moved[k] = true
 	}
@@ -278,7 +285,10 @@ func previewEnv(home, tmp string) []string {
 			out = append(out, k+"="+filepath.Join(tmp, r))
 		}
 	}
-	return append(out, "HOME="+tmp, "USERPROFILE="+tmp)
+	// The test binary recognizes this marker and keeps the fixture HOME
+	// instead of creating a second isolated home. Production binaries ignore
+	// the variable.
+	return append(out, "HOME="+tmp, "USERPROFILE="+tmp, "TMPDIR="+tmp, "MAGPIE_TEST_SANDBOX="+tmp)
 }
 
 // diffLines is the lines that differ between two texts, in the order of the

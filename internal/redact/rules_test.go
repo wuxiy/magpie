@@ -160,4 +160,16 @@ func TestCustomRules(t *testing.T) {
 	if !strings.HasPrefix(out, "{{K8S_") || Restore(out, false) != "k8s-tok-abcdef123456" || partialTail(out[:len(out)-3]) == 0 {
 		t.Fatalf("digits in kind: %q", out)
 	}
+	// a kind as long as a rule may have is held in a stream up to its last
+	// character, as a short one is
+	o = Options{Secrets: true, Rules: []Rule{{Kind: "internal gateway token x", Prefix: "igt-"}}}
+	out, _ = Mask("igt-abcdef123456", o)
+	if !strings.HasPrefix(out, "{{INTERNAL_GATEWAY_TOKEN_X_") || len(out) != len("{{")+maxKind+len("_")+8+len("}}") {
+		t.Fatalf("long kind: %q", out)
+	}
+	for i := 1; i < len(out); i++ {
+		if n := partialTail("text " + out[:i]); n != i {
+			t.Fatalf("long kind cut at %d: held %d of %q", i, n, out[:i])
+		}
+	}
 }

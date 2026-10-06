@@ -92,7 +92,7 @@ func TestDshCustomProvider(t *testing.T) {
 	// in dsh's own store under the name that row gave it, which dsh reads
 	// over .env; the route names another
 	creds := filepath.Join(dir, ".credentials.yaml")
-	os.WriteFile(creds, []byte("version: 1\nrefs:\n  MAGPIE_API_KEY: sk-mine\n"), 0o600)
+	os.WriteFile(creds, []byte("version: 1\nrefs:\n  MAGPIE_API_KEY: sk-mine\n  "+dshKeyRef+": magpie\n"), 0o600)
 	if dshKeyRef == "MAGPIE_API_KEY" || a.Check() != "" {
 		t.Fatalf("the route reads the key a DeepSeek key was saved under: %q", a.Check())
 	}
@@ -211,7 +211,7 @@ func TestDshCheckSaysTheModelItStartsOnIsNotInTheRoute(t *testing.T) {
 // starts on fails there too, even while the first profile is fine.
 func TestDshCheckSaysWhenAnotherProfilesRouteHasNotGotTheModel(t *testing.T) {
 	home, dir, web := dshRouteHome(t)
-	os.WriteFile(filepath.Join(dir, ".env"), []byte(dshKeyRef+"=magpie\n"), 0o600)
+	dshKeyFixture(dir)
 	route := "# Your patch layer for this dsh profile.\n" +
 		"- id: llm-pi-ai\n  name: \"@deepseek-ai/dsh-llm-pi-ai\"\n  config:\n    providers:\n" +
 		"      magpie:\n        displayName: Magpie\n        apiKeyEnv: " + dshKeyRef + "\n        api: openai-completions\n        baseURL: " + gatewayV1() + "\n        models:\n" +
@@ -240,7 +240,7 @@ func TestDshCheckSaysWhenAnotherProfilesRouteHasNotGotTheModel(t *testing.T) {
 // so and asks for another model, not for a click that cannot help.
 func TestDshCheckSaysWhenTheModelItStartsOnIsOneMagpieNoLongerGives(t *testing.T) {
 	home, dir, web := dshRouteHome(t)
-	os.WriteFile(filepath.Join(dir, ".env"), []byte(dshKeyRef+"=magpie\n"), 0o600)
+	dshKeyFixture(dir)
 	os.WriteFile(web, []byte("# Your patch layer for this dsh profile.\n"+
 		"- id: llm-pi-ai\n  name: \"@deepseek-ai/dsh-llm-pi-ai\"\n  config:\n    providers:\n"+
 		"      magpie:\n        displayName: Magpie\n        apiKeyEnv: "+dshKeyRef+"\n        api: openai-completions\n        baseURL: "+gatewayV1()+"\n        models:\n"+
@@ -281,7 +281,7 @@ func dshRouteFixture(ids ...string) string {
 // while magpie serves, and the model a session starts on stays the user's.
 func TestDshRouteIsWrittenAgainWhileServing(t *testing.T) {
 	home, dir, web := dshRouteHome(t)
-	os.WriteFile(filepath.Join(dir, ".env"), []byte(dshKeyRef+"=magpie\n"), 0o600)
+	dshKeyFixture(dir)
 	os.WriteFile(web, []byte("# Your patch layer for this dsh profile.\n"+
 		dshRouteFixture("deepseek/pro")+
 		"- id: agent-default-model\n  config:\n    provider: magpie\n    model: deepseek/flash\n"), 0o644)
@@ -312,7 +312,7 @@ func TestDshRouteIsWrittenAgainWhileServing(t *testing.T) {
 // is written again on the next round, not only at the next start.
 func TestKeepDshWiredWritesTheRouteAgain(t *testing.T) {
 	home, dir, web := dshRouteHome(t)
-	os.WriteFile(filepath.Join(dir, ".env"), []byte(dshKeyRef+"=magpie\n"), 0o600)
+	dshKeyFixture(dir)
 	os.WriteFile(web, []byte("# Your patch layer for this dsh profile.\n"+
 		dshRouteFixture("deepseek/pro", "deepseek/flash")+
 		"- id: agent-default-model\n  config:\n    provider: magpie\n    model: deepseek/flash\n"), 0o644)
@@ -405,7 +405,7 @@ func TestDshRouteAgainLeavesTheRouteWithNoCatalog(t *testing.T) {
 // every time would be written again every 30 seconds.
 func TestDshRouteAgainSettlesOnAFlowList(t *testing.T) {
 	home, dir, web := dshRouteHome(t)
-	os.WriteFile(filepath.Join(dir, ".env"), []byte(dshKeyRef+"=magpie\n"), 0o600)
+	dshKeyFixture(dir)
 	os.WriteFile(web, []byte("# Your patch layer for this dsh profile\n# a top-level YAML array\n"+
 		"[ { id: llm-pi-ai, name: \"@deepseek-ai/dsh-llm-pi-ai\", config: { providers: { magpie: { displayName: Magpie, apiKeyEnv: "+
 		dshKeyRef+", api: openai-completions, baseURL: "+gatewayV1()+
@@ -519,7 +519,7 @@ func TestDshSaidOnceSaysATroubleOnce(t *testing.T) {
 // has no endpoint for goes back to Chat Completions.
 func TestDshRouteKeepsTheAPIPickedInDsh(t *testing.T) {
 	home, dir, web := dshRouteHome(t)
-	os.WriteFile(filepath.Join(dir, ".env"), []byte(dshKeyRef+"=magpie\n"), 0o600)
+	dshKeyFixture(dir)
 	route := func(api, base string) string {
 		return "# Your patch layer for this dsh profile.\n" +
 			"- id: llm-pi-ai\n  name: \"@deepseek-ai/dsh-llm-pi-ai\"\n  config:\n    providers:\n" +
@@ -555,4 +555,11 @@ func TestDshRouteKeepsTheAPIPickedInDsh(t *testing.T) {
 			t.Fatalf("api %s written again:\n%s", c.api, again)
 		}
 	}
+}
+
+// dshKeyFixture puts the key where magpie puts it for dsh: .env, which the
+// product CLI loads, and dsh's own key store, which the desktop app reads.
+func dshKeyFixture(dir string) {
+	os.WriteFile(filepath.Join(dir, ".env"), []byte(dshKeyRef+"=magpie\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, ".credentials.yaml"), []byte("version: 1\nrefs:\n  "+dshKeyRef+": magpie\n"), 0o600)
 }

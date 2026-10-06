@@ -4,13 +4,18 @@
 // is named; the picker offers Automatic, each provider that can search by
 // its small model, and each of its models, including a relay said to search;
 // a pick is saved as searcher ("<provider>" or "<provider>/<model>") and shown;
+// a provider's small model is offered once, not again among its models, and
+// one saved by name is ticked as it (Player on Discord); no "via magpie" tag,
+// as no agent asks for these;
 // one named that magpie can't use (turned off) is said in the row, magpie's pick shown instead;
-// relays said to search are said not to be picked automatically; a Kimi Code plan, which
+// relays said to search are manual-only, including during fallback; a Kimi Code plan, which
 // searches by its web search with no model, is offered by itself and said to search for its
 // own models first. Another setting saved
 // keeps the pick (prefsKeep). No click moves the page. English and Chinese, Chromium and
-// WebKit, with the API faked. The providers left out, which can't search by
-// themselves, are named, and why (#825).
+// WebKit, with the API faked. Search help covers costs for every provider and
+// explains current eligibility without claiming a provider can never search.
+// The help is also checked in Japanese and German, preserving desktop ellipsis
+// and hover titles as well as the existing narrow-web layout.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -32,26 +37,46 @@ const choices = [
     { id: "antigravity/gemini-3-flash", name: "Gemini 3 Flash", provider: "antigravity", providerName: "Antigravity" }] },
 ];
 const words = {
-  en: { name: "Searches for other models", auto: "Automatic", small: "GPT-5 Mini Named, its small model", unused: "isn't used: it is turned off", relays: "Relays said to search (MyRelay) are never picked automatically: they would spend the relay's quota on other models' searches; if one refuses magpie's own request, magpie falls back",
+  en: { name: "Searches for other models", auto: "Automatic", small: "GPT-5 Mini Named, its small model", unused: "isn't used: it is turned off",
     own: "A Kimi Code plan (Kimi Code) searches for its own models first, with its web search; for other models only when named here", web: "its web search",
     google: "Antigravity search for their own models first, with Gemini's Google Search",
-    more: "A1, A2, A3, A4, A5 and 3 more can't",
-    left: "MiniMax, Kimi For Coding can't, so for their models the search APIs below search" },
-  zh: { name: "代搜供应商", auto: "自动", small: "GPT-5 Mini Named（它的小模型）", unused: "没有用 OpenAI · GPT-5 Mini Named：它已关闭", relays: "标为能搜索的中转站（MyRelay）不会被自动选择：它们会为别的模型的搜索花掉中转站的额度；如果它拒绝 magpie 自己发出的请求，magpie 会退回其他选择",
-    own: "Kimi Code 套餐（Kimi Code）的模型先用套餐自带的联网搜索；别的模型只有在这里选了它才用", web: "它自带的联网搜索",
-    google: "Antigravity 的模型先用自己的 Gemini（Google 搜索）联网搜索",
-    more: "A1, A2, A3, A4, A5 以及另外 3 个 自己不能搜索",
-    left: "MiniMax, Kimi For Coding 自己不能搜索，它们的模型由下面的搜索 API 代搜" },
+    more: "A1, A2, A3, A4, A5 and 3 more." },
+  zh: { name: "代搜供应商", auto: "自动", small: "GPT-5 Mini Named（它的小模型）", unused: "没有用 OpenAI · GPT-5 Mini Named：它已关闭",
+    own: "Kimi Code 套餐（Kimi Code）的模型优先用套餐自带的联网搜索；其他模型仅在此处选中时使用", web: "它自带的联网搜索",
+    google: "Antigravity 的模型优先用 Gemini 自带的 Google 搜索",
+    more: "A1, A2, A3, A4, A5 以及另外 3 个。" },
+};
+const helpWords = {
+  en: {
+    help: "When a model can't search the web directly, the selected provider searches for it and returns the results. Searches may use the service's quota or incur charges; if a search fails, magpie tries other available sources.",
+    relays: "These relays must be selected manually and are not used for automatic selection or fallback: MyRelay.",
+    left: "These providers can't be selected to search for other models with the current configuration: MiniMax, Kimi For Coding. Their models can still get search results through other available search providers or configured search APIs.",
+  },
+  zh: {
+    help: "当模型无法直接联网搜索时，由所选供应商代为搜索并返回结果。代搜可能消耗所用服务的额度或产生费用；失败时会尝试其他可用来源。",
+    relays: "以下中转服务需手动指定，不参与自动选择或自动回退：MyRelay。",
+    left: "以下供应商在当前配置下不可选为代搜供应商：MiniMax, Kimi For Coding。它们的模型仍可通过其他可用的代搜供应商或已配置的搜索 API 获取搜索结果。",
+  },
+  ja: {
+    help: "モデルが直接ウェブ検索できない場合、選択したプロバイダが代わりに検索し、結果を返します。検索にはサービスの利用枠を消費したり、料金が発生したりする場合があります。検索に失敗すると、magpie は他の利用可能な検索元を試します。",
+    relays: "次の中継サービスは手動で選択する必要があり、自動選択や自動フォールバックの対象にはなりません：MyRelay。",
+    left: "次のプロバイダは現在の設定では他のモデルの検索用に選択できません：MiniMax, Kimi For Coding。これらのモデルも、他の利用可能な検索用プロバイダや設定済みの検索 API を通じて検索結果を取得できます。",
+  },
+  de: {
+    help: "Wenn ein Modell nicht direkt im Web suchen kann, übernimmt der ausgewählte Anbieter die Suche und liefert die Ergebnisse. Suchen können das Kontingent des Dienstes verbrauchen oder Kosten verursachen. Schlägt eine Suche fehl, versucht magpie andere verfügbare Quellen.",
+    relays: "Diese Relays müssen manuell ausgewählt werden und werden weder automatisch noch als Fallback gewählt: MyRelay.",
+    left: "Diese Anbieter können mit der aktuellen Konfiguration nicht für die Suche anderer Modelle ausgewählt werden: MiniMax, Kimi For Coding. Ihre Modelle können weiterhin über andere verfügbare Suchanbieter oder konfigurierte Such-APIs Suchergebnisse erhalten.",
+  },
 };
 
 function serve(lang, posted, st) {
-  const settings = () => ({ lang, theme: "light", searchVendors: [], searchAPIs: [], searchChoices: choices,
+  const settings = () => ({ lang, theme: st.theme || "light", searchVendors: [], searchAPIs: [], searchChoices: choices,
     searchAuto: "Claude · claude-haiku-4-5", searchProvider: st.unused || !st.searcher ? "Claude · claude-haiku-4-5" : st.searcher,
-    searchRelays: ["MyRelay"], searchLeftOut: st.leftOut || ["MiniMax", "Kimi For Coding"], searcher: st.searcher, searchUnused: st.unused });
+    searchRelays: st.relays || ["MyRelay"], searchLeftOut: st.leftOut || ["MiniMax", "Kimi For Coding"], searcher: st.searcher, searchUnused: st.unused });
   return async (r) => {
     const url = new URL(r.request().url());
     const json = (data, status = 200) => r.fulfill({ status, json: data });
-    if (url.pathname === "/boot.js") return r.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:"${lang}",theme:"light",web:true};` });
+    if (url.pathname === "/boot.js") return r.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = ${JSON.stringify({ lang, theme: st.theme || "light", web: true })};` });
     if (url.pathname === "/wails/runtime.js") return r.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json({ agents: [], profiles: [], settings: settings() });
     if (url.pathname === "/api/settings") {
@@ -76,6 +101,7 @@ function serve(lang, posted, st) {
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {
     const w = words[lang];
+    const h = helpWords[lang];
     test(`${engine} ${lang}: the provider that searches for other models is picked in Settings`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
       t.after(() => browser.close());
@@ -92,11 +118,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await row.scrollIntoViewIfNeeded();
       assert.equal(await row.locator(".name").innerText(), w.name);
       assert.equal(await row.locator("button.searcher-pick").innerText(), `${w.auto} · Claude · claude-haiku-4-5`);
-      assert((await row.locator(".sub").innerText()).includes(w.relays), "the relays said to search are named");
+      assert((await row.locator(".sub").innerText()).startsWith(h.help), "costs and fallback apply to every search provider");
+      assert.equal(await row.locator(".searcher-relays").innerText(), h.relays);
       assert((await row.locator(".sub").innerText()).includes(w.own), "the Kimi Code plan is said to search for its own models");
       assert((await row.locator(".sub").innerText()).includes(w.google), "a Google sign-in is said to search for its own models (#757)");
-      // the providers left out of the picker are named, and why (#825)
-      assert((await row.locator(".searcher-left-out").innerText()).includes(w.left), "the providers that can't search are said to be left out");
+      assert.equal(await row.locator(".searcher-left-out").innerText(), h.left);
       // a long list is cut short
       st.leftOut = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"];
       await page.evaluate(() => fetch("/api/settings").then((r) => r.json()).then((s) => { prefs = s; state.settings = s; renderSettings(); }));
@@ -123,6 +149,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert(items[0].includes(w.auto), "Automatic comes first");
       assert(items.some((x) => x.includes("GPT Five Five")) && items.some((x) => x.includes("Claude Opus 4.5")));
       assert(items.some((x) => x.includes("MyRelay")), "a relay said to search can be named");
+      // the small model once: GPT-5 mini is OpenAI's, Claude Haiku 4.5 Claude's and MyRelay's
+      assert.equal(items.filter((x) => x.includes("GPT-5 mini") || x.includes("GPT-5 Mini Named")).length, 1, items.join(" | "));
+      assert.equal(items.filter((x) => x.includes("MyRelay")).length, 1, items.join(" | "));
+      assert.equal(items.filter((x) => x.includes("Claude Haiku 4.5")).length, 0, "Claude's and MyRelay's small model only as their small model");
+      assert.equal(items.filter((x) => x.startsWith("claude-haiku-4-5")).length, 2, items.join(" | "));
+      assert.equal(await page.locator("#list .badge.path").count(), 0, "no agent asks for these: no via magpie");
       await click(page.locator("#list li:not(.group)", { hasText: "GPT Five Five" }));
       await page.waitForFunction(() => document.querySelector("#searchList button.searcher-pick")?.innerText.includes("GPT Five Five"));
       assert.equal(posted.at(-1).searcher, "openai/gpt-5.5");
@@ -134,6 +166,27 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await click(page.locator("#list li:not(.group)", { hasText: w.small }));
       await page.waitForFunction(() => document.querySelector("#searchList button.searcher-pick")?.innerText === "OpenAI · GPT-5 Mini Named");
       assert.equal(posted.at(-1).searcher, "openai");
+
+      // a small model saved by name ("<provider>/<small>", as the model row
+      // below it once saved) is ticked as the small model, and shown by name
+      st.searcher = "openai/gpt-5-mini";
+      await page.evaluate(() => fetch("/api/settings").then((r) => r.json()).then((s) => { prefs = s; state.settings = s; renderSettings(); }));
+      await page.waitForFunction(() => document.querySelector("#searchList button.searcher-pick")?.innerText === "GPT-5 mini · OpenAI");
+      await click(row.locator("button.searcher-pick"));
+      await page.locator("#pop").waitFor({ state: "visible" });
+      assert.deepEqual(await page.locator("#list li.cur").allInnerTexts().then((x) => x.map((s) => s.includes(w.small))), [true]);
+      await page.keyboard.press("Escape");
+      await page.locator("#pop").waitFor({ state: "hidden" });
+
+      // Manual-only is not unavailable: selecting a relay still saves and uses it.
+      await click(row.locator("button.searcher-pick"));
+      await page.locator("#pop").waitFor({ state: "visible" });
+      const relay = page.locator("#list li:not(.group)", { hasText: "MyRelay" }).last();
+      await relay.scrollIntoViewIfNeeded();
+      await click(relay);
+      await page.waitForFunction(() => document.querySelector("#searchList button.searcher-pick")?.innerText === "MyRelay · claude-haiku-4-5");
+      assert.equal(posted.at(-1).searcher, "relay");
+      assert.equal(await row.locator(".searcher-relays").innerText(), h.relays);
 
       // a Kimi Code plan, by its web search: no model of it is offered
       await click(row.locator("button.searcher-pick"));
@@ -176,6 +229,77 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         document.querySelector("#searchList button.searcher-pick")?.innerText.includes("claude-haiku"));
       assert.equal(posted.at(-1).searcher, "");
       assert.deepEqual(await where(), before, "the clicks moved nothing");
+      assert.deepEqual(errors, []);
+    });
+  }
+  for (const lang of Object.keys(helpWords)) {
+    test(`${engine} ${lang}: search help preserves ellipsis and hover titles`, async (t) => {
+      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+      t.after(() => browser.close());
+      const page = await (await browser.newContext({ reducedMotion: "reduce" })).newPage();
+      const errors = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      const posted = [];
+      const st = { searcher: "relay/claude-haiku-4-5", unused: "" };
+      const h = helpWords[lang];
+      await page.route("**/*", serve(lang, posted, st));
+      for (const theme of ["light", "dark"]) {
+        st.theme = theme;
+        for (const width of [560, 1000]) {
+          await page.mouse.move(0, 0);
+          await page.setViewportSize({ width, height: 900 });
+          await page.goto("http://magpie.test/?view=settings&tab=models");
+          const row = page.locator("#searchList .searcher-row");
+          await row.waitFor();
+          // Hover retries if Settings' startup refresh replaces the row.
+          await row.locator("button.searcher-pick").hover();
+          assert((await row.locator(".sub").innerText()).startsWith(h.help));
+          assert.equal(await row.locator(".searcher-relays").innerText(), h.relays);
+          assert.equal(await row.locator(".searcher-left-out").innerText(), h.left);
+          assert.equal(await row.locator("button.searcher-pick").innerText(), "Claude Haiku 4.5 · MyRelay");
+          const layout = await row.evaluate((r) => {
+            const sub = r.querySelector(".sub");
+            const b = r.querySelector("button.searcher-pick").getBoundingClientRect();
+            const s = sub.getBoundingClientRect(), bounds = r.getBoundingClientRect();
+            return { whiteSpace: getComputedStyle(sub).whiteSpace, textOverflow: getComputedStyle(sub).textOverflow,
+              overflow: sub.scrollWidth - sub.clientWidth,
+              clipped: sub.scrollHeight - sub.clientHeight,
+              fits: b.left >= bounds.left && b.right <= bounds.right + 1 &&
+                b.top >= bounds.top && b.bottom <= bounds.bottom + 1 &&
+                (s.right <= b.left + 1 || s.bottom <= b.top + 1) };
+          });
+          assert(layout.clipped <= 1 && layout.fits, JSON.stringify(layout));
+          const sub = row.locator(".sub");
+          assert.equal(await sub.getAttribute("class"), "sub", "copy changes must not opt into wrapping");
+          if (width === 1000) {
+            assert.equal(layout.whiteSpace, "nowrap", "desktop help stays on one line");
+            assert.equal(layout.textOverflow, "ellipsis");
+            assert(layout.overflow > 0, "long help is truncated");
+            assert.equal(await sub.getAttribute("title"), null);
+            await sub.hover();
+            const full = await sub.evaluate((e) => e.textContent.replace(/\s+/g, " ").trim());
+            assert.equal(await sub.getAttribute("title"), full, "hover exposes the complete updated help");
+            assert.equal(await sub.getAttribute("data-full-tip"), full);
+          } else {
+            assert.equal(layout.whiteSpace, "normal", "retain the existing narrow-web layout");
+            assert(layout.overflow <= 1, JSON.stringify(layout));
+          }
+          if (process.env.ARTIFACT_DIR) {
+            await fs.mkdir(process.env.ARTIFACT_DIR, { recursive: true });
+            await row.screenshot({ path: path.join(process.env.ARTIFACT_DIR, `${engine}-${lang}-${theme}-${width}-search-help.png`) });
+          }
+        }
+      }
+      // Costs and fallback still matter when no manual-only or unavailable providers are listed.
+      st.relays = [];
+      st.leftOut = [];
+      st.searcher = "";
+      await page.goto("http://magpie.test/?view=settings&tab=models");
+      const row = page.locator("#searchList .searcher-row");
+      await row.waitFor();
+      assert((await row.locator(".sub").innerText()).startsWith(h.help));
+      assert.equal(await row.locator(".searcher-relays, .searcher-left-out").count(), 0);
+      assert.deepEqual(posted, [], "reading help must not change settings");
       assert.deepEqual(errors, []);
     });
   }

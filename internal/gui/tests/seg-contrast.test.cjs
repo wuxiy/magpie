@@ -12,7 +12,10 @@
 // read once the page's transitions are over; and the page is first drawn in
 // its theme, before app.js runs: a window kept dark under a light system was
 // first drawn light, its header's buttons fading to dark as they were read,
-// so they measured mid-way (3.96:1 for the view shown). Chromium
+// so they measured mid-way (3.96:1 for the view shown). Since ec10d3bd the
+// switch has no grey track (the owner: 这个 tab 栏的背景灰色条有点丑): in
+// light the white thumb sits on the header itself and its edge, a shadow,
+// is what tells it off; dark keeps a faint track and the lighter thumb. Chromium
 // and WebKit, English and Chinese; no backend, the API is faked here.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
@@ -126,8 +129,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           assert(v >= 4.7, `${what} reads at ${v.toFixed(2)}:1, under 4.5:1 with margin; ${at}`);
         }
         const dark = theme === "dark" || scheme === "dark";
-        // before: 1.13 (light), 1.36 (dark, the thumb laid over the track)
-        assert(r["thumb against the track"] >= (dark ? 1.5 : 1.2), `the thumb is hard to tell from the track (${r["thumb against the track"].toFixed(2)}:1); ${at}`);
+        // before: 1.13 (light), 1.36 (dark, the thumb laid over the track);
+        // light has no track now, the thumb on the header told off by its edge
+        assert(r["thumb against the track"] >= (dark ? 1.5 : 1.05), `the thumb is hard to tell from the track (${r["thumb against the track"].toFixed(2)}:1); ${at}`);
+        if (!dark) assert.notEqual(await page.evaluate(() => getComputedStyle(document.querySelector("#nav .thumb")).boxShadow), "none", "the thumb has an edge");
         await ctx.close();
       });
     }

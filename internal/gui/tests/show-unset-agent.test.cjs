@@ -45,7 +45,7 @@ function serve(lang) {
 
 const words = {
   en: { idle: "Idle is no longer hidden · it stays under Not set up until a model is picked for it", busy: "Busy shown" },
-  zh: { idle: "Idle 已取消隐藏 · 给它选一个模型前，它会留在「未设置」里", busy: "已显示 Busy" },
+  zh: { idle: "Idle 已取消隐藏 · 选好模型前留在「未设置」", busy: "已显示 Busy" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

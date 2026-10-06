@@ -89,14 +89,14 @@ func TestZCode(t *testing.T) {
 		t.Fatalf("want 2 ZCode sessions (the subagent in its parent), got %d", n)
 	}
 	z := find(t, ss, "zcode", "ses_zcA")
-	if z.Cwd != "/work/zc" || z.Title != "Port the parser" || z.Resume != "" {
+	if z.Cwd != "/work/zc" || z.Title != "Port the parser to Go" || z.Resume != "" {
 		t.Fatalf("zcode: %+v", z)
 	}
 	// input without the cache, output with its reasoning already
-	if m := model(z, "glm-5.1"); m.Tokens != (Tokens{300, 40, 1000, 200}) {
+	if m := model(z, "glm-5.1"); m.Tokens != (Tokens{300, 40, 1000, 200, 0}) {
 		t.Fatalf("glm-5.1: %+v", m)
 	}
-	if m := model(z, "glm-5.1-air"); m.Tokens != (Tokens{50, 5, 0, 0}) {
+	if m := model(z, "glm-5.1-air"); m.Tokens != (Tokens{50, 5, 0, 0, 0}) {
 		t.Fatalf("the subagent's: %+v", m)
 	}
 	if !z.Start.Equal(at("2026-09-27T08:00:00Z")) || !z.Last.Equal(at("2026-09-27T08:00:30Z")) {
@@ -117,14 +117,14 @@ func checkDsh(t *testing.T, ss []Session) {
 		t.Fatalf("want 3 dsh sessions (the subagent in its parent), got %d", n)
 	}
 	a := find(t, ss, "dsh", "dsh-a")
-	if a.Cwd != "/work/dsh" || a.Title != "Tidy the build script" || a.Resume != "" {
+	if a.Cwd != "/work/dsh" || a.Title != "Build script tidy" || a.Resume != "" {
 		t.Fatalf("dsh: %+v", a)
 	}
 	// the format 3 file, not the one left behind
-	if m := model(a, "deepseek-v4-pro"); m.Tokens != (Tokens{100, 20, 1000, 0}) {
+	if m := model(a, "deepseek-v4-pro"); m.Tokens != (Tokens{100, 20, 1000, 0, 0}) {
 		t.Fatalf("pro: %+v", m)
 	}
-	if m := model(a, "deepseek-v4-flash"); m.Tokens != (Tokens{17, 8, 200, 0}) {
+	if m := model(a, "deepseek-v4-flash"); m.Tokens != (Tokens{17, 8, 200, 0, 0}) {
 		t.Fatalf("flash, the subagent's in: %+v", m)
 	}
 	if !a.Start.Equal(at("2026-09-27T10:00:00Z")) || !a.Last.Equal(at("2026-09-27T10:01:00Z")) {
@@ -132,17 +132,17 @@ func checkDsh(t *testing.T, ss []Session) {
 	}
 	// the forks: what they were seeded with counted where it came from
 	c := find(t, ss, "dsh", "dsh-c")
-	if c.Tokens != (Tokens{50, 10, 0, 0}) || c.Title != "Tidy the build script" {
+	if c.Tokens != (Tokens{50, 10, 0, 0, 0}) || c.Title != "Tidy the build script" {
 		t.Fatalf("format 3 fork: %+v", c)
 	}
 	if !c.Start.Equal(at("2026-09-27T11:00:00Z")) || !c.Last.Equal(at("2026-09-27T11:00:20Z")) {
 		t.Fatalf("fork times %s %s", c.Start, c.Last)
 	}
-	if d := find(t, ss, "dsh", "dsh-d"); d.Tokens != (Tokens{1, 2, 0, 0}) || !d.Start.Equal(at("2026-09-27T12:00:00Z")) {
+	if d := find(t, ss, "dsh", "dsh-d"); d.Tokens != (Tokens{1, 2, 0, 0, 0}) || !d.Start.Equal(at("2026-09-27T12:00:00Z")) {
 		t.Fatalf("format 0 fork: %+v", d)
 	}
 	s := statsAt(0, statsNow)
-	if got, _ := usageOn(s, "2026-09-27", "/work/dsh"); got != (Tokens{168, 40, 1200, 0}) {
+	if got, _ := usageOn(s, "2026-09-27", "/work/dsh"); got != (Tokens{168, 40, 1200, 0, 0}) {
 		t.Fatalf("dsh on the 27th: %+v", got)
 	}
 }
@@ -158,7 +158,7 @@ func TestDsh(t *testing.T) {
 	b, _ := os.ReadFile(p)
 	os.WriteFile(p, append(b, more...), 0o644)
 	a := find(t, List(0), "dsh", "dsh-a")
-	if m := model(a, "deepseek-v4-flash"); m.Tokens != (Tokens{18, 9, 200, 0}) || !a.Last.Equal(at("2026-09-27T10:01:30Z")) {
+	if m := model(a, "deepseek-v4-flash"); m.Tokens != (Tokens{18, 9, 200, 0, 0}) || !a.Last.Equal(at("2026-09-27T10:01:30Z")) {
 		t.Fatalf("after a new reply: %+v %s", m, a.Last)
 	}
 	os.WriteFile(p, b, 0o644)
@@ -200,13 +200,13 @@ func TestCline(t *testing.T) {
 	}
 	c := find(t, ss, "cline", clineMain)
 	// the prompt typed, out of Cline's tags, before its title
-	if c.Cwd != "/work/cline" || c.Title != "Speed up the importer" {
+	if c.Cwd != "/work/cline" || c.Title != "Importer speed-up" {
 		t.Fatalf("cline: %+v", c)
 	}
-	if m := model(c, "claude-opus-5-5"); m.Tokens != (Tokens{100, 50, 1000, 500}) || !m.Priced {
+	if m := model(c, "claude-opus-5-5"); m.Tokens != (Tokens{100, 50, 1000, 500, 0}) || !m.Priced {
 		t.Fatalf("opus: %+v", m)
 	}
-	if m := model(c, "claude-haiku-4-5"); m.Tokens != (Tokens{130, 30, 100, 0}) {
+	if m := model(c, "claude-haiku-4-5"); m.Tokens != (Tokens{130, 30, 100, 0, 0}) {
 		t.Fatalf("haiku, the subagent's in: %+v", m)
 	}
 	if !c.Start.Equal(at("2026-09-27T10:00:00Z")) || !c.Last.Equal(at("2026-09-27T10:02:00Z")) {
@@ -219,7 +219,7 @@ func TestCline(t *testing.T) {
 	}
 	// the fork: what it copied counted in the session it came from
 	f := find(t, ss, "cline", clineFork)
-	if f.Tokens != (Tokens{100, 30, 300, 0}) || f.Title != "Speed up the importer" {
+	if f.Tokens != (Tokens{100, 30, 300, 0, 0}) || f.Title != "Speed up the importer" {
 		t.Fatalf("fork: %+v", f)
 	}
 	if !f.Start.Equal(at("2026-09-27T12:00:00Z")) || !f.Last.Equal(at("2026-09-27T12:01:00Z")) {
@@ -253,7 +253,7 @@ func TestQoder(t *testing.T) {
 		if q.Cwd != "/work/q" || q.Title != "Explain the cache" {
 			t.Fatalf("%s: %+v", c.agent, q)
 		}
-		if m := model(q, c.model); m.Tokens != (Tokens{45, 30, 300, 0}) {
+		if m := model(q, c.model); m.Tokens != (Tokens{45, 30, 300, 0, 0}) {
 			t.Fatalf("%s, the subagent's in: %+v", c.agent, m)
 		}
 		if runtime.GOOS != "windows" {

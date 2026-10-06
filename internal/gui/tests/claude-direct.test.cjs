@@ -68,7 +68,7 @@ const words = {
     said: "straight to Anthropic, not through magpie",
   },
   zh: {
-    tip: "不经过 magpie：Claude Code 用它自己的登录或密钥直接向 Anthropic 请求这个模型，所以 ~/.claude/settings.json 里没有 magpie 的地址，这是正常的。",
+    tip: "不经过 magpie：Claude Code 用自己的登录或密钥直接向 Anthropic 请求，因此 ~/.claude/settings.json 中没有 magpie 地址，属正常。",
     said: "直连 Anthropic，不经过 magpie",
   },
 };

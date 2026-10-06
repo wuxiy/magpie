@@ -13,8 +13,10 @@ import (
 // webAddr is where `magpie web` listens unless told: beside the gateway.
 const webAddr = "127.0.0.1:3430"
 
-// webCmd: magpie web [--addr host:port] [--lan] [--no-open] — the app's
-// window in a browser, for a computer that can't show the app.
+// webCmd: magpie web [--addr host:port] [--lan] [--no-open] [--gateway] —
+// the app's window in a browser, for a computer that can't show the app;
+// --gateway shows it in gateway mode (gui.WebGateway) unless Settings says
+// otherwise.
 func webCmd(args []string) error {
 	addr, lan, open := webAddr, false, true
 	for i := 0; i < len(args); i++ {
@@ -28,8 +30,10 @@ func webCmd(args []string) error {
 			lan = true
 		case a == "--no-open":
 			open = false
+		case a == "--gateway":
+			gui.WebGateway.Store(true)
 		default:
-			return fmt.Errorf("magpie web: unknown %q · magpie web [--addr host:port] [--lan] [--no-open], MAGPIE_WEB_KEY to keep one key", a)
+			return fmt.Errorf("magpie web: unknown %q · magpie web [--addr host:port] [--lan] [--no-open] [--gateway], MAGPIE_WEB_KEY to keep one key", a)
 		}
 	}
 	if lan && addr == webAddr {

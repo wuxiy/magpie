@@ -291,7 +291,8 @@ func WorkBuddyCheckins() []WorkBuddyCheckin {
 func WithCheckins(qs []SubscriptionQuota) []SubscriptionQuota {
 	qs = withCheckins(qs, wbCheckinAccounts(), readCheckins(wbCheckinPath()))
 	qs = markCheckins(qs, traeCards(traeCheckinAccounts()), readCheckins(traeCheckinPath()), "trae")
-	return markCheckins(qs, miniMaxCards(miniMaxCheckinAccounts()), readCheckins(miniMaxCheckinPath()), "minimax")
+	qs = markCheckins(qs, miniMaxCards(miniMaxCheckinAccounts()), readCheckins(miniMaxCheckinPath()), "minimax")
+	return markCheckins(qs, qoderCards(qoderCheckinAccounts()), readCheckins(qoderCheckinPath()), "qoder")
 }
 
 func withCheckins(qs []SubscriptionQuota, accts []wbAccount, st map[string]WorkBuddyCheckin) []SubscriptionQuota {

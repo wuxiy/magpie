@@ -36,6 +36,26 @@ func TestMovedKeepsEfforts(t *testing.T) {
 	}
 }
 
+// Cline's plugin borrows its models' makers' levels, as ClinePass by API
+// key does: signed in through the plugin, ClinePass showed none.
+func TestClinePluginBorrowsEfforts(t *testing.T) {
+	claudeHome(t)
+	os.MkdirAll(filepath.Dir(catalog.CachePath()), 0o755)
+	os.WriteFile(catalog.CachePath(), []byte(`{"xai":{"id":"xai","models":{"grok-4.7":{"id":"grok-4.7",
+	  "reasoning_options":[{"type":"effort","values":["low","medium","high","xhigh"]}]}}}}`), 0o644)
+	catalog.Reset()
+	t.Cleanup(catalog.Reset)
+	id := "cline-pass/grok-4.7"
+	want := effortsOf(catalog.Model{ID: id})
+	if len(want) == 0 {
+		t.Fatal("the catalog written gives grok-4.7 no efforts")
+	}
+	pp := plugin.Provider{ID: "cline", Spec: "@magpie-community/opencode-cline-auth", Models: []plugin.Model{{ID: id}}}
+	if got := pluginCatalog(pp)[0].Efforts; !slices.Equal(got, want) {
+		t.Fatalf("cline plugin: %s's efforts %v, want the API key's %v", id, got, want)
+	}
+}
+
 // Moved, the agent's own sign-in is the plugin's: the agent signing in to
 // another account meanwhile writes no row of the built-in's, which came
 // back beside the one set aside as a second own account.

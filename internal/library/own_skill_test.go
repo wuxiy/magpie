@@ -21,7 +21,7 @@ func TestOwnSkillInTheWay(t *testing.T) {
 	codex := filepath.Join(h, ".codex/skills/impeccable")
 	gemini := filepath.Join(h, ".gemini/skills/impeccable")
 	skill(t, claude, "impeccable", "Design")
-	skill(t, codex, "impeccable", "Design")     // a byte copy
+	skill(t, codex, "impeccable", "Design")      // a byte copy
 	skill(t, gemini, "impeccable", "Old design") // another
 	write(t, filepath.Join(codex, ".DS_Store"), "finder")
 	skill(t, filepath.Join(h, ".claude/skills/notes"), "notes", "Mine")

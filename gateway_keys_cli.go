@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/yetone/magpie/internal/access"
 	"github.com/yetone/magpie/internal/budget"
+	"github.com/yetone/magpie/internal/provider"
 )
 
 func gatewayKeys(args []string) error { return gatewayKeysTo(os.Stdout, args) }
@@ -26,8 +28,16 @@ func gatewayKeysTo(out io.Writer, args []string) error {
 		access.MigrateLegacyLANKeyBestEffort()
 		return gatewayKeyLimit(out, args[1:])
 	}
+	if action == "models" {
+		access.MigrateLegacyLANKeyBestEffort()
+		return gatewayKeyModels(out, args[1:])
+	}
+	if action == "accounts" {
+		access.MigrateLegacyLANKeyBestEffort()
+		return gatewayKeyAccounts(out, args[1:])
+	}
 	if (action == "list" && len(args) != 1) || (action != "list" && len(args) != 2) {
-		return fmt.Errorf("usage: magpie gateway-key list | add <name> | rotate <id> | remove <id> | limit <id> [off | day|week|month [--tokens N] [--cost USD] [--cache-reads]]")
+		return fmt.Errorf("usage: magpie gateway-key list | add <name> | rotate <id> | remove <id> | limit <id> [off | day|week|month [--tokens N] [--cost USD] [--cache-reads]] | models <id> [all | <provider>/<model>|<provider>/* ...] | accounts <id> [all | <provider>/<account>|<provider>/<key id> ...]")
 	}
 	switch action {
 	case "list", "add", "rotate", "remove":
@@ -41,19 +51,33 @@ func gatewayKeysTo(out io.Writer, args []string) error {
 			return err
 		}
 		w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tNAME\tSTATE\tGATEWAY KEY\tLIMIT")
+		fmt.Fprintln(w, "ID\tNAME\tSTATE\tGATEWAY KEY\tLIMIT\tMODELS\tACCOUNTS")
 		now := time.Now()
+		// an account is shown by who is signed in, kept by its stable id (#905)
+		names := provider.AccountNames()
 		for _, k := range keys {
 			state := "enabled"
 			if k.Off {
 				state = "disabled"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", k.ID, strings.Map(func(r rune) rune {
+			models := "all"
+			if len(k.Models) > 0 {
+				models = strings.Join(k.Models, ",")
+			}
+			accounts := "all"
+			if len(k.Accounts) > 0 {
+				shown := make([]string, len(k.Accounts))
+				for i, a := range k.Accounts {
+					shown[i] = cmp.Or(names[a], a)
+				}
+				accounts = strings.Join(shown, ",")
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", k.ID, strings.Map(func(r rune) rune {
 				if r < 32 || r == 127 {
 					return ' '
 				}
 				return r
-			}, k.Name), state, k.Masked, limitWords(k, now))
+			}, k.Name), state, k.Masked, limitWords(k, now), models, accounts)
 		}
 		return w.Flush()
 	}
@@ -182,6 +206,42 @@ func gatewayKeyLimit(out io.Writer, args []string) error {
 	return w.Flush()
 }
 
+// gatewayKeyModels shows or sets the models a key may use (#882):
+//
+//	magpie gateway-key models <id>                          the models it may use
+//	magpie gateway-key models <id> all                      every model
+//	magpie gateway-key models <id> openai/gpt-5 anthropic/*  only these
+func gatewayKeyModels(out io.Writer, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: magpie gateway-key models <id> [all | <provider>/<model>|<provider>/* ...]")
+	}
+	id := args[0]
+	if len(args) > 1 {
+		ms := args[1:]
+		if len(ms) == 1 && ms[0] == "all" {
+			ms = nil
+		}
+		if _, err := access.Update("models-key", access.Change{Key: id, Models: ms}); err != nil {
+			return err
+		}
+	}
+	keys, err := access.List()
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(keys, func(k access.Key) bool { return k.ID == id })
+	if i < 0 {
+		return fmt.Errorf("Key not found")
+	}
+	k := keys[i]
+	if len(k.Models) == 0 {
+		_, err = fmt.Fprintf(out, "%s: every model\n", k.Name)
+		return err
+	}
+	_, err = fmt.Fprintf(out, "%s: only %s\n", k.Name, strings.Join(k.Models, ", "))
+	return err
+}
+
 // limitWords is a key's limit in the list: "-" for none, else what it has
 // used of it, "1200/1000000 tokens/day".
 func limitWords(k access.Key, now time.Time) string {
@@ -201,4 +261,44 @@ func limitWords(k access.Key, now time.Time) string {
 		s += " (spent until " + st.Reset.Format("01-02 15:04") + ")"
 	}
 	return s
+}
+
+// gatewayKeyAccounts shows or sets a key's account whitelist (#905): the
+// accounts and keys it may use, "<provider>/<account>" — a signed-in
+// account by its name, a key by its KeyID — every one when none are set.
+func gatewayKeyAccounts(out io.Writer, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: magpie gateway-key accounts <id> [all | <provider>/<account>|<provider>/<key id> ...]")
+	}
+	id := args[0]
+	if len(args) > 1 {
+		as := args[1:]
+		if len(as) == 1 && as[0] == "all" {
+			as = nil
+		}
+		if _, err := access.Update("accounts-key", access.Change{Key: id, Accounts: as}); err != nil {
+			return err
+		}
+	}
+	keys, err := access.List()
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(keys, func(k access.Key) bool { return k.ID == id })
+	if i < 0 {
+		return fmt.Errorf("Key not found")
+	}
+	k := keys[i]
+	if len(k.Accounts) == 0 {
+		_, err = fmt.Fprintf(out, "%s: every account\n", k.Name)
+		return err
+	}
+	// shown by who is signed in, kept by the account's stable id (#905)
+	names := provider.AccountNames()
+	shown := make([]string, len(k.Accounts))
+	for i, a := range k.Accounts {
+		shown[i] = cmp.Or(names[a], a)
+	}
+	_, err = fmt.Fprintf(out, "%s: only %s\n", k.Name, strings.Join(shown, ", "))
+	return err
 }

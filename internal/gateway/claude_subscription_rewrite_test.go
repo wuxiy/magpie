@@ -66,7 +66,7 @@ func TestRunLetGoWhenTheClientRewroteTheConversation(t *testing.T) {
 		body := `{"model":"claude-sonnet-5","max_tokens":100,"tools":[{"name":"read","input_schema":{"type":"object"}}],"messages":` + msgs + `}`
 		rec := httptest.NewRecorder()
 		var u Usage
-		if code, msg := s.serveSubscription(rec, httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body)), provider.Anthropic, "Claude Code", "claude-sonnet-5", []byte(body), &u, start); code != 200 {
+		if code, msg := s.serveSubscription(rec, httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body)), provider.Anthropic, "Claude Code", "claude-sonnet-5", "", []byte(body), &u, start); code != 200 {
 			t.Fatalf("%d %s", code, msg)
 		}
 		var res struct {

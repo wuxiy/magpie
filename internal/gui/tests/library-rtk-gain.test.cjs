@@ -58,8 +58,8 @@ const words = {
   },
   zh: {
     failed: `magpie 读不到 RTK 的节省记录：${WHY}`,
-    scope: "统计来自 RTK 自己的记录（rtk gain）：这台电脑上经过 RTK 的所有命令，不分 Agent 和终端。",
-    sandbox: "Codex 在它的 Windows 沙箱里以沙箱专用账户运行命令：RTK 在那里节省的记录存在该账户下，不在你的账户里，所以这里统计不到。",
+    scope: "来自 RTK 自身的统计（rtk gain）：本机经过 RTK 的所有命令，不分 Agent 和终端。",
+    sandbox: "Codex 在 Windows 沙箱中以沙箱专用账户运行命令：RTK 的节省记录存在该账户下而非你的账户，此处无法统计。",
     saved: "42 条命令共节省 8.0k token，平均省 89%",
     skills: "技能",
   },

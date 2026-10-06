@@ -53,8 +53,8 @@ function serve(lang) {
 const words = {
   en: { pace: /until one of its Codex resets about to run out is used by itself/, smart: /one of its Codex resets about to run out is used by itself in/,
     paceWeek: /per hour until reset/, smartWeek: /its allowance renews soonest/ },
-  zh: { pace: /距自动使用一次快过期的 Codex 重置的小时数最高/, smart: /会自动使用它一次快过期的 Codex 重置/,
-    paceWeek: /除以距重置的小时数最高/, smartWeek: /它的额度最先重置/ },
+  zh: { pace: /距自动使用快到期 Codex 重置卡的小时数最高/, smart: /将自动使用其快到期的 Codex 重置卡/,
+    paceWeek: /÷ 距重置小时数最高/, smartWeek: /它的额度最先重置/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

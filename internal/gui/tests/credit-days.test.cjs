@@ -46,7 +46,7 @@ function serve(lang) {
 
 const words = {
   en: { head: "Credits used per day", today: "12.5 today", week: "102.75 in 7 days", day7: "7 days", day1: "Today", bar: /: 60 credits$/, unknown: /: not counted — magpie began counting on /, since: /^Counted since / },
-  zh: { head: "每天用掉的积分", today: "今天 12.5", week: "7 天共 102.75", day7: "7 天", day1: "今天", bar: /：60 积分$/, unknown: /：未统计——magpie 从 .+ 开始统计$/, since: /^从 .+ 开始统计$/ },
+  zh: { head: "每天用掉的积分", today: "今天 12.5", week: "7 天共 102.75", day7: "7 天", day1: "今天", bar: /：60 积分$/, unknown: /：未统计，magpie 从 .+ 开始统计$/, since: /^从 .+ 开始统计$/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

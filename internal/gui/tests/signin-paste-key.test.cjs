@@ -65,7 +65,7 @@ const W = {
   },
   zh: {
     anyway: "仍然登录",
-    say: "如果页面连不上 magpie（magpie 运行在服务器或 Docker 中），请在 Command Code 的密钥页面创建一个 API 密钥，粘贴到这里。",
+    say: "若页面连不上 magpie（运行在服务器或 Docker 中），请在 Command Code 的密钥页创建 API 密钥并粘贴到这里。",
     keys: "打开密钥页面", field: "API 密钥", finish: "完成登录",
     instead: "改用 API 密钥", pluginKey: "API key (cmdplug.test/keys)",
   },

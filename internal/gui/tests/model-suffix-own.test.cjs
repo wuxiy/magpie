@@ -54,7 +54,7 @@ function server(lang, posted) {
 
 const want = {
   en: { labels: ["Off", "Not on names I set", "On"], sub: /^Agents’ lists put each model’s provider after its name, or not after names you set$/ },
-  zh: { labels: ["关闭", "自定义名称不带供应商", "开启"], sub: /^写给 agent 的模型列表在模型名后带上供应商，或自定义的名称不带$/ },
+  zh: { labels: ["关闭", "自定义名称不带供应商", "开启"], sub: /^Agent 的模型列表在模型名后带上供应商，可设为自定义名称不带$/ },
 };
 const view = (page) => page.locator("#view-settings").evaluate((v) => v.scrollTop);
 

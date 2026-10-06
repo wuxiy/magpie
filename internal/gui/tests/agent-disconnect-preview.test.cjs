@@ -90,8 +90,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             const rect = (e) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width }; };
             const body = ed.querySelector(".ebody"), css = getComputedStyle(body), diff = ed.querySelector(".ag-diff-wrap");
             const r = rect(body), scale = r.width / body.offsetWidth, note = ed.querySelector(".ag-note"), code = diff.querySelector("code");
+            // the content box ends at the scrollbar, not at the body's edge
             return {
-              content: { left: r.left + parseFloat(css.paddingLeft) * scale, right: r.right - parseFloat(css.paddingRight) * scale },
+              content: { left: r.left + parseFloat(css.paddingLeft) * scale, right: r.left + (body.clientLeft + body.clientWidth - parseFloat(css.paddingRight)) * scale },
               diff: rect(diff), note: note && rect(note), code: rect(code), lineHeight: parseFloat(getComputedStyle(code.parentElement).lineHeight) * scale,
               dialog: rect(ed.closest(".dialog")), head: rect(ed.querySelector(".ehead")), bar: rect(ed.querySelector(".bar")),
               overflow: body.scrollWidth - body.clientWidth,

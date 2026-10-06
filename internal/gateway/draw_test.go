@@ -185,7 +185,7 @@ func TestDrawCappedSaysWhenItIsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := New()
-	_, _, code, back, err := s.drawOnAccounts(context.Background(), *p, "gpt-image-1", drawing{})
+	_, _, code, back, err := s.drawOnAccounts(context.Background(), httptest.NewRequest("POST", "/v1/images/generations", nil), *p, "gpt-image-1", drawing{})
 	if code != http.StatusTooManyRequests || err == nil {
 		t.Fatalf("%d %v", code, err)
 	}

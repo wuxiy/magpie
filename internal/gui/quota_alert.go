@@ -145,6 +145,9 @@ func alertText(lang string, a provider.QuotaAlert, bal float64, left bool, now t
 	if a.User != "" {
 		title += " · " + a.User
 	}
+	if a.Kind != "" {
+		return title, reminderText(lang, a, now)
+	}
 	if a.Window == "" {
 		line := strconv.FormatFloat(bal, 'f', -1, 64)
 		switch lang {
@@ -201,4 +204,37 @@ func alertText(lang string, a provider.QuotaAlert, bal float64, left bool, now t
 		body += ", resets " + provider.ResetClock(*a.ResetsAt, now)
 	}
 	return title, body
+}
+
+// reminderText is a reset reminder's line (#720): a long window renewing
+// soon with much of it left, or reset credits about to run out unused.
+func reminderText(lang string, a provider.QuotaAlert, now time.Time) string {
+	if a.ResetsAt == nil {
+		return ""
+	}
+	at := *a.ResetsAt
+	if a.Kind == "expires" {
+		switch lang {
+		case "zh":
+			return fmt.Sprintf("%d 张重置卡尚未使用，将于 %s 过期", a.Credits, alertClockZh(at, now))
+		case "ja":
+			return fmt.Sprintf("未使用のリセット %d 回分が %s に期限切れになります", a.Credits, alertClockJa(at, now))
+		case "de":
+			return fmt.Sprintf("%d ungenutzte Resets verfallen %s", a.Credits, alertClockDe(at, now))
+		}
+		if a.Credits == 1 {
+			return "1 reset unused, expiring " + provider.ResetClock(at, now)
+		}
+		return fmt.Sprintf("%d resets unused, expiring %s", a.Credits, provider.ResetClock(at, now))
+	}
+	pct := strconv.FormatFloat(math.Round(max(0, 100-a.Used)*10)/10, 'f', -1, 64) + "%"
+	switch lang {
+	case "zh":
+		return fmt.Sprintf("%s窗口还剩 %s，%s 重置，记得用掉", alertWindowZh(a.Window), pct, alertClockZh(at, now))
+	case "ja":
+		return fmt.Sprintf("%s枠が %s 残っています、%s にリセット", alertWindowJa(a.Window), pct, alertClockJa(at, now))
+	case "de":
+		return fmt.Sprintf("%s: noch %s übrig, Zurücksetzung %s", alertWindowDe(a.Window), strings.Replace(pct, ".", ",", 1), alertClockDe(at, now))
+	}
+	return fmt.Sprintf("%s: %s left, renews %s — use it before then", a.Window, pct, provider.ResetClock(at, now))
 }

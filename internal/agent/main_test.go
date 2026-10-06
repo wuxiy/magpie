@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -36,5 +37,6 @@ func TestMain(m *testing.M) {
 	// keep the old one, so the test would read back a file nothing had
 	// applied. The Aside tests stand in for it themselves.
 	asideSet = func(string, string) error { return errors.New("aside: no Aside in a test") }
+	asideRead = func() (map[string]json.RawMessage, error) { return nil, errors.New("aside: no Aside in a test") }
 	os.Exit(testenv.Run(m))
 }

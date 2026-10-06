@@ -54,7 +54,7 @@ func TestRelaunchBinaryArgs(t *testing.T) {
 		if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := RelaunchBinary(exe, c.window, c.view); err != nil {
+		if err := RelaunchBinary(exe, "", c.window, c.view); err != nil {
 			t.Fatal(err)
 		}
 		want := c.want + " " + strconv.Itoa(os.Getpid())

@@ -164,3 +164,74 @@ func TestWebView(t *testing.T) {
 		t.Errorf("portable: WebView() = %q, want %q", got, want)
 	}
 }
+
+// #989: a folder named data in /Applications, where every app keeps its
+// own, isn't magpie's portable data while the installed folder holds
+// magpie's files; it is when nothing is installed, or with .portable.
+func TestResolveSharedFolder(t *testing.T) {
+	t.Setenv("APPIMAGE", "")
+	r := root(t)
+	apps := filepath.Join(r, "Applications")
+	was := sharedFolder
+	sharedFolder = func(dir string) bool { return dir == apps }
+	t.Cleanup(func() { sharedFolder = was })
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(r, "cfg"))
+
+	exe := touch(t, filepath.Join(apps, "Magpie.app", "Contents", "MacOS", "magpie"))
+	data := filepath.Join(apps, "data")
+	mkdir(t, filepath.Join(data, "nodes"))
+	touch(t, filepath.Join(data, "install-id"))
+
+	// nothing installed: one who keeps magpie portable there
+	if got := Resolve(exe); got != data {
+		t.Errorf("nothing installed: %q, want %q", got, data)
+	}
+	if got := Passed(exe); got != "" {
+		t.Errorf("nothing installed: Passed %q", got)
+	}
+	// installed magpie has its files: the data folder isn't taken
+	touch(t, filepath.Join(r, "cfg", "magpie", "providers.json"))
+	if got := Resolve(exe); got != "" {
+		t.Errorf("installed has files: %q, want installed", got)
+	}
+	if got := Passed(exe); got != data {
+		t.Errorf("Passed %q, want %q", got, data)
+	}
+	t.Cleanup(func() { UseExecutable("") })
+	UseExecutable(exe)
+	if Config() != filepath.Join(r, "cfg", "magpie") {
+		t.Errorf("Config %q, want the installed folder", Config())
+	}
+	// asked for with .portable: portable
+	touch(t, filepath.Join(apps, ".portable"))
+	if got := Resolve(exe); got != data {
+		t.Errorf(".portable: %q, want %q", got, data)
+	}
+
+	// any other folder: a data folder beside magpie is its own, as before
+	other := touch(t, filepath.Join(r, "usb", "Magpie.app", "Contents", "MacOS", "magpie"))
+	mkdir(t, filepath.Join(r, "usb", "data"))
+	if got, want := Resolve(other), filepath.Join(r, "usb", "data"); got != want {
+		t.Errorf("own folder: %q, want %q", got, want)
+	}
+}
+
+func TestSharedFolderIsApplications(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		if sharedFolder("/Applications") {
+			t.Error("shared off the Mac")
+		}
+		return
+	}
+	h, _ := Home()
+	for _, d := range []string{"/Applications", "/Applications/", filepath.Join(h, "Applications")} {
+		if !sharedFolder(d) {
+			t.Errorf("%s not shared", d)
+		}
+	}
+	for _, d := range []string{"/Volumes/USB", filepath.Join(h, "Downloads"), "/Applications/Utilities"} {
+		if sharedFolder(d) {
+			t.Errorf("%s shared", d)
+		}
+	}
+}

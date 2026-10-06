@@ -40,7 +40,7 @@ function serve(lang) {
 
 const want = {
   en: /Claude Code on its own uses the one it is signed in to, which magpie moves to the next ticked account with room once it is 98% used/,
-  zh: /Claude Code 自己直连时用的是它登录的账号——这个账号用到 98% 时/,
+  zh: /Claude Code 直连时用它登录的账号，该账号用到 98% 时/,
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

@@ -352,11 +352,11 @@ func TestSetModelPriceKeysByIdNotByTheNameUsedToAsk(t *testing.T) {
 	if !ok {
 		t.Fatalf("the price is not keyed by the provider's id either: %v", s.ModelPrices)
 	}
-	if p, bad := got.Price(); bad != "" || p != pr {
+	if p, bad := got.Price(); bad != "" || !p.Same(pr) {
 		t.Errorf("the price stored under the id reads back as %+v (bad part %q), want %+v", p, bad, pr)
 	}
 	// and it is the price the model is counted at, which was the point
-	if eff, ok := EffectivePrice("relay", "sol"); !ok || eff != pr {
+	if eff, ok := EffectivePrice("relay", "sol"); !ok || !eff.Same(pr) {
 		t.Errorf("the model is counted at %+v, %v; want the price just set %+v", eff, ok, pr)
 	}
 	// taking it away by either name clears the one entry

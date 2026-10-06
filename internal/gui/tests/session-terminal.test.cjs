@@ -47,7 +47,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
   for (const lang of ["en", "zh"]) {
     test(`${engine} ${lang}: session terminal preference`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
-      const context = await browser.newContext({ viewport: { width: 900, height: 700 }, reducedMotion: "reduce" });
+      // tall enough that the row is clear of the page's foot: rows were added above
+      // it, and Playwright scrolling it in closed the menu the first click opened
+      const context = await browser.newContext({ viewport: { width: 900, height: 1000 }, reducedMotion: "reduce" });
       await context.addInitScript(() => Object.defineProperty(navigator, "platform", { get: () => "MacIntel" }));
       const page = await context.newPage();
       const errors = [], posts = [];
@@ -114,7 +116,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     test(`${engine} ${lang}: an editor as the default reads as Terminal`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
       t.after(() => browser.close());
-      const context = await browser.newContext({ viewport: { width: 900, height: 700 }, reducedMotion: "reduce" });
+      // tall enough that the row is clear of the page's foot: rows were added above
+      // it, and Playwright scrolling it in closed the menu the first click opened
+      const context = await browser.newContext({ viewport: { width: 900, height: 1000 }, reducedMotion: "reduce" });
       await context.addInitScript(() => Object.defineProperty(navigator, "platform", { get: () => "MacIntel" }));
       const page = await context.newPage();
       await page.route("**/*", serve(lang, [], "com.apple.TextEdit"));

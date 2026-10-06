@@ -96,13 +96,13 @@ func TestList(t *testing.T) {
 	}
 
 	// Claude Code: a message's blocks counted once, the subagent's calls in
-	if cc.ID != "11111111-2222-3333-4444-555555555555" || cc.Cwd != "/work/app" || cc.Title != "Fix the login bug in auth.go" {
+	if cc.ID != "11111111-2222-3333-4444-555555555555" || cc.Cwd != "/work/app" || cc.Title != "Fix login bug" {
 		t.Fatalf("claude: %+v", cc)
 	}
-	if o := model(cc, "claude-opus-5-5"); o.Tokens != (Tokens{100, 50, 5000, 1000}) || !o.Priced {
+	if o := model(cc, "claude-opus-5-5"); o.Tokens != (Tokens{100, 50, 5000, 1000, 0}) || !o.Priced {
 		t.Fatalf("opus: %+v", o)
 	}
-	if h := model(cc, "claude-haiku-4-5-20251001"); h.Tokens != (Tokens{1010, 120, 200, 0}) || h.Priced {
+	if h := model(cc, "claude-haiku-4-5-20251001"); h.Tokens != (Tokens{1010, 120, 200, 0, 0}) || h.Priced {
 		t.Fatalf("haiku: %+v", h)
 	}
 	if want := (100*4 + 50*20 + 5000*0.2 + 1000*5) / 1e6; !near(cc.Cost, want) || cc.Unpriced != 1 {
@@ -117,10 +117,10 @@ func TestList(t *testing.T) {
 	if cx.ID != "01a0bdc9-b5fd-7e63-9658-68bc8dce5ecd" || cx.Cwd != "/work/it's" || cx.Title != "Add a README" {
 		t.Fatalf("codex: %+v", cx)
 	}
-	if a := model(cx, "gpt-6-astra"); a.Tokens != (Tokens{8000, 400, 10000, 0}) {
+	if a := model(cx, "gpt-6-astra"); a.Tokens != (Tokens{8000, 400, 10000, 0, 0}) {
 		t.Fatalf("astra: %+v", a)
 	}
-	if l := model(cx, "gpt-6-luna"); l.Tokens != (Tokens{2000, 200, 10000, 0}) {
+	if l := model(cx, "gpt-6-luna"); l.Tokens != (Tokens{2000, 200, 10000, 0, 0}) {
 		t.Fatalf("luna: %+v", l)
 	}
 	if cx.Input != 10000 || cx.Output != 600 || cx.CacheRead != 20000 || cx.Unpriced != 1 {

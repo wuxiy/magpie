@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -66,17 +67,22 @@ func Find(name string) (Tool, bool) {
 	found.Lock()
 	defer found.Unlock()
 	if t, ok := found.at[name]; ok && time.Since(t) < findAge {
-		if p := found.tools[name]; p != nil {
+		p := found.tools[name]
+		if p == nil {
+			return Tool{}, false
+		}
+		// a distro stopped since (wsl --shutdown, to repair WSL) isn't
+		// run again, which would start it: it is looked for anew
+		if Up(p.Distro) {
 			return *p, true
 		}
-		return Tool{}, false
 	}
 	if found.at == nil {
 		found.at, found.tools = map[string]time.Time{}, map[string]*Tool{}
 	}
 	found.at[name], found.tools[name] = time.Now(), nil
-	b, err := Run(10*time.Second, "-l", "--running", "-q")
-	if err != nil {
+	names, ok := running()
+	if !ok {
 		return Tool{}, false
 	}
 	def := ""
@@ -85,7 +91,6 @@ func Find(name string) (Tool, bool) {
 			def = all[0] // wsl -l lists the default first
 		}
 	}
-	names := Distros(b)
 	for i, n := range names {
 		if n == def && i > 0 {
 			names[0], names[i] = names[i], names[0]
@@ -104,6 +109,45 @@ func Find(name string) (Tool, bool) {
 	return Tool{}, false
 }
 
+var up struct {
+	sync.Mutex
+	at    time.Time
+	names []string
+	ok    bool
+}
+
+// upAge is how long running's answer is kept: a distro stopped is seen
+// within it.
+const upAge = 3 * time.Second
+
+// running are the distros running, as wsl.exe -l --running says (which
+// starts none) at most upAge ago; ok is false when it couldn't say.
+func running() (names []string, ok bool) {
+	up.Lock()
+	defer up.Unlock()
+	if up.at.IsZero() || time.Since(up.at) > upAge {
+		b, err := Run(10*time.Second, "-l", "--running", "-q")
+		up.names, up.ok, up.at = Distros(b), err == nil, time.Now()
+		if err != nil {
+			up.names = nil
+		}
+	}
+	return slices.Clone(up.names), up.ok
+}
+
+// Up is whether distro runs now. Anything magpie does in a distro on its
+// own (not the user's asking) asks first: wsl.exe -d, or opening its files
+// through \\wsl.localhost, starts a stopped one (TJHHHH on Discord: WSL
+// kept starting while they repaired it). False off Windows, without WSL,
+// or when wsl.exe can't say.
+func Up(distro string) bool {
+	if !On {
+		return false
+	}
+	names, _ := running()
+	return slices.Contains(names, distro)
+}
+
 // Known is the tool Find found last for name, however long ago, without
 // looking again: for a page to say where it runs without waiting on WSL.
 func Known(name string) (Tool, bool) {
@@ -120,6 +164,9 @@ func Forget() {
 	found.Lock()
 	found.at, found.tools = nil, nil
 	found.Unlock()
+	up.Lock()
+	up.at = time.Time{}
+	up.Unlock()
 }
 
 // probeScript prints where name is in the distro, with the PATH it is on,

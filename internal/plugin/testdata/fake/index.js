@@ -27,6 +27,15 @@ export const FakePlugin = async ({ client }) => ({
     // $FAKE_FAST: fake-1 has a fast one, as a Cursor model has its -fast
     if (process.env.FAKE_FAST) cfg.provider[ID].models["fake-1-fast"] = { name: "Fake One Fast", limit: { context: 1000, output: 100 } }
     if (process.env.FAKE_RESPONSES) cfg.provider[ID].models["fake-resp"] = { name: "Fake Responses", provider: { npm: "@ai-sdk/openai" }, limit: { context: 4000, output: 400 } }
+    // $FAKE_DEEPSEEK: a DeepSeek model, as Cline's cline-pass/deepseek-v4-pro
+    if (process.env.FAKE_DEEPSEEK) cfg.provider[ID].models["deepseek-v4-pro"] = { name: "DeepSeek V4 Pro", limit: { context: 1000, output: 100 } }
+    // $FAKE_OFF: a model that stops thinking at none and one that can't,
+    // as Factory's plugin has Kimi K3 and GLM-5.3 (#899)
+    if (process.env.FAKE_OFF) {
+      const levels = (l) => Object.fromEntries(l.map((e) => [e, { reasoningEffort: e }]))
+      cfg.provider[ID].models["fake-off"] = { name: "Fake Off", reasoning: true, variants: levels(["none", "low", "high", "max"]), limit: { context: 1000, output: 100 } }
+      cfg.provider[ID].models["fake-on"] = { name: "Fake On", reasoning: true, variants: levels(["low", "high", "max"]), limit: { context: 1000, output: 100 } }
+    }
   },
   auth: {
     provider: ID,

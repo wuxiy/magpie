@@ -201,6 +201,50 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.context().close();
       });
 
+      await t.test(lang + ": 100% picked at the foot of the page leaves no blank under it", async () => {
+        // #911: at 150% scrolled to the foot, a click on 100% held the
+        // control where it was as the webview zoomed out, and the page grew
+        // a blank foot to hold it; Ctrl+0 went to the top. The page laid out
+        // anew is the browser's to fit: no room, nothing scrolled.
+        const posts = [];
+        // emo172's window: 1440×900 points, 960×600 CSS pixels at 150%
+        const page = await open(lang, "light", 150, posts, { width: 960, height: 600, zoom: 1.5 });
+        await page.locator("#prefs").click();
+        const segs = page.locator("#textSizeSegs .opt");
+        await segs.first().waitFor();
+        const v = page.locator("#view-settings");
+        await v.hover();
+        // down as far as the control is still in sight: to the foot, or the
+        // control at the view's top
+        for (let i = 0; i < 400; i++) {
+          if (await v.evaluate((v) => v.scrollTop >= v.scrollHeight - v.clientHeight - 1
+            || document.querySelector("#textSizeSegs").getBoundingClientRect().top < v.getBoundingClientRect().top + 60)) break;
+          await page.mouse.wheel(0, 40);
+          await page.waitForTimeout(20);
+        }
+        await page.waitForTimeout(300);
+        const before = await v.evaluate((v) => v.scrollTop);
+        assert(before > 0, "the settings page must scroll");
+        await segs.nth(0).click();
+        await page.locator("#textSizeSegs .opt.on", { hasText: "100%" }).waitFor();
+        // the webview's zoom out: the same window is half as many CSS pixels again
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.waitForTimeout(600);
+        const foot = await v.evaluate((v) => {
+          const kids = [...v.children].filter((c) => !c.classList.contains("view-room") && c.getClientRects().length);
+          const end = Math.max(...kids.map((c) => c.getBoundingClientRect().bottom));
+          return { room: !!v.querySelector(":scope > .view-room"), blank: v.getBoundingClientRect().bottom - end, top: v.scrollTop, max: v.scrollHeight - v.clientHeight };
+        });
+        assert.deepEqual(posts, [100]);
+        assert.equal(foot.room, false, "no room may be left at the foot");
+        // a page that still scrolls reaches the window's foot (one shorter has its own)
+        assert(foot.max < 1 || foot.blank < 60, `a blank of ${foot.blank}px under the page`);
+        // nothing scrolled: where it was, or as far down as the page now goes
+        assert(Math.abs(foot.top - Math.min(before, foot.max)) < 2, `scrolled from ${before} to ${foot.top} (max ${foot.max})`);
+        assert.deepEqual(page.errors, []);
+        await page.context().close();
+      });
+
       for (const theme of ["light", "dark"]) {
         await t.test(lang + ", " + theme + ": nothing runs off the side at 150%", async () => {
           // the smallest window at 150% is 840×630 points, 560×420 CSS pixels

@@ -60,16 +60,19 @@ func TestRelativeFolderVariablesIgnoredNotUnset(t *testing.T) {
 	t.Setenv("CODEX_HOME", "./codex")
 	t.Setenv("HANA_HOME", "~/.hanako")
 	t.Setenv("PI_PROFILE", "work")
+	t.Setenv("MAGPIE_ZED_CONFIG_DIR", "./zedg-config")
+	t.Setenv("MAGPIE_ZED_BIN", "zedg")
+	t.Setenv("MAGPIE_ZED_PROCESS_NAMES", "zedg,ZedG")
 	t.Setenv("KIMI_SHARE_DIR", "")
 	ignored, err := CheckEnv()
 	if err != nil {
 		t.Fatal(err)
 	}
 	slices.Sort(ignored)
-	if want := []string{"CODEX_HOME", "XDG_DATA_HOME"}; !slices.Equal(ignored, want) {
+	if want := []string{"CODEX_HOME", "MAGPIE_ZED_CONFIG_DIR", "XDG_DATA_HOME"}; !slices.Equal(ignored, want) {
 		t.Errorf("ignored %v, want %v", ignored, want)
 	}
-	for v, want := range map[string]string{"XDG_CONFIG_HOME": abs, "HANA_HOME": "~/.hanako", "PI_PROFILE": "work", "XDG_DATA_HOME": "", "CODEX_HOME": ""} {
+	for v, want := range map[string]string{"XDG_CONFIG_HOME": abs, "HANA_HOME": "~/.hanako", "PI_PROFILE": "work", "MAGPIE_ZED_CONFIG_DIR": "", "MAGPIE_ZED_BIN": "zedg", "MAGPIE_ZED_PROCESS_NAMES": "zedg,ZedG", "XDG_DATA_HOME": "", "CODEX_HOME": ""} {
 		if got := Getenv(v); got != want {
 			t.Errorf("Getenv(%s) = %q, want %q", v, got, want)
 		}

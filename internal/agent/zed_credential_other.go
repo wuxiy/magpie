@@ -52,7 +52,11 @@ func zedAppPath(ctx context.Context) (string, error) {
 		filepath.Join(home, "Applications", "Zed.app"), filepath.Join(home, "Applications", "Zed Preview.app"),
 		"/Applications/Zed.app", "/Applications/Zed Preview.app",
 	}
-	if bin, err := exec.LookPath("zed"); err == nil {
+	binName := os.Getenv("MAGPIE_ZED_BIN")
+	if binName == "" {
+		binName = "zed"
+	}
+	if bin, err := executablePath(binName); err == nil {
 		if bin, err = filepath.EvalSymlinks(bin); err == nil {
 			for dir := filepath.Dir(bin); dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
 				if strings.HasSuffix(dir, ".app") {
@@ -77,6 +81,16 @@ func zedAppPath(ctx context.Context) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("cannot find Zed.app to authorize access to its gateway credential")
+}
+
+func executablePath(name string) (string, error) {
+	if filepath.IsAbs(name) {
+		if _, err := os.Stat(name); err != nil {
+			return "", err
+		}
+		return name, nil
+	}
+	return exec.LookPath(name)
 }
 
 const secretService = "org.freedesktop.Secret.Service"

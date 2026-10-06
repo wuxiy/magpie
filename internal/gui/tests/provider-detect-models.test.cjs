@@ -62,6 +62,16 @@ function serve(lang, posts) {
   };
 }
 
+// a right-click on a chip out of sight: Playwright scrolls it in first, and
+// Chromium sends that scroll's event a frame later, which closes the menu
+// the click opened (a menu closes on a scroll). Scroll it in, let the
+// frame pass, then click.
+async function rclick(loc) {
+  await loc.click({ button: "right", trial: true }); // scrolls it in, clicks nothing
+  await loc.page().evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await loc.click({ button: "right" });
+}
+
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {
     test(`${engine} ${lang}: Detect APIs model by model, and Test says the API`, async (t) => {
@@ -143,7 +153,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // a chip's right-click Test says the API it was asked on
       const chip = page.locator(".editor .mchips .mchip", { hasText: "m-both" });
-      await chip.click({ button: "right" });
+      await rclick(chip);
       await page.locator(".pop.row-menu").getByRole("menuitem", { name: L.item }).click();
       await chip.locator(".tdot.ok").waitFor();
       assert.equal(await page.locator("#status").textContent(), L.via);

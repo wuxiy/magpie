@@ -67,7 +67,7 @@ func hanakoChatOf(t *testing.T, path string) (map[string]any, string) {
 func hanakoWant(t *testing.T) string {
 	t.Helper()
 	return `{"display_name":"magpie","base_url":"` + gatewayV1() + `","api":"openai-completions","api_key":"magpie-hanako",` +
-		`"models":[{"id":"relay/glm-4.6","name":"glm-4.6 · Relay","context":204800,"maxOutput":131072,"image":true,"reasoning":true,"xhigh":true}]}`
+		`"models":[{"id":"relay/glm-4.6","name":"GLM-4.6 · Relay","context":204800,"maxOutput":131072,"image":true,"reasoning":true,"xhigh":true}]}`
 }
 
 func TestHanakoHome(t *testing.T) {
@@ -176,7 +176,7 @@ func TestHanakoFiles(t *testing.T) {
 	// what magpie wrote is still read from there
 	hanakoWrite(t, filepath.Join(dir, "provider-plugins", "magpie", "providers", "magpie.json"),
 		`{"id":"magpie","displayName":"magpie","authType":"api-key","defaultBaseUrl":"`+gatewayV1()+`","defaultApi":"openai-completions",`+
-			`"models":[{"id":"relay/glm-4.6","name":"glm-4.6 · Relay","context":204800,"maxOutput":131072,"image":true,"reasoning":true,"xhigh":true}]}`, 0o600)
+			`"models":[{"id":"relay/glm-4.6","name":"GLM-4.6 · Relay","context":204800,"maxOutput":131072,"image":true,"reasoning":true,"xhigh":true}]}`, 0o600)
 	hanakoWrite(t, catalogPath, `{"catalogVersion":2,"providers":{"openai":{"api_key":"sk-x"},"magpie":{"api_key":"magpie-hanako"}}}`, 0o600)
 	before, _ := os.ReadFile(catalogPath)
 	if err := a.Sync(); err != nil {

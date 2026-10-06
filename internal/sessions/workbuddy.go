@@ -142,7 +142,7 @@ func workbuddyLine(s *state, b []byte, main bool) {
 	case "custom-title":
 		// named by the user: before the one WorkBuddy made
 		if main && l.CustomTitle != "" {
-			s.Title = title(l.CustomTitle)
+			s.Custom = title(l.CustomTitle)
 		}
 	case "ai-title":
 		if main && l.AITitle != "" {

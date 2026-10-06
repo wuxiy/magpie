@@ -93,11 +93,21 @@ func TestWSLSkillsCopied(t *testing.T) {
 			t.Errorf("%s isn't the library's skill", d)
 		}
 	}
-	if !linked(filepath.Join(home(), ".claude/skills/pdf")) {
-		t.Error("this machine's Claude Code got a copy, not a link")
+	// Windows without the right to make symlinks (Developer Mode off, not
+	// elevated) links with junctions (#973); only where neither can be
+	// made is the library's a copy of the folder, and this machine's Claude
+	// Code a marked copy of that
+	links := dirLink(t.TempDir(), filepath.Join(t.TempDir(), "link")) == nil
+	if local := filepath.Join(home(), ".claude/skills/pdf"); linked(local) != links || !ours(local, "pdf") {
+		t.Errorf("this machine's Claude Code: linked %v, symlinks here %v", linked(local), links)
 	}
-	// the skill is its folder: an edit there reaches the copies at the next sync
-	write(t, filepath.Join(src, "pdf/SKILL.md"), "---\nname: pdf\ndescription: Changed\n---\n")
+	// the skill is its folder: an edit there reaches the copies at the next
+	// sync; where the library holds a copy, the edit is made in that copy
+	edited := filepath.Join(src, "pdf/SKILL.md")
+	if !links {
+		edited = filepath.Join(skillDir("pdf"), "SKILL.md")
+	}
+	write(t, edited, "---\nname: pdf\ndescription: Changed\n---\n")
 	res := ok(t)(Sync())
 	if !slices.Contains(res.Changed, wslCodex) {
 		t.Errorf("changed: %v", res.Changed)
@@ -191,5 +201,104 @@ func TestWSLInstructions(t *testing.T) {
 	i := slices.IndexFunc(iv.Agents, func(a AgentInstructions) bool { return a.Agent == wslCodex })
 	if i < 0 || !iv.Agents[i].On || iv.Agents[i].Extra != extra || iv.Agents[i].Own != 1 {
 		t.Errorf("instructions page: %+v", iv.Agents)
+	}
+}
+
+// magpie's own image server, a Windows program, is given to an agent in
+// WSL all the same (#900): by the binary's path in the distro, which WSL's
+// interop starts, told the distro, with the variables it is given named in
+// WSLENV. A distro whose interop is off is told so.
+func TestWSLMagpieImage(t *testing.T) {
+	h := wslSandbox(t)
+	probed := 0
+	answer := "/mnt/d/tools/Magpie/magpie-windows-amd64.exe\ninterop:on\n"
+	old := wslProbe
+	wslProbe = func(distro, script string) (string, error) {
+		probed++
+		if distro != "Ubuntu-24.04" || !strings.Contains(script, `wslpath -u 'D:\tools\Magpie\magpie-windows-amd64.exe'`) {
+			t.Errorf("probe %s: %s", distro, script)
+		}
+		return answer, nil
+	}
+	reset := func() {
+		wslExes.Lock()
+		wslExes.at, wslExes.out = nil, nil
+		wslExes.Unlock()
+	}
+	reset()
+	t.Cleanup(func() { wslProbe = old; reset() })
+
+	img := Server{Name: "magpie-image", Transport: "stdio", Command: `D:\tools\Magpie\magpie-windows-amd64.exe`, Args: []string{"mcp", "image"},
+		Env: map[string]string{"MAGPIE_ADDR": "127.0.0.1:4000"}, Agents: []string{wslCodex, wslClaude}}
+	res := ok(t)(SaveServer("", img))
+	if len(res.Problems) != 0 {
+		t.Fatalf("problems: %+v", res.Problems)
+	}
+	s := read(t, filepath.Join(h, ".codex/config.toml"))
+	for _, w := range []string{"[mcp_servers.magpie-image]", `command = "/mnt/d/tools/Magpie/magpie-windows-amd64.exe"`, `"--wsl"`, `"Ubuntu-24.04"`, `WSLENV = "MAGPIE_ADDR"`} {
+		if !strings.Contains(s, w) {
+			t.Errorf("codex@wsl config.toml has no %s:\n%s", w, s)
+		}
+	}
+	if s := read(t, filepath.Join(h, ".claude.json")); !strings.Contains(s, `"/mnt/d/tools/Magpie/magpie-windows-amd64.exe"`) || !strings.Contains(s, `"--wsl"`) {
+		t.Errorf("claude@wsl .claude.json:\n%s", s)
+	}
+	// written as it is: the next sync changes nothing, nor asks the distro again
+	if res := ok(t)(Sync()); len(res.Changed) != 0 || len(res.Problems) != 0 {
+		t.Errorf("a sync with nothing new: %+v", res)
+	}
+	if probed != 1 {
+		t.Errorf("the distro was asked %d times", probed)
+	}
+
+	// drives mounted elsewhere: the server is told where
+	reset()
+	answer = "/win/d/tools/Magpie/magpie-windows-amd64.exe\ninterop:on\n"
+	ok(t)(Sync())
+	if s := read(t, filepath.Join(h, ".codex/config.toml")); !strings.Contains(s, `"/win/d/tools/Magpie/magpie-windows-amd64.exe"`) || !strings.Contains(s, `"--mount"`) || !strings.Contains(s, `"/win/"`) {
+		t.Errorf("custom mount:\n%s", s)
+	}
+
+	// interop off: nothing it could start, and why
+	reset()
+	answer = "/mnt/d/tools/Magpie/magpie-windows-amd64.exe\ninterop:off\n"
+	res, err := Sync()
+	if err != nil || len(res.Problems) == 0 || !strings.Contains(res.Problems[0].Error, "interop") {
+		t.Errorf("interop off: %+v", res.Problems)
+	}
+}
+
+// TJHHHH on Discord: magpie kept starting WSL while they repaired it. An
+// agent made while its distro ran, which the user then stops (wsl
+// --shutdown), is no target: writing the library there would start it.
+// Giving it something says the distro isn't running.
+func TestWSLStoppedSinceNoTarget(t *testing.T) {
+	wslSandbox(t)
+	tg := targetByID(wslCodex)
+	if tg == nil {
+		t.Fatalf("not a target while running: %v", ids(Targets()))
+	}
+	agent.StopFakeWSL("Ubuntu-24.04")
+	if wslTargetOf(tg.Agent) != nil {
+		t.Fatal("a target in the stopped distro")
+	}
+	for _, t2 := range Targets() {
+		if t2.Agent.WSL != "" {
+			t.Fatalf("%s is a target while its distro is stopped", t2.Agent.ID)
+		}
+	}
+}
+
+func TestLinuxHome(t *testing.T) {
+	for in, want := range map[string]string{
+		`\\wsl.localhost\Ubuntu\home\me`: "/home/me",
+		`\\wsl$\Ubuntu-24.04\root`:       "/root",
+		`\\WSL.LOCALHOST\Ubuntu`:         "/",
+		`C:\Users\me`:                    "",
+		"/tmp/x/home/me":                 "",
+	} {
+		if got := linuxHome(in); got != want {
+			t.Errorf("linuxHome(%s) = %q, want %q", in, got, want)
+		}
 	}
 }

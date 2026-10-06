@@ -18,8 +18,8 @@ func TestCodexNativeReadersAgree(t *testing.T) {
 		calls  int
 		tokens Tokens
 	}{
-		{"codex-native-paginated.jsonl", 3, Tokens{128290, 293, 254720, 0}},
-		{"codex-native-compaction.jsonl", 4, Tokens{22857, 8001, 520320, 0}},
+		{"codex-native-paginated.jsonl", 3, Tokens{128290, 293, 254720, 0, 0}},
+		{"codex-native-compaction.jsonl", 4, Tokens{22857, 8001, 520320, 0, 0}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

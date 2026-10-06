@@ -122,6 +122,19 @@ type Provider struct {
 	// in the order they came (see Concurrency). nil follows what a
 	// plugin's provider says it takes, else none; 0 is no limit.
 	MaxConcurrency *int `json:"maxConcurrency,omitempty"`
+	// AccountConcurrency is, for one account or key, its own limit over
+	// MaxConcurrency (#892): an account by its name in lower case, a key
+	// by its KeyID; 0 there is no limit for it. One not in it takes the
+	// provider's (see LaneLimit).
+	AccountConcurrency map[string]int `json:"accountConcurrency,omitempty"`
+	// QueueLimit is how many requests may wait for a slot of each key or
+	// account at once (#892); one more is turned away as the queue being
+	// full. 0 is no bound.
+	QueueLimit int `json:"queueLimit,omitempty"`
+	// QueueWait is how long, in seconds, a request waits for a slot before
+	// it is turned away as having waited too long (#892). 0 waits as long
+	// as it takes.
+	QueueWait int `json:"queueWait,omitempty"`
 
 	// PriceRate is what the provider charges against the official price
 	// (ITea312, #819): a relay that bills 0.8× or 1.5× of it. It scales the
@@ -362,6 +375,7 @@ func (p Provider) clone() Provider {
 	p.Headers = maps.Clone(p.Headers)
 	p.AccountProxies = maps.Clone(p.AccountProxies)
 	p.AccountCaps = maps.Clone(p.AccountCaps)
+	p.AccountConcurrency = maps.Clone(p.AccountConcurrency)
 	p.Contexts = maps.Clone(p.Contexts)
 	if p.AccountModels != nil {
 		m := make(map[string][]string, len(p.AccountModels))
@@ -407,7 +421,8 @@ func allProviders() []Provider {
 		a.Sink = pk.Sink
 		a.Proxy, a.AccountProxies, a.AccountModels = pk.Proxy, pk.AccountProxies, pk.AccountModels
 		a.AccountCaps = pk.AccountCaps
-		a.MaxConcurrency = pk.MaxConcurrency
+		a.MaxConcurrency, a.PinUpstream = pk.MaxConcurrency, pk.PinUpstream
+		a.AccountConcurrency, a.QueueLimit, a.QueueWait = pk.AccountConcurrency, pk.QueueLimit, pk.QueueWait
 		if a.ID == "cursor" { // picked before its efforts were one model
 			a.Models = cursorPicks(a.Models)
 		}
@@ -521,7 +536,7 @@ func Save(p Provider) error {
 		if p.ID == "kiro" {
 			key = p.Key
 		}
-		p = Provider{ID: p.ID, Key: key, Models: p.Models, Unlisted: p.Unlisted, Off: p.Off, Fallback: p.Fallback, Routing: p.Routing, Sink: p.Sink, Affinity: p.Affinity, KeepLogin: p.KeepLogin, KeepLoginAs: p.KeepLoginAs, Contexts: p.Contexts, Family: p.Family, Proxy: p.Proxy, AccountProxies: p.AccountProxies, AccountModels: p.AccountModels, AccountCaps: p.AccountCaps, MaxConcurrency: p.MaxConcurrency, Hidden: hiddenAccount(p.ID), Quiet: quietAccount(p.ID), Tucked: tuckedAccount(p.ID)}
+		p = Provider{ID: p.ID, Key: key, Models: p.Models, Unlisted: p.Unlisted, Off: p.Off, Fallback: p.Fallback, Routing: p.Routing, Sink: p.Sink, Affinity: p.Affinity, KeepLogin: p.KeepLogin, KeepLoginAs: p.KeepLoginAs, Contexts: p.Contexts, Family: p.Family, Proxy: p.Proxy, AccountProxies: p.AccountProxies, AccountModels: p.AccountModels, AccountCaps: p.AccountCaps, MaxConcurrency: p.MaxConcurrency, AccountConcurrency: p.AccountConcurrency, QueueLimit: p.QueueLimit, QueueWait: p.QueueWait, PinUpstream: p.PinUpstream, Hidden: hiddenAccount(p.ID), Quiet: quietAccount(p.ID), Tucked: tuckedAccount(p.ID)}
 	} else {
 		p.AccountProxies = nil // a provider of a key has no accounts to proxy apart
 		if subscriptionID(p.ID) && !stored(p.ID) {
@@ -673,7 +688,7 @@ func freeName(name string) string {
 }
 
 // accountIDs are the ids of the subscriptions magpie can list (account.go).
-var accountIDs = []string{"antigravity", "claude", "codex", CommandCodePlanID, "copilot", "cursor", "devin", "factory", "gemini", "grok", "kiro", MiMoID, "qoder", QoderCNID, "workbuddy", WorkBuddyAIID, "zcode", "zed"}
+var accountIDs = []string{"antigravity", "claude", "codex", CommandCodePlanID, "copilot", "cursor", "devin", "factory", "gemini", "grok", "kiro", MiMoID, ChatGPTAPIID, "qoder", QoderCNID, "workbuddy", WorkBuddyAIID, "zcode", "zed"}
 
 func stored(id string) bool {
 	for _, p := range load().Providers {
@@ -865,6 +880,8 @@ func normalize(p Provider) Provider {
 	if p.MaxConcurrency != nil && *p.MaxConcurrency < 0 {
 		p.MaxConcurrency = new(int)
 	}
+	p.AccountConcurrency = normalAccountConcurrency(p.AccountConcurrency)
+	p.QueueLimit, p.QueueWait = min(max(p.QueueLimit, 0), MaxQueueLimit), min(max(p.QueueWait, 0), MaxQueueWait)
 	p.Catalog = strings.Join(p.Catalogs(), ", ")
 	// a Bedrock provider saved before the preset had its Responses API
 	// (#176) gets it where its chat completions are: the runtime serves both

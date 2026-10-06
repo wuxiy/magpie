@@ -48,6 +48,7 @@ const efText = (x) => x.asked !== x.sent ? `${x.asked} → ${x.sent}` : x.sent;
 // each row is a grid of its own, sized by its own numbers, and the
 // narrower layouts follow the window. The styles are served as it reads them
 const safari15 = (css) => css
+  .replace(/@supports not \(container-type: inline-size\)/g, "@supports (display: grid)")
   .replace(/@supports not \(grid-template-columns: subgrid\)/g, "@supports (display: grid)")
   .replace(/grid-template-columns: subgrid/g, "grid-template-columns: x-subgrid")
   .replace(/@container[^{]*\{/g, "@media (max-width: 0px) {");
@@ -145,8 +146,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           }
         }
         // the numbers stay whole
-        const meta = await page.locator(".rt-req").nth(1).locator(".meta > span").first().textContent();
-        assert.match(meta, lang === "zh" ? /^15 秒 · 首字 14 秒 · 6\.9k token$/ : /^15 s · TTFT 14 s · 6\.9k tokens$/, `${width}px`);
+        const meta = page.locator(".rt-req").nth(1).locator(".meta");
+        assert.equal(await meta.locator(".duration .v").textContent(), lang === "zh" ? "15 秒" : "15 s", `${width}px`);
+        assert.equal(await meta.locator(".ttft .v").textContent(), lang === "zh" ? "14 秒" : "14 s", `${width}px`);
+        assert.equal(await meta.locator(".tokens .v").textContent(), "6.9k", `${width}px`);
         // where it went and the level asked for give way first: the level
         // sent is whole in every row, at every width
         const cut = await page.locator(".rt-req .ef").evaluateAll((es) => es.map((e) => {

@@ -63,13 +63,13 @@ function server(lang, refreshed) {
 const L = {
   en: {
     statuses: ["429 · rate_limit_error", "200", "Succeeded", "rate_limit"], badge: "Local session",
-    labels: { fail: ["Status", "Error type", "Upstream said", "Duration", "Request ID", "Endpoint", "Session ID"], ok: ["Status", "Duration", "Request ID", "Endpoint", "Called for", "First token", "In magpie", "Vendor's first token"], log: ["Request ID", "Session ID", "Data source"], logFail: ["Status", "Error type", "Error", "Request ID", "Session ID", "Data source"] },
+    speed: "24 tok/s", labels: { fail: ["Status", "Error type", "Upstream said", "Duration", "Request ID", "Endpoint", "Protocol", "Session ID"], ok: ["Status", "Duration", "Speed", "Request ID", "Endpoint", "Protocol", "Called for", "First token", "In magpie", "Vendor's first token"], log: ["Request ID", "Session ID", "Data source"], logFail: ["Status", "Error type", "Error", "Request ID", "Session ID", "Data source"] },
     subagent: "Subagent",
     noStatus: "Read from the agent's session file. The account is shown only when local metadata identifies it; no service provider is inferred.",
   },
   zh: {
     statuses: ["429 · rate_limit_error", "200", "成功", "rate_limit"], badge: "本地会话",
-    labels: { fail: ["状态", "错误类型", "上游返回", "耗时", "请求 ID", "终结点", "会话 ID"], ok: ["状态", "耗时", "请求 ID", "终结点", "用途", "首响", "magpie 内耗时", "厂商首字等待"], log: ["请求 ID", "会话 ID", "数据来源"], logFail: ["状态", "错误类型", "错误", "请求 ID", "会话 ID", "数据来源"] },
+    speed: "24 token/秒", labels: { fail: ["状态", "错误类型", "上游返回", "耗时", "请求 ID", "终结点", "协议", "会话 ID"], ok: ["状态", "耗时", "速度", "请求 ID", "终结点", "协议", "用途", "首响", "magpie 内耗时", "厂商首字等待"], log: ["请求 ID", "会话 ID", "数据来源"], logFail: ["状态", "错误类型", "错误", "请求 ID", "会话 ID", "数据来源"] },
     subagent: "子代理",
     noStatus: "读自 Agent 的会话文件；仅在本地元数据能够明确识别时显示账号，不推断供应商。",
   },
@@ -113,12 +113,15 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const logged = await cells(2), gateway = await cells(0);
         assert.deepEqual([logged[2], logged[4], logged[5], logged[6]], ["claude-opus-5[1m]", "claude-opus-5", "claude-opus-5", "xhigh"], "a session file's models and effort");
         assert.deepEqual([gateway[2], gateway[4]], ["sol", "gpt-6-sol"], "the gateway's model asked for and sent");
-        // only the session file's rows are marked as such
-        assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector(".src")?.textContent || "")), ["", "", w.badge, ""]);
+        // only the session file's rows are marked as such; the gateway's say
+        // the protocol they were sent upstream in (a session file keeps no path)
+        const badge = (sel) => rows.evaluateAll((trs, sel) => trs.map((tr) => tr.querySelector(sel)?.textContent || ""), sel);
+        assert.deepEqual(await badge(".src.local"), ["", "", w.badge, ""]);
+        assert.deepEqual(await badge(".src.proto"), ["Responses", "Anthropic → Chat", "", ""]);
         assert.equal(await p.locator(".led tbody tr.led-detail").count(), 0, "closed to begin with");
 
-        const labels = async () => p.locator(".led tbody tr.led-detail dt").allTextContents();
-        const values = async () => p.locator(".led tbody tr.led-detail dd").allTextContents();
+        const labels = async () => p.locator(".led tbody tr.led-detail dt:not(.lc-opt)").allTextContents();
+        const values = async () => p.locator(".led tbody tr.led-detail dd:not(.lc-opt)").allTextContents();
         const top = async () => p.locator("#view-usage").evaluate((v) => v.scrollTop);
         // scrolled by the wheel, as a reader does: the page puts back any scroll
         // that no wheel, key or drag asked for
@@ -126,6 +129,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await p.mouse.wheel(0, 30);
         for (let i = 0; i < 40 && (await top()) < 30; i++) await p.waitForTimeout(25);
         await p.waitForTimeout(300);
+        // the first row wholly in sight (a row with badges is two lines tall),
+        // so the click's own bringing it there isn't counted as the page moving
+        await reader.inView(p, rows.nth(0));
         const before = await top();
         assert(before > 0, "the page is long enough to scroll");
 
@@ -138,6 +144,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(v[2], "Relay: slow down, please");
         assert.equal(v[4], "req_011abc");
         assert.equal(v[5], "/v1/responses");
+        assert.equal(v[6], "Responses", "the protocol it was sent upstream in");
         assert.equal(await rows.nth(0).getAttribute("aria-expanded"), "true");
         assert.equal(await top(), before, "the click moved the page");
         // the details sit under their row, and no row is pushed out of the table
@@ -153,15 +160,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.deepEqual(await labels(), w.labels.ok);
         // how it went and how long, which the row says only in its last columns (#799)
         assert.deepEqual((await values()).slice(0, 2).map((v) => v.replace(/[^\d.]/g, "")), ["200", "2.4"]);
-        assert.deepEqual((await values()).slice(2, 5), ["chatcmpl-77", "/v1/messages → /v1/chat/completions", w.subagent]);
+        // how fast it wrote (#860)
+        assert.equal((await values())[2], w.speed);
+        assert.deepEqual((await values()).slice(3, 7), ["chatcmpl-77", "/v1/messages → /v1/chat/completions", "Anthropic → Chat", w.subagent]);
         // the first token split: magpie's own 40 ms, the vendor's 660 ms
-        assert.deepEqual((await values()).slice(6, 8).map((v) => v.match(/^\d+/)?.[0]), ["40", "660"]);
+        assert.deepEqual((await values()).slice(8, 10).map((v) => v.match(/^\d+/)?.[0]), ["40", "660"]);
         await reader.click(p, rows.nth(2));
         assert.deepEqual(await p.locator(".led tbody tr.led-detail").count(), 2);
         assert(!(await p.locator(".led-detail").nth(1).locator("dd.bad").count()), "a session file's success has nothing in red");
         assert.equal((await p.locator(".led-detail").nth(1).locator("dd").last().textContent()), w.noStatus);
         await reader.click(p, rows.nth(3));
-        assert.deepEqual(await p.locator(".led-detail").nth(2).locator("dt").allTextContents(), w.labels.logFail);
+        assert.deepEqual(await p.locator(".led-detail").nth(2).locator("dt:not(.lc-opt)").allTextContents(), w.labels.logFail);
         assert.equal(await p.locator(".led-detail").nth(2).locator("dd").nth(2).textContent(), "You've hit your limit · resets 3am");
 
         // a refresh of the list keeps the rows open

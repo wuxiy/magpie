@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -35,7 +36,7 @@ func listenAddr() string {
 func Port() string {
 	_, p, err := net.SplitHostPort(Addr())
 	if err != nil {
-		return "3425"
+		return strconv.Itoa(settings.DefaultPort)
 	}
 	return p
 }
@@ -147,7 +148,8 @@ func LANURLs() []string {
 }
 
 // Relisten moves the gateway to where settings now say it listens — onto
-// the network or back to loopback. Requests in flight finish.
+// the network or back to loopback, or to another port. Requests in flight
+// finish.
 func (s *Server) Relisten() error {
 	migrateLANKeyBestEffort()
 	s.lnMu.Lock()
@@ -160,6 +162,19 @@ func (s *Server) Relisten() error {
 		return nil
 	}
 	was := s.ln.Addr().String()
+	// another port (Settings' port changed): the new one is taken up before
+	// the old one lets go, so one the gateway can't have leaves it serving
+	// where it was
+	if _, p, _ := net.SplitHostPort(was); p != Port() {
+		ln, err := Listen(to)
+		if err != nil {
+			return err
+		}
+		old := s.ln
+		s.ln = ln
+		old.Close()
+		return nil
+	}
 	// the port is the same, so the old one goes first
 	s.ln.Close()
 	ln, err := Listen(to)

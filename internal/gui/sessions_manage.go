@@ -140,6 +140,41 @@ func sessionManageRoutes(mux *http.ServeMux, w Windows) {
 		forgetStats()
 		writeJSON(rw, out)
 	})
+	// codex-provider moves Codex sessions to another provider, each to its
+	// own (the one Codex uses now, or the one it had, to undo): Codex's
+	// history lists only the sessions of the provider it uses (#887).
+	mux.HandleFunc("POST /api/sessions/codex-provider", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Moves []struct {
+				ID string `json:"id"`
+				To string `json:"to"`
+			} `json:"moves"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		type refused struct {
+			ID     string `json:"id"`
+			Error  string `json:"error"`
+			Active bool   `json:"active"`
+		}
+		out := struct {
+			Moved   []sessions.CodexMove `json:"moved"`
+			Refused []refused            `json:"refused"`
+		}{Moved: []sessions.CodexMove{}, Refused: []refused{}}
+		for _, m := range in.Moves {
+			mv, err := sessions.MoveCodexProvider(m.ID, m.To)
+			if err != nil {
+				out.Refused = append(out.Refused, refused{ID: m.ID, Error: err.Error(), Active: errors.Is(err, sessions.ErrActive)})
+				continue
+			}
+			mv.Backup = tilde(mv.Backup)
+			out.Moved = append(out.Moved, mv)
+		}
+		forgetStats()
+		writeJSON(rw, out)
+	})
 	mux.HandleFunc("POST /api/sessions/restore", func(rw http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Key string `json:"key"`

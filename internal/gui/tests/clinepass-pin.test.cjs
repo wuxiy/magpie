@@ -1,8 +1,9 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // ClinePass's DeepSeek models pinned to DeepSeek's own API (White Immortal
 // on Discord): the editor of a Cline provider has the tick, as saved; Save
-// posts pinUpstream as ticked. Another provider's editor has no such tick.
-// In English and Chinese.
+// posts pinUpstream as ticked. The Cline plugin's provider, an account's
+// editor, has it too (ARNO on Discord). Another provider's editor has no
+// such tick. In English and Chinese.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -16,6 +17,15 @@ const cline = {
   models: [{ id: "cline-pass/deepseek-v4-pro", name: "DeepSeek V4 Pro", on: true }], agents: [], fallback: [], headers: {},
   key: { set: true, masked: "clp_…one" }, keyList: [], balanceToken: { takes: false, set: false }, proxy: "", maxConcurrency: null,
 };
+// the Cline plugin's provider (ARNO on Discord): an account's editor, pinned
+// as saved
+const plugin = {
+  id: "cline-plugin", name: "Cline", icon: "cline", cline: true, pinUpstream: true,
+  chat: "plugin://cline/v1", responses: "", anthropic: "", catalog: "",
+  models: [{ id: "cline-pass/deepseek-v4-pro", name: "DeepSeek V4 Pro", on: true }], agents: [], fallback: [], headers: {},
+  key: { set: false, masked: "", optional: true }, keyList: [], balanceToken: { takes: false, set: false }, proxy: "", maxConcurrency: null, ready: true,
+  account: { agent: "cline-plugin", agentName: "Cline", agentIcon: "cline", builtin: "", user: "a@cline", logins: [{ user: "a@cline", active: true, on: true }] },
+};
 const relay = {
   id: "relay", name: "Relay", icon: "generic", chat: "https://relay.example.com/v1", responses: "", anthropic: "", catalog: "",
   models: [{ id: "model-a", name: "Model A", on: true }], agents: [], fallback: [], headers: {},
@@ -23,7 +33,7 @@ const relay = {
 };
 
 function serve(lang, posts) {
-  const providers = { providers: [cline, relay], presets: [], excluded: [], gateway: { running: true, window: true } };
+  const providers = { providers: [cline, plugin, relay], presets: [], excluded: [], gateway: { running: true, window: true } };
   const state = { agents: [], profiles: [], settings: { lang, theme: "light" } };
   return async (route) => {
     const url = new URL(route.request().url());
@@ -79,6 +89,21 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(saved.action, "save");
       assert.equal(saved.body.id, "clinepass");
       assert.equal(saved.body.pinUpstream, true);
+
+      // the Cline plugin's provider has it too, ticked as saved; unticked,
+      // Save posts it off
+      await page.locator(".row.provider", { hasText: /^Cline(?!Pass)/ }).first().click();
+      await page.locator(".editor input.price-rate").waitFor();
+      const ptick = page.locator(".editor label.pin-upstream");
+      assert.equal((await ptick.textContent()).trim(), w.tick);
+      assert.equal(await ptick.locator("input").isChecked(), true, "pinned as saved");
+      await ptick.locator("input").uncheck();
+      const m = posts.length;
+      await page.locator(".editor .bar").getByRole("button", { name: w.save, exact: true }).click();
+      for (let i = 0; i < 50 && posts.length === m; i++) await page.waitForTimeout(50);
+      assert.equal(posts.at(-1).action, "save");
+      assert.equal(posts.at(-1).body.id, "cline-plugin");
+      assert.equal(posts.at(-1).body.pinUpstream, false);
 
       await page.locator(".row.provider", { hasText: "Relay" }).click();
       await page.locator(".editor input.price-rate").waitFor();

@@ -29,8 +29,16 @@ func TestBuiltinMarket(t *testing.T) {
 		if !x.Community {
 			t.Errorf("%s: only magpie's community's plugins are listed", x.Package)
 		}
-		if len(x.Providers) == 0 || x.Icon == "" {
+		// gateway middleware signs in to nothing
+		if x.Kind == "middleware" {
+			if len(x.Providers) != 0 || x.Replaces != "" {
+				t.Errorf("%s: middleware with providers", x.Package)
+			}
+		} else if len(x.Providers) == 0 || x.Icon == "" {
 			t.Errorf("%s: needs providers and an icon", x.Package)
+		}
+		if x.Kind != "" && x.Kind != "middleware" {
+			t.Errorf("%s: kind %q", x.Package, x.Kind)
 		}
 	}
 	if len(l) < 10 {

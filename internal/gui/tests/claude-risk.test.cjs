@@ -36,7 +36,7 @@ function server(lang, asked) {
 
 const L = {
   en: { title: "Claude accounts can be suspended", note: /^Anthropic may suspend or ban a Claude account it sees used outside its own apps\..*at your own risk\./, anyway: "Sign in anyway", cancel: "Cancel" },
-  zh: { title: "Claude 账号可能被封禁", note: /^Anthropic 官方可能会封禁在其官方应用之外使用的 Claude 账号。.*风险由你自行承担。/, anyway: "仍然登录", cancel: "取消" },
+  zh: { title: "Claude 账号可能被封禁", note: /^Anthropic 可能封禁在其官方应用之外使用的 Claude 账号。.*风险自负。/, anyway: "仍然登录", cancel: "取消" },
 };
 
 // where everything that can scroll stands

@@ -316,3 +316,20 @@ func TestLibraryPage(t *testing.T) {
 		t.Fatalf("servers %+v", s)
 	}
 }
+
+// A first run has no model catalog: Init syncs it, the status line says so
+// until it is done, and S doesn't start a second sync meanwhile.
+func TestFirstRunShowsCatalogSync(t *testing.T) {
+	home(t)
+	m := newModel()
+	m.w, m.h = 120, 40
+	if m.Init() == nil {
+		t.Fatal("no catalog, and Init didn't sync it")
+	}
+	if !m.syncing || !strings.Contains(m.View(), "syncing model catalog") {
+		t.Fatalf("syncing %v:\n%s", m.syncing, m.View())
+	}
+	if _, cmd := m.Update(keyMsg("S")); cmd != nil {
+		t.Fatal("S started a second sync while the first runs")
+	}
+}

@@ -132,7 +132,7 @@ func TestDriftUnwiredEveryAgent(t *testing.T) {
 	for _, a := range All() {
 		// agy's gateway is in the command that starts it, in no file (its
 		// Check is TestAgy's)
-		if a.Check == nil || a.Launch != nil {
+		if a.Check == nil || a.Launch != nil || a.Native != nil {
 			continue
 		}
 		// a WSL agent's files live in the distro, beyond the sandbox home:

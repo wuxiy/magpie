@@ -38,7 +38,7 @@ function server(lang, asked) {
 
 const L = {
   en: { title: "Factory accounts can be suspended", note: /Factory serves these models to its own Droid CLI/, anyway: "Sign in anyway", device: /Factory's sign-in page/ },
-  zh: { title: "Factory 账号可能被封禁", note: /Factory 只向自己的 Droid CLI 提供这些模型/, anyway: "仍然登录", device: /Factory 的登录页/ },
+  zh: { title: "Factory 账号可能被封禁", note: /Factory 只向自己的 Droid CLI 提供这些模型/, anyway: "仍然登录", device: /Factory 登录页/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

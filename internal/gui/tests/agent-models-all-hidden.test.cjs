@@ -98,6 +98,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const pop = page.locator(".am-pop:not(.leaving)");
       await pop.waitFor();
       await pop.locator(".am-hide").click();
+      await pop.locator(".am-hide").click();
       await page.waitForTimeout(150);
       assert.equal(fx.posts.at(-1).length, 3);
       assert.equal((await hint.innerText()).trim(), w.none);
@@ -119,6 +120,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await pop.waitFor();
       const showAll = pop.locator(".am-reset:not(.am-hide)");
       assert.equal(await showAll.innerText(), w.showAll);
+      await showAll.click();
       await showAll.click();
       await page.waitForTimeout(150);
       assert.deepEqual(fx.posts.at(-1), []);

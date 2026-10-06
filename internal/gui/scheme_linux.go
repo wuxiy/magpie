@@ -13,6 +13,10 @@ import (
 // entry that claims the scheme, then the desktop's default for it. An
 // entry that already runs this executable and claims it is left alone.
 func registerScheme() error {
+	// The package supplies the host entry; this executable is inside the sandbox.
+	if os.Getenv("FLATPAK_ID") != "" {
+		return nil
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return err

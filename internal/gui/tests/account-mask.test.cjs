@@ -44,7 +44,7 @@ function serve(lang, panel) {
 
 const words = {
   en: { hide: "Hide accounts", hidden: "Accounts hidden", tip: /^Mask the accounts/, back: /click to show them/ },
-  zh: { hide: "账号打码", hidden: "账号已打码", tip: /^给本页的账号/, back: /点一下即可显示/ },
+  zh: { hide: "账号打码", hidden: "账号已打码", tip: /^给本页的账号/, back: /点击显示/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

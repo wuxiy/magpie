@@ -303,7 +303,7 @@ func Put(b *Bundle) (*Result, error) {
 			if err != nil {
 				return nil
 			}
-			if fi.Mode()&fs.ModeSymlink != 0 {
+			if linkEntry(fi) {
 				return os.Remove(p) // a folder of the user's: only the link goes
 			}
 			if err := os.MkdirAll(aside, 0o700); err != nil {
@@ -328,7 +328,7 @@ func Put(b *Bundle) (*Result, error) {
 				return err
 			}
 			if dir, ok := link[s.Name]; ok {
-				if err := os.Symlink(dir, skillDir(s.Name)); err != nil {
+				if err := dirLink(dir, skillDir(s.Name)); err != nil {
 					if err := copyDir(dir, skillDir(s.Name)); err != nil {
 						return err
 					}

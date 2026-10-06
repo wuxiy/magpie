@@ -112,6 +112,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // the id, not the name it is shown by
       assert.equal(await copyOf("GLM 5.3 Flash"), "zai/glm-5.3-flash");
+      // (the fake server has the id before the page has its answer: wait for the footer)
+      await page.waitForFunction((s) => document.querySelector("#status").textContent === s, w.said("zai/glm-5.3-flash")).catch(() => {});
       assert.equal(await page.locator("#status").textContent(), w.said("zai/glm-5.3-flash"));
       assert.equal(await copyOf("cline-free/mimo-v2.6-flash"), "cline-free/mimo-v2.6-flash");
       assert.equal(await copyOf("gpt-5.1"), "gpt-5.1");

@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/yetone/magpie/internal/edit"
-	"github.com/yetone/magpie/internal/gateway"
 )
 
 // kimiModelTable is the header prefix of every model table magpie writes.
@@ -130,7 +129,7 @@ func kimiIn(at place) *Agent {
 		if err := edit.SetTOMLTable(path, providerTable,
 			edit.KV{Path: "type", Value: "kimi"},
 			edit.KV{Path: "base_url", Value: at.v1()},
-			edit.KV{Path: "api_key", Value: gateway.Token},
+			edit.KV{Path: "api_key", Value: at.gwKey()},
 		); err != nil {
 			return err
 		}
@@ -191,7 +190,7 @@ func kimiIn(at place) *Agent {
 				return "Kimi Code's [" + providerTable + "] (config.toml) is gone, so it no longer reaches magpie"
 			}
 			return wiringOff("Kimi Code", path, func(k string) (string, bool) { v, ok := t[k]; return v, ok },
-				"base_url", at.v1(), "api_key", gateway.Token)
+				"base_url", at.v1(), "api_key", at.gwKey())
 		},
 		Fields: []Field{{
 			Key: "model", Label: "model",

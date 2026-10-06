@@ -237,7 +237,7 @@ func TestCursor(t *testing.T) {
 	if !ok {
 		t.Fatal("the chat isn't listed")
 	}
-	if s.Title != "Start the port of the parser" || s.Cwd != curCwd {
+	if s.Title != "Port the parser" || s.Cwd != curCwd {
 		t.Fatalf("title %q cwd %q", s.Title, s.Cwd)
 	}
 	if !s.Start.Equal(time.UnixMilli(curT0)) || !s.Last.Equal(time.UnixMilli(curT1)) {
@@ -254,7 +254,7 @@ func TestCursor(t *testing.T) {
 		t.Fatalf("resume %q, want %q", s.Resume, want)
 	}
 	o, ok := findSession(ss, "cursor", curOther)
-	if !ok || o.Title != "tidy the imports" || o.Cwd != "" || o.Resume != "" {
+	if !ok || o.Title != "Tidy imports" || o.Cwd != "" || o.Resume != "" {
 		t.Fatalf("the chat with no meta.json: %+v (its folder unknown, it has no resume)", o)
 	}
 	if !o.Last.Equal(curOld) {
@@ -330,7 +330,7 @@ func TestCursorDelete(t *testing.T) {
 		}
 	}
 	Reset()
-	if s, ok := findSession(List(0), "cursor", curMain); !ok || s.Title != "Start the port of the parser" {
+	if s, ok := findSession(List(0), "cursor", curMain); !ok || s.Title != "Port the parser" {
 		t.Fatalf("the restored chat: %+v", s)
 	}
 }

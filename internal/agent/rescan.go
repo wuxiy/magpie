@@ -15,7 +15,7 @@ func Rescan() {
 	cursorLocalSeen.Unlock()
 
 	wsl.Lock()
-	wsl.at = time.Time{}
+	wsl.at, wsl.runAt = time.Time{}, time.Time{}
 	// a running distro is asked again, and one that failed is retried now
 	// rather than in ten minutes
 	wsl.probed, wsl.failed = map[string]bool{}, map[string]time.Time{}

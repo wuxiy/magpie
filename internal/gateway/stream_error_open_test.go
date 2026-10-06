@@ -30,7 +30,7 @@ func TestStreamErrorKeptOpenFailsOverAtOnce(t *testing.T) {
 			`data: {"error":{"code":429,"type":"rate_limit_error","message":"rate limited"}}`),
 		provider.Responses: sse(`event: response.created`+"\n"+`data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress","output":[]}}`,
 			`event: response.failed`+"\n"+`data: {"type":"response.failed","response":{"status":"failed","error":{"code":"rate_limit_exceeded","message":"rate limited"}}}`),
-		provider.Anthropic: sse(`event: error`+"\n"+`data: {"type":"error","error":{"type":"rate_limit_error","message":"rate limited"}}`),
+		provider.Anthropic: sse(`event: error` + "\n" + `data: {"type":"error","error":{"type":"rate_limit_error","message":"rate limited"}}`),
 	}
 	for _, proto := range provider.Protocols {
 		for _, both := range []bool{false, true} {

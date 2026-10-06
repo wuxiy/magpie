@@ -52,10 +52,10 @@ func TestHermesUsageAddsMainResidualWhenOnlyAuxiliaryRowsExist(t *testing.T) {
 	setup(t)
 	path := hermesTaskUsageFixture(t, "aux-only", nil)
 	s := hermesSessionByID(t, hermesID(path, "aux-only"))
-	if got := model(s, "fallback-model").Tokens; got != (Tokens{90, 30, 40, 10}) {
+	if got := model(s, "fallback-model").Tokens; got != (Tokens{90, 30, 40, 10, 0}) {
 		t.Fatalf("main-loop residual = %+v, want sessions aggregate", got)
 	}
-	if got := model(s, "actual-model").Tokens; got != (Tokens{100, 50, 25, 15}) {
+	if got := model(s, "actual-model").Tokens; got != (Tokens{100, 50, 25, 15, 0}) {
 		t.Fatalf("auxiliary usage = %+v", got)
 	}
 	// Hermes does not emit Calls; verify no leakage.
@@ -114,13 +114,13 @@ func TestHermesUsageResidualSubtractsMainAttributionOnly(t *testing.T) {
 	setup(t)
 	path := hermesTaskUsageFixture(t, "mixed", &Tokens{Input: 60, Output: 20, CacheRead: 10, CacheWrite: 5})
 	s := hermesSessionByID(t, hermesID(path, "mixed"))
-	if got := model(s, "main-model").Tokens; got != (Tokens{60, 20, 10, 5}) {
+	if got := model(s, "main-model").Tokens; got != (Tokens{60, 20, 10, 5, 0}) {
 		t.Fatalf("main attribution = %+v", got)
 	}
-	if got := model(s, "fallback-model").Tokens; got != (Tokens{30, 10, 30, 5}) {
+	if got := model(s, "fallback-model").Tokens; got != (Tokens{30, 10, 30, 5, 0}) {
 		t.Fatalf("main residual = %+v, want remaining sessions aggregate", got)
 	}
-	if got := model(s, "actual-model").Tokens; got != (Tokens{100, 50, 25, 15}) {
+	if got := model(s, "actual-model").Tokens; got != (Tokens{100, 50, 25, 15, 0}) {
 		t.Fatalf("auxiliary usage changed = %+v", got)
 	}
 }

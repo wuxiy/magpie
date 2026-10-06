@@ -56,7 +56,7 @@ function serve(lang, sets) {
 
 const words = {
   en: { effort: "restart it to use this", ultra: "keeps the ultracode it started with" },
-  zh: { effort: "仍按启动时的推理强度运行", ultra: "仍按启动时的 ultracode 设置运行" },
+  zh: { effort: "仍用启动时的推理强度", ultra: "仍用启动时的 ultracode 设置" },
 };
 const row = (id) => `.row.agent[data-id="${id}"]`;
 

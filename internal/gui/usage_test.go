@@ -288,6 +288,22 @@ func TestLedgerSingleSnapshotAndLocalSession(t *testing.T) {
 	}
 }
 
+// A model at a provider is named by both, with the provider's icon, so
+// one model's speed at each provider reads apart (inaction on Discord).
+func TestLedgerNamesModelAtProvider(t *testing.T) {
+	sandboxHome(t)
+	before := usage.LogCalls
+	usage.LogCalls = func(time.Time) []sessions.Call {
+		return []sessions.Call{{Time: time.Now(), Agent: "claude", Session: "s", Model: "claude-sonnet-5", Tokens: sessions.Tokens{Input: 10, Output: 2}}}
+	}
+	t.Cleanup(func() { usage.LogCalls = before })
+	l := ledgerPage(usage.Today, usage.Filter{}, 0, 1)
+	at := l.By["modelAt"]
+	if len(at) != 1 || at[0].ID != usage.ModelAtKey(usage.UnknownProvider, "claude-sonnet-5") || at[0].Name != "claude-sonnet-5 · Local session" {
+		t.Fatalf("model at provider %+v", at)
+	}
+}
+
 func TestCSVStamp(t *testing.T) {
 	for _, day := range []string{"", "2026-02-30", "../../other", "2026-09-30\""} {
 		want := "magpie-requests-7d-" + time.Now().Format(time.DateOnly)

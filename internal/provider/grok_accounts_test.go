@@ -120,9 +120,6 @@ func TestGrokAccounts(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(own, "auth.json")); len(b) == 0 {
 		t.Fatal("the CLI's own sign-in was touched")
 	}
-	if err := ForgetLogin("grok", "two@x.ai"); err == nil {
-		t.Fatal("forgot the account in use first")
-	}
 	if err := SetLoginOn("grok", "me@x.ai", false); err != nil {
 		t.Fatal(err)
 	}

@@ -117,7 +117,7 @@ func TestHermesListStatsCallsAndContent(t *testing.T) {
 		if !s.ReadOnly || s.Resume != "" || s.Title != "A Hermes task" || s.Cwd != "/work/hermes" {
 			t.Errorf("metadata/read-only state: %+v", s)
 		}
-		if m := model(s, "actual-model"); m.Tokens != (Tokens{100, 50, 25, 15}) {
+		if m := model(s, "actual-model"); m.Tokens != (Tokens{100, 50, 25, 15, 0}) {
 			t.Errorf("usage aggregate: %+v", m)
 		}
 		if model(s, "fallback-model").Model != "" {
@@ -141,7 +141,7 @@ func TestHermesListStatsCallsAndContent(t *testing.T) {
 			}
 		}
 	}
-	if total != (Tokens{200, 100, 50, 30}) {
+	if total != (Tokens{200, 100, 50, 30, 0}) {
 		t.Errorf("Hermes stats total = %+v", total)
 	}
 
@@ -162,7 +162,7 @@ func TestHermesUsageFallbackAndLiveRefresh(t *testing.T) {
 	path := hermesFixture(t, root, "", "fallback", false)
 
 	first := hermesSessionByID(t, hermesID(path, "fallback"))
-	if got := model(first, "fallback-model").Tokens; got != (Tokens{90, 30, 40, 10}) {
+	if got := model(first, "fallback-model").Tokens; got != (Tokens{90, 30, 40, 10, 0}) {
 		t.Fatalf("session aggregate fallback = %+v", got)
 	}
 
@@ -192,7 +192,7 @@ func TestHermesUsageFallbackAndLiveRefresh(t *testing.T) {
 	if updated.Title != "Updated title" {
 		t.Errorf("title not refreshed: %q", updated.Title)
 	}
-	if got := model(updated, "new-model").Tokens; got != (Tokens{11, 7, 3, 2}) {
+	if got := model(updated, "new-model").Tokens; got != (Tokens{11, 7, 3, 2, 0}) {
 		t.Errorf("WAL usage not refreshed: %+v", got)
 	}
 	// The bucket timestamp intentionally stays fixed. Newly observed usage
@@ -208,7 +208,7 @@ func TestHermesUsageFallbackAndLiveRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	updated = hermesSessionByID(t, hermesID(path, "fallback"))
-	if updated.Title != "Changed again" || model(updated, "new-model").Tokens != (Tokens{13, 9, 4, 3}) {
+	if updated.Title != "Changed again" || model(updated, "new-model").Tokens != (Tokens{13, 9, 4, 3, 0}) {
 		t.Errorf("same-mtime usage/title refresh: %+v", updated)
 	}
 }

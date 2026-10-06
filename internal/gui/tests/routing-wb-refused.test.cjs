@@ -3,7 +3,10 @@
 // prompt, #182): the Routing page's story gives the vendor's words as they
 // were, and what to do about it apart from them, in the page's language
 // (Discord, v0.1.478: WorkBuddy AI: Illegal API invocation from an
-// unapproved channel).
+// unapproved channel). Told as the agent's prompt turned away, which no
+// reasoning level changes: the level it went at is left out of it (Discord,
+// lemon: "at low reasoning … low is the model's nearest to the none LCode
+// asked for" read as the level's fault).
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -17,14 +20,16 @@ const at = (i) => new Date(now.getTime() - (i + 1) * 60e3).toISOString();
 const hint = "WorkBuddy refuses chats from Codex and Claude Code (their system prompt); use it from Hermes, OpenCode or Pi, or add another provider to this group";
 const vendor = "WorkBuddy AI: Illegal API invocation from an unapproved channel";
 const key = { id: "workbuddy-ai", provider: "workbuddy-ai", name: "WorkBuddy AI", kind: "provider", model: "deepseek-v4.1-flash" };
-// newest first: the refusal, then another 400 with nothing to add
+// newest first: the refusal (sent at low, none asked), then another 400
+// with nothing to add
 const errs = [vendor + " — " + hint, "WorkBuddy AI: first message is not system prompt", "", "", "", ""];
 const routes = errs.map((error, i) => {
   const status = error ? 400 : 200;
   return {
     id: 100 - i, seq: 100 - i, time: at(i), agent: "codex", model: "workbuddy-ai/deepseek-v4.1-flash", provider: "workbuddy-ai",
-    order: [key], tries: [{ id: key.id, model: key.model, start: at(i), done: true, status, ms: 400, ...(error ? { error } : {}) }],
-    done: true, status, ms: 400, ...(error ? { error } : {}),
+    order: [key], tries: [{ id: key.id, model: key.model, start: at(i), done: true, status, ms: 400, ...(error ? { error } : {}),
+      ...(i === 0 ? { fail: "prompt", effort: "low" } : {}) }],
+    done: true, status, ms: 400, ...(error ? { error } : {}), ...(i === 0 ? { effort: "none" } : {}),
   };
 });
 
@@ -55,8 +60,8 @@ function serve(lang) {
 }
 
 const want = {
-  en: { said: "It said: " + vendor, hint },
-  zh: { said: "原话：" + vendor, hint: "WorkBuddy 会拒绝来自 Codex 和 Claude Code 的对话（因为它们的系统提示词）；请在 Hermes、OpenCode 或 Pi 里使用它，或在这个分组里再加一个供应商" },
+  en: { said: "It said: " + vendor, hint, why: "the vendor turns away Codex's system prompt whichever account it goes to", level: "low reasoning" },
+  zh: { said: "原话：" + vendor, hint: "WorkBuddy 会因系统提示词拒绝 Codex 和 Claude Code 的对话；请在 Hermes、OpenCode 或 Pi 中使用，或在此分组中再加一个供应商", why: "服务商不接受 Codex 的系统提示词，换哪个账号都一样", level: "low 推理" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -77,7 +82,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await browser.close();
       });
       await page.goto("http://magpie.test/?view=routing");
-      await page.locator(".rt-day").nth(1).click();
+      await page.locator(".rt-days .rt-day").nth(1).click();
       await page.locator(".rt-req").nth(errs.length - 1).waitFor();
 
       const steps = async () => page.locator(".rt-steps li").evaluateAll((ls) => ls.map((l) => [l.className, l.textContent]));
@@ -91,6 +96,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(got.filter(([c]) => c === "aside said").map(([, s]) => s), [want[lang].said]);
       // and the hint on its own line, in the page's language
       assert.deepEqual(got.filter(([, s]) => s === want[lang].hint).map(([c]) => c), ["aside"]);
+      // the try told as the prompt turned away, not at a level
+      const told = got.map(([, s]) => s).filter((s) => s.includes(want[lang].why));
+      assert.equal(told.length, 1, JSON.stringify(got));
+      assert(!told[0].includes(want[lang].level), told[0]);
 
       // another 400 gets no hint
       await page.locator(".rt-req").nth(1).click();

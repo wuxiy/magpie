@@ -26,7 +26,7 @@ func TestCodexUsageBothCountersRestartAfterLegacyHistory(t *testing.T) {
 			if cs := Calls(time.Time{}); len(cs) != 5 {
 				t.Fatalf("calls=%+v", cs)
 			}
-			if ss := List(0); len(ss) != 1 || ss[0].Tokens != (Tokens{400, 50, 100, 0}) {
+			if ss := List(0); len(ss) != 1 || ss[0].Tokens != (Tokens{400, 50, 100, 0, 0}) {
 				t.Fatalf("summary=%+v", ss)
 			}
 		})
@@ -43,7 +43,7 @@ func TestCodexUsageLargerFirstRequestAfterLegacyReset(t *testing.T) {
 	if cs := Calls(time.Time{}); len(cs) != 2 {
 		t.Fatalf("new runtime's first request lost or replay counted: %+v", cs)
 	}
-	if ss := List(0); len(ss) != 1 || ss[0].Tokens != (Tokens{46055, 1281, 137984, 0}) {
+	if ss := List(0); len(ss) != 1 || ss[0].Tokens != (Tokens{46055, 1281, 137984, 0, 0}) {
 		t.Fatalf("summary=%+v", ss)
 	}
 }

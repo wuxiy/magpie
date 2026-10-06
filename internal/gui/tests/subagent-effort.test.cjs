@@ -68,7 +68,7 @@ const W = {
     title: "subagent effort", def: "default", high: "high", set: "subagent effort: high", follows: "subagents: same as model",
   },
   zh: {
-    unset: "子 agent 推理强度：默认\n跟随当前会话的推理强度；子 agent 指定了模型时，用该模型的默认强度",
+    unset: "子 agent 推理强度：默认\n跟随会话的推理强度，或子 agent 模型的默认强度",
     title: "子 agent 推理强度", def: "默认", high: "高", set: "子 agent 推理强度：高", follows: "子 agent：同主模型",
   },
 };

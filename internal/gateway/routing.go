@@ -108,6 +108,10 @@ const (
 var (
 	// creditWords: the account or key has no money left.
 	creditWords = regexp.MustCompile(`(?i)insufficient.?(balance|credit|fund)|balance|credit|billing|payment|arrear|overdue|suspended|余额|欠费|充值|账户.*(不足|停)`)
+	// brokeWords: a 429 that says the balance itself is spent, as Zhipu
+	// answers a GLM Coding Plan's key at the pay-as-you-go endpoint (1113
+	// "余额不足或无可用资源包，请充值") — out of credit, not a rate limit
+	brokeWords = regexp.MustCompile(`(?i)insufficient.?(balance|credit|fund)|余额不足|欠费|请充值`)
 	// quotaWords: it has used up what its plan allows for now.
 	usedUpWords = regexp.MustCompile(`(?i)quota|usage.?limit|out of budget|budget (exceeded|exhausted)|limit.?reached|hit your .*limit|limit.{0,24}resets|exceeded.*(plan|limit)|额度|用量|套餐|上限`)
 	// rateWords: a 429 that is a short rate limit — requests or tokens per
@@ -151,6 +155,10 @@ const (
 	// failShape: the vendor couldn't read the request's shape (#350) — the
 	// next one is asked, and nobody rests
 	failShape = "shape"
+	// failPrompt: the vendor turns away the agent's system prompt, as
+	// WorkBuddy's "unapproved channel" does Claude Code's — the next one is
+	// asked, its own mates last, and nobody rests
+	failPrompt = "prompt"
 	// failEffort: the account's plan doesn't take the reasoning level
 	// asked for (#520) — another account is asked, and nobody rests
 	failEffort = "effort"
@@ -184,7 +192,7 @@ func failure(status int, body []byte) string {
 		// Kimi's "exceeded model token limit" is the conversation's
 		// length, not the plan's
 		return failOther
-	case status == 402, creditWords.Match(body) && status != 429 || strings.Contains(string(body), "insufficient_quota"):
+	case status == 402, creditWords.Match(body) && (status != 429 || brokeWords.Match(body)) || strings.Contains(string(body), "insufficient_quota"):
 		return failCredit
 	case status == 429 && rateWords.Match(body) && !plannedWords.Match(body):
 		return failRate
@@ -328,6 +336,10 @@ func (s *Server) restAfterMarked(c candidate, status int, header http.Header, bo
 	now := time.Now()
 	d := fallbackCooldown
 	why := failureOf(c, status, body)
+	// read before the allowance is asked again below: out of a pool that
+	// counts some models only, the account's others are still in theirs
+	// (Cursor's Auto with Other Models used up)
+	pooled := why == failQuota && c.pooled(now)
 	r := Rest{Why: why, Status: status, By: "cooldown"}
 	if why == failProxy {
 		// the account is as good as it was; the proxy is the user's to start
@@ -396,6 +408,9 @@ func (s *Server) restAfterMarked(c candidate, status int, header http.Header, bo
 	// OpenRouter identifies a provider's shared pool separately from its
 	// account-wide free-tier limit. Only the former leaves sibling models ready.
 	if why == failRate && c.isOpenRouterFree() && sharedPool {
+		id = c.restID()
+	}
+	if pooled {
 		id = c.restID()
 	}
 	r.Key = id

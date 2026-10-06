@@ -371,3 +371,59 @@ func TestSearcherFindingNothingGivesWay(t *testing.T) {
 		t.Fatalf("blocks %v", blocks)
 	}
 }
+
+// With the search APIs put first (#928), a search goes to them before the
+// provider that can search; the provider searches only when they all fail.
+// Left as it was, the provider is asked first and the APIs not at all.
+func TestSearchAPIsFirst(t *testing.T) {
+	searchSandbox(t)
+	ds := newFakeDeepSeek(t)
+	glm, result := newBlindModel(t)
+	apis := newSearchAPIs(t)
+	searchesOn(t, provider.Responses, ds.URL)
+	save(t, provider.Provider{ID: "ds", Name: "DeepSeek", Key: "k", Responses: ds.URL + "/v1", Models: []string{"deepseek-flash"}},
+		provider.Provider{ID: "glm", Name: "GLM", Key: "k", Chat: glm.URL, Models: []string{"glm-flash"}})
+	if err := provider.SetSearchAPI(apis.api("tavily", "tvly-k")); err != nil {
+		t.Fatal(err)
+	}
+
+	searchAsClaudeCode(t)
+	if len(ds.searches()) != 1 || len(apis.asked) != 0 {
+		t.Fatalf("by default: DeepSeek asked %q, the APIs %q", ds.searches(), apis.asked)
+	}
+	if r := result(); !strings.Contains(r, "22/17℃") {
+		t.Fatalf("the model was told %q", r)
+	}
+
+	st := settings.Load()
+	st.SearchFirst = settings.SearchFirstAPI
+	if err := settings.Save(st); err != nil {
+		t.Fatal(err)
+	}
+	searchAsClaudeCode(t)
+	if len(ds.searches()) != 1 || strings.Join(apis.asked, "|") != "tavily: 今天上海天气" {
+		t.Fatalf("APIs first: DeepSeek asked %q, the APIs %q", ds.searches(), apis.asked)
+	}
+	if r := result(); !strings.Contains(r, "go1.27.1") {
+		t.Fatalf("the model was told %q", r)
+	}
+
+	// the APIs failing, the provider searches after them
+	apis.asked, apis.broken = nil, true
+	searchAsClaudeCode(t)
+	if len(ds.searches()) != 2 || len(apis.asked) != 1 {
+		t.Fatalf("APIs down: DeepSeek asked %q, the APIs %q", ds.searches(), apis.asked)
+	}
+	if r := result(); !strings.Contains(r, "22/17℃") {
+		t.Fatalf("the model was told %q", r)
+	}
+
+	st.SearchFirst = "nonsense"
+	if err := settings.Save(st); err == nil {
+		t.Fatal("an unknown order was saved")
+	}
+	st.SearchFirst = settings.SearchFirstModel
+	if err := settings.Save(st); err != nil || settings.Load().SearchFirst != "" {
+		t.Fatalf("model first saved as %q: %v", settings.Load().SearchFirst, err)
+	}
+}
