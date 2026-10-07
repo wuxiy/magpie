@@ -59,6 +59,9 @@ type Route struct {
 	Millis   int64        `json:"ms,omitempty"`
 	Tokens   int          `json:"tokens,omitempty"`
 	Output   int          `json:"out,omitempty"` // of Tokens, the reply's
+	// Reasoning: of Output, the reply's reasoning, which its speed leaves
+	// out (usage.DecodeOf)
+	Reasoning int `json:"reasoning,omitempty"`
 	// TTFT: ms from the request to its reply's first content (text,
 	// reasoning or a tool call), FirstText to its first text, as Millis
 	// counts: streamed replies only (#196)

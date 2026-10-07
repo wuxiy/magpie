@@ -169,6 +169,7 @@ func accountsCmd(args []string) error {
 	for _, r := range rows {
 		width = max(width, len(r.User))
 	}
+	now := time.Now() // one instant for every window's reset time
 	for _, r := range rows {
 		mark := "  "
 		switch {
@@ -183,7 +184,7 @@ func accountsCmd(args []string) error {
 		}
 		line := fmt.Sprintf("%s%-7s %-*s %s", mark, r.Agent, width, r.User, muted.Render(fmt.Sprintf("%-8s", plan)))
 		for _, w := range r.Windows {
-			line += "  " + quotaCell(w)
+			line += "  " + quotaCell(w, now)
 		}
 		if r.Balance != "" {
 			line += "  " + balanceCell(r.Balance, r.Agent, r.User)
@@ -276,18 +277,18 @@ func accountRows(ls []provider.Login, now time.Time) []accountRow {
 	return rows
 }
 
-// quotaCell is one window in a line: "5h 42% ↻2h13m".
-func quotaCell(w quotaSpan) string {
+// quotaCell is one window in a line as of now: "5h 42% ↻2h13m 14:13".
+func quotaCell(w quotaSpan, now time.Time) string {
 	name := strings.NewReplacer(" hours", "h", " hour", "h", " days", "d", " day", "d", " · ", " ").Replace(w.Name)
 	cell := fmt.Sprintf("%s %.0f%%", name, w.Used)
 	if w.Display != "" {
 		cell += " (" + w.Display + ")"
 	}
 	if w.ResetsAt != nil {
-		if !w.ResetsAt.After(time.Now()) {
+		if !w.ResetsAt.After(now) {
 			cell += muted.Render(" · reset time passed " + w.ResetsAt.Local().Format("Jan 2 15:04"))
 		} else {
-			cell += muted.Render(" ↻" + untilShort(time.Until(*w.ResetsAt)) + " " + provider.ResetClock(*w.ResetsAt, time.Now()))
+			cell += muted.Render(" ↻" + untilShort(w.ResetsAt.Sub(now)) + " " + provider.ResetClock(*w.ResetsAt, now))
 		}
 	}
 	return cell
@@ -467,8 +468,9 @@ func refreshAccounts(asJSON bool) error {
 // checkinWorkBuddy: `magpie accounts checkin` — WorkBuddy's daily check-in
 // (签到) for each WorkBuddy (China) account not in yet today, and Trae CN's
 // (每日签到) for each Trae CN account, and MiniMax Code's for each MiniMax
-// Code account, and Qoder's daily credits for each Qoder account, now, and
-// how each stands. The
+// Code account, and Qoder's daily credits for each Qoder account, and each
+// plugin's own check-in (auth.checkin) for its accounts, now, and how each
+// stands. The
 // settings do it on their own once a day.
 func checkinWorkBuddy(asJSON bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -476,6 +478,7 @@ func checkinWorkBuddy(asJSON bool) error {
 	rs := append(provider.CheckInWorkBuddy(ctx), provider.CheckInTrae(ctx)...)
 	rs = append(rs, provider.CheckInMiniMax(ctx)...)
 	rs = append(rs, provider.CheckInQoder(ctx)...)
+	rs = append(rs, provider.CheckInPlugins(ctx)...)
 	if rs == nil {
 		rs = []provider.WorkBuddyCheckin{}
 	}
@@ -498,6 +501,10 @@ func checkinWorkBuddy(asJSON bool) error {
 			r.User = "MiniMax Code " + r.User
 		case "qoder":
 			r.User = "Qoder " + r.User
+		default:
+			if r.Vendor != "" {
+				r.User = strings.TrimSpace(r.Vendor + " " + r.User)
+			}
 		}
 		switch r.Outcome {
 		case provider.CheckinClaimed, provider.CheckinDone:
@@ -516,6 +523,8 @@ func checkinWorkBuddy(asJSON bool) error {
 			fmt.Println(muted.Render("·"), r.User, muted.Render("not eligible for the check-in"))
 		case provider.CheckinInactive:
 			fmt.Println(muted.Render("·"), r.User, muted.Render("no check-in event now"))
+		case provider.CheckinCaptcha:
+			fmt.Println(muted.Render("·"), r.User, muted.Render(strings.TrimSpace("asks for a captcha: check in in its own app "+r.Msg)))
 		default:
 			fmt.Println(muted.Render("✗"), r.User, muted.Render(r.Msg))
 		}

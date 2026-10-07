@@ -121,13 +121,15 @@ func TestHeldThinkingKeepsTheAgentAlive(t *testing.T) {
 		t.Fatalf("answered: %d %q", code, body)
 	}
 
-	// refused with nobody left: the stream's error, as its 200 went out
+	// refused with nobody left: nothing was held for it, as nobody else
+	// could answer, so the thinking came as it came and the refusal after
+	// it as Claude's own (iTianbao on X)
 	fresh(t)
 	heard = make(chan struct{})
 	thinkingOn(t, "a", anthropicThoughtThenRefused, heard)
 	refusalGroup(t, "a/claude-opus-5-5")
 	code, body = ask(t, New(), heard)
-	if code != 200 || !strings.Contains(body, ": keepalive") || !strings.Contains(body, "event: error") || strings.Contains(body, "user wants") {
+	if code != 200 || !strings.Contains(body, "user wants") || !strings.Contains(body, `"stop_reason":"refusal"`) || strings.Count(body, "event: message_start") != 1 {
 		t.Fatalf("refused, nobody left: %d %q", code, body)
 	}
 }

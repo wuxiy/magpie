@@ -40,9 +40,20 @@ type Library struct {
 	// copy (#896, skill_how.go)
 	CopySkills bool              `json:"copySkills,omitempty"`
 	SkillHow   map[string]string `json:"skillHow,omitempty"`
+	// SeenSkills are, by repository and ref ("owner/repo@ref"), the
+	// folders of skills there the page has offered: picked or not at
+	// install, or set aside after a check. A check offers only the others
+	// as new (skillnew.go).
+	SeenSkills map[string][]string `json:"seenSkills,omitempty"`
 	// kept is where a change put what it kept aside before the sync, for
 	// the sync to keep the agents' files beside it
 	kept *backups
+	// hashes are the library's skills' hashes as this change read them
+	// (libHash); one taken from an agent's edit is read again
+	hashes map[string]string
+	// untouched are the agents' copies takeEdits found unchanged since
+	// magpie made them, for the sync not to look through them again
+	untouched map[string]bool
 }
 
 // Instructions are one shared text, and for each agent whether it gets it

@@ -760,7 +760,10 @@ func groupUses() map[string][]string {
 			continue
 		}
 		v := strings.TrimPrefix(a.Fields[0].Get(), "magpie/")
-		if id, ok := strings.CutPrefix(v, provider.GroupPrefix); ok {
+		// a group an agent is on carries Claude Code's [1m] mark, as a
+		// model's does, and these are the agents' own settings: the mark
+		// comes off before the id is looked up by it (GroupFinder)
+		if id, ok := provider.GroupIDOf(v); ok {
 			out[id] = append(out[id], a.Name)
 		}
 	}

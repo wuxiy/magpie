@@ -38,5 +38,8 @@ func TestMain(m *testing.M) {
 	// applied. The Aside tests stand in for it themselves.
 	asideSet = func(string, string) error { return errors.New("aside: no Aside in a test") }
 	asideRead = func() (map[string]json.RawMessage, error) { return nil, errors.New("aside: no Aside in a test") }
+	// an address an agent is pointed at is tried over the network (Drift,
+	// #1013); never from a test, whose reach tests stand in for it
+	reachProbe = func(string) bool { return true }
 	os.Exit(testenv.Run(m))
 }

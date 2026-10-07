@@ -16,6 +16,17 @@ package agent
 // user is asked for none. The model a new chat starts on is the
 // chat.defaultModel setting (a model id: the catalog id here); picked in
 // Chat's model picker, a model is kept in VS Code's storage, not here.
+//
+// VSCodium has no Copilot Chat of its own: its users install the
+// Marketplace's, whose last release (0.48.1) has no Custom Endpoint
+// provider but an OpenAI Compatible one, customoai (xybio, #1014: only Auto
+// showed). That one takes the same group in the same file, with each
+// model's window as maxInputTokens beside maxOutputTokens, and drops an
+// Authorization in requestHeaders, so magpie's token goes as x-api-key
+// there (the gateway takes a key from either). It registers its providers
+// only while Copilot Chat is signed in to GitHub with a personal Copilot
+// plan; the Notice says so. Which of the two magpie writes is the one the
+// installed extension's package.json declares (vscodeChatOf).
 
 import (
 	"encoding/json"
@@ -23,6 +34,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/tidwall/gjson"
@@ -40,8 +52,36 @@ const vscodeDefault = `chat\.defaultModel`
 // can't change.
 const vscodeUA = "githubcopilotchat"
 
-// vscodeGroup is how magpie's group is found among the user's.
-var vscodeGroup = map[string]string{"vendor": "customendpoint", "name": magpieID}
+// The providers magpie's group can be written for: VS Code's Custom
+// Endpoint, and the OpenAI Compatible one of the Copilot Chat VSCodium
+// installs.
+const (
+	vscodeEndpoint = "customendpoint"
+	vscodeOAI      = "customoai"
+)
+
+// vscodeVendors are both, the one magpie writes when it can't tell first.
+var vscodeVendors = []string{vscodeEndpoint, vscodeOAI}
+
+// vscodeGroupOf is how magpie's group for a provider is found among the
+// user's.
+func vscodeGroupOf(vendor string) map[string]string {
+	return map[string]string{"vendor": vendor, "name": magpieID}
+}
+
+// vscodeGroup is magpie's Custom Endpoint group.
+var vscodeGroup = vscodeGroupOf(vscodeEndpoint)
+
+// vscodeOurs is magpie's group in a chatLanguageModels.json, whichever
+// provider it was written for, and that provider.
+func vscodeOurs(lm string) (group, vendor string, ok bool) {
+	for _, v := range vscodeVendors {
+		if g, ok := edit.GetJSONItem(lm, vscodeGroupOf(v)); ok {
+			return g, v, true
+		}
+	}
+	return "", "", false
+}
 
 // vscodeKind is one build of VS Code, each with its own User folder, its
 // own app and its own row: VS Code, and VS Code Insiders beside it (wani on
@@ -53,12 +93,16 @@ type vscodeKind struct {
 	// Insiders' chat names itself the same, so it is told by its token
 	// instead (gateway.TokenFor), which its models send.
 	ua []string
+	// exts, for a build without a Copilot Chat of its own, is the folder
+	// in home its extensions are installed in; extDir is where that is
+	// (vscodeOf), "" for a build whose chat is built in.
+	exts, extDir string
 }
 
 var (
 	vscodeStable   = vscodeKind{id: "vscode", name: "VS Code", folder: "Code", bin: "code", aliases: []string{"vs-code", "copilot-chat", "vscode-chat"}, ua: []string{vscodeUA}}
 	vscodeInsiders = vscodeKind{id: "vscode-insiders", name: "VS Code Insiders", folder: "Code - Insiders", bin: "code-insiders", aliases: []string{"vs-code-insiders", "code-insiders"}}
-	vscodiumKind   = vscodeKind{id: "vscodium", name: "VSCodium", folder: "VSCodium", bin: "codium", aliases: []string{"codium", "vscodium-chat"}}
+	vscodiumKind   = vscodeKind{id: "vscodium", name: "VSCodium", folder: "VSCodium", bin: "codium", aliases: []string{"codium", "vscodium-chat"}, exts: ".vscode-oss"}
 )
 
 // token is the bearer token its models send: Stable's the gateway's own,
@@ -88,6 +132,9 @@ func vscodeOf(k vscodeKind, home, cfg string) *Agent {
 			cfg = filepath.Join(home, "AppData", "Roaming")
 		}
 	}
+	if k.exts != "" {
+		k.extDir = filepath.Join(home, k.exts, "extensions")
+	}
 	return vscodeKindAt(k, filepath.Join(cfg, k.folder, "User"))
 }
 
@@ -99,7 +146,7 @@ func vscodeKindAt(k vscodeKind, dir string) *Agent {
 	key := func(p string) string { return k.id + ":" + p + ":model" }
 	getAt := func(p string) string { v, _ := edit.GetJSON(p, vscodeDefault); return v }
 	get := func() string { return getAt(path) }
-	ours := func() (string, bool) { return edit.GetJSONItem(models, vscodeGroup) }
+	ours := func() (string, bool) { g, _, ok := vscodeOurs(models); return g, ok }
 	joined := func() bool { _, ok := ours(); return ok }
 	// inGroup: a model id is one of those magpie's group lists
 	inGroup := func(id string) bool {
@@ -135,14 +182,24 @@ func vscodeKindAt(k vscodeKind, dir string) *Agent {
 		s, m := vscodeProfiles(dir)
 		return edit.Atomically(func() error { return fn(s, m) }, append(s, m...)...)
 	}
-	// setGroup writes magpie's group in the default's and each profile's
+	// setGroup writes magpie's group in the default's and each profile's,
+	// for the provider the chat installed has, in place of one written
+	// for the other
 	setGroup := func(lms []string) error {
-		v := vscodeGroupJSON(k)
+		vendor := k.chat().vendor
+		v := vscodeGroupJSON(k, vendor)
 		for _, lm := range append([]string{models}, lms...) {
-			if cur, ok := edit.GetJSONItem(lm, vscodeGroup); ok && sameJSON(cur, v) {
+			for _, other := range vscodeVendors {
+				if other != vendor {
+					if err := edit.DelJSONItem(lm, vscodeGroupOf(other)); err != nil {
+						return err
+					}
+				}
+			}
+			if cur, ok := edit.GetJSONItem(lm, vscodeGroupOf(vendor)); ok && sameJSON(cur, v) {
 				continue
 			}
-			if err := edit.SetJSONItem(lm, vscodeGroup, v); err != nil {
+			if err := edit.SetJSONItem(lm, vscodeGroupOf(vendor), v); err != nil {
 				return err
 			}
 		}
@@ -164,8 +221,8 @@ func vscodeKindAt(k vscodeKind, dir string) *Agent {
 		},
 		Notice: func() string {
 			if joined() {
-				if k.id == "vscodium" {
-					return "VSCodium's Chat features must be enabled (chat.disableAIFeatures=false) and its product.json must include defaultChatAgent and trustedExtensionAuthAccess for GitHub.copilot-chat. Then run Developer: Reload Window in VSCodium."
+				if k.exts != "" {
+					return k.chat().notice(k.name)
 				}
 				return "magpie's models are in " + k.name + "'s Chat model picker, under magpie, in each of its profiles (VS Code 1.122 or later). If they don't show, run Developer: Reload Window in " + k.name + "."
 			}
@@ -185,8 +242,10 @@ func vscodeKindAt(k vscodeKind, dir string) *Agent {
 					forget(key(p))
 				}
 				for _, lm := range append([]string{models}, lms...) {
-					if err := edit.DelJSONItem(lm, vscodeGroup); err != nil {
-						return err
+					for _, v := range vscodeVendors {
+						if err := edit.DelJSONItem(lm, vscodeGroupOf(v)); err != nil {
+							return err
+						}
 					}
 				}
 				return nil
@@ -200,14 +259,23 @@ func vscodeKindAt(k vscodeKind, dir string) *Agent {
 			return profiles(func(_, lms []string) error { return setGroup(lms) })
 		},
 		Check: func() string {
-			g, ok := ours()
+			g, vendor, ok := vscodeOurs(models)
 			if !ok || !gjson.Get(g, "models.0").Exists() {
 				return ""
+			}
+			if c := k.chat(); c.unsupported {
+				return c.notice(k.name)
+			} else if c.vendor != vendor {
+				return k.name + "'s Copilot Chat " + c.version + " lists a group for " + c.vendor + " and magpie's is for " + vendor + "; magpie writes it again when it next starts"
+			}
+			header, want := "requestHeaders.Authorization", "Bearer "+k.token()
+			if vendor == vscodeOAI {
+				header, want = "requestHeaders.x-api-key", k.token()
 			}
 			return wiringOff(k.name, models, func(k string) (string, bool) {
 				r := gjson.Get(g, "models.0."+k)
 				return r.String(), r.Exists()
-			}, "url", vscodeURL(), "requestHeaders.Authorization", "Bearer "+k.token())
+			}, "url", vscodeURL(), header, want)
 		},
 		Fields: []Field{{
 			Key: "model", Label: "model", Get: model,
@@ -337,9 +405,10 @@ func vscodeProfiles(dir string) (settings, models []string) {
 // url that ends in /chat/completions is asked as it is.
 func vscodeURL() string { return gatewayV1() + "/chat/completions" }
 
-// vscodeGroupJSON is magpie's group in chatLanguageModels.json: the catalog
-// as the chat of the VS Code k is shown it.
-func vscodeGroupJSON(k vscodeKind) map[string]any {
+// vscodeGroupJSON is magpie's group in chatLanguageModels.json for a
+// provider (vscodeEndpoint or vscodeOAI): the catalog as the chat of the VS
+// Code k is shown it.
+func vscodeGroupJSON(k vscodeKind, vendor string) map[string]any {
 	list := []any{}
 	for _, m := range magpieModels(k.id) {
 		context := m.Context
@@ -360,11 +429,145 @@ func vscodeGroupJSON(k vscodeKind) map[string]any {
 			"contextWindow": context, "maxOutputTokens": output,
 			"requestHeaders": map[string]string{"Authorization": "Bearer " + k.token()},
 		}
+		if vendor == vscodeOAI {
+			// its window is maxInputTokens plus maxOutputTokens, and an
+			// Authorization of the model's own is dropped
+			delete(entry, "contextWindow")
+			entry["maxInputTokens"] = context - output
+			entry["requestHeaders"] = map[string]string{"x-api-key": k.token()}
+		}
 		if len(m.Efforts) > 0 {
 			entry["supportsReasoningEffort"] = m.Efforts
 			entry["reasoningEffortFormat"] = "chat-completions"
 		}
 		list = append(list, entry)
 	}
-	return map[string]any{"name": magpieID, "vendor": "customendpoint", "apiType": "chat-completions", "models": list}
+	if vendor == vscodeOAI {
+		return map[string]any{"name": magpieID, "vendor": vscodeOAI, "models": list}
+	}
+	return map[string]any{"name": magpieID, "vendor": vscodeEndpoint, "apiType": "chat-completions", "models": list}
+}
+
+// vscodeChatID is Copilot Chat's extension id.
+const vscodeChatID = "github.copilot-chat"
+
+// vscodeChat is the Copilot Chat a VS Code build runs, as far as magpie's
+// group goes: the provider the group is written for, the version found,
+// none (no Copilot Chat installed) and unsupported (one that declares
+// neither provider).
+type vscodeChat struct {
+	vendor, version   string
+	none, unsupported bool
+}
+
+// chat is the Copilot Chat k runs: a build with one built in has the
+// Custom Endpoint provider; one without has the extension installed in its
+// extensions folder, whose package.json says which it registers. A folder
+// or file that can't be read is not taken as "none": the Custom Endpoint
+// group stays as magpie always wrote it.
+func (k vscodeKind) chat() vscodeChat {
+	if k.exts == "" {
+		return vscodeChat{vendor: vscodeEndpoint}
+	}
+	return vscodeChatOf(k.extDir)
+}
+
+func vscodeChatOf(dir string) vscodeChat {
+	at, version, found := vscodeChatInstalled(dir)
+	if !found {
+		return vscodeChat{vendor: vscodeEndpoint, none: true}
+	}
+	b, err := os.ReadFile(filepath.Join(at, "package.json"))
+	if err != nil || !gjson.ValidBytes(b) {
+		return vscodeChat{vendor: vscodeEndpoint, version: version}
+	}
+	if version == "" {
+		version = gjson.GetBytes(b, "version").String()
+	}
+	has := func(vendor string) bool {
+		return gjson.GetBytes(b, `contributes.languageModelChatProviders.#(vendor=="`+vendor+`")`).Exists()
+	}
+	switch {
+	case has(vscodeEndpoint):
+		return vscodeChat{vendor: vscodeEndpoint, version: version}
+	case has(vscodeOAI):
+		return vscodeChat{vendor: vscodeOAI, version: version}
+	}
+	return vscodeChat{vendor: vscodeEndpoint, version: version, unsupported: true}
+}
+
+// vscodeChatInstalled is the folder of the Copilot Chat installed in an
+// extensions folder: the one its extensions.json lists, else the highest
+// version of the github.copilot-chat-<version> folders not marked
+// obsolete. found is false only when the folder was read and has none.
+func vscodeChatInstalled(dir string) (at, version string, found bool) {
+	if b, err := os.ReadFile(filepath.Join(dir, "extensions.json")); err == nil && gjson.ValidBytes(b) {
+		for _, e := range gjson.ParseBytes(b).Array() {
+			if !strings.EqualFold(e.Get("identifier.id").String(), vscodeChatID) {
+				continue
+			}
+			if rel := e.Get("relativeLocation").String(); rel != "" {
+				return filepath.Join(dir, rel), e.Get("version").String(), true
+			}
+			if p := e.Get("location.fsPath").String(); p != "" {
+				return p, e.Get("version").String(), true
+			}
+		}
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return "", "", !os.IsNotExist(err)
+	}
+	var obsolete map[string]bool
+	if b, err := os.ReadFile(filepath.Join(dir, ".obsolete")); err == nil {
+		_ = json.Unmarshal(b, &obsolete)
+	}
+	for _, e := range ents {
+		v, ok := strings.CutPrefix(strings.ToLower(e.Name()), vscodeChatID+"-")
+		if !e.IsDir() || !ok || obsolete[e.Name()] {
+			continue
+		}
+		// a platform build is github.copilot-chat-<version>-<platform>
+		if i := strings.IndexByte(v, '-'); i > 0 {
+			v = v[:i]
+		}
+		if at == "" || vscodeNewer(v, version) {
+			at, version = filepath.Join(dir, e.Name()), v
+		}
+	}
+	return at, version, at != ""
+}
+
+// notice is what a build without its own chat is told with magpie's group
+// written: what its Copilot Chat needs to list it.
+func (c vscodeChat) notice(name string) string {
+	setup := name + "'s Chat features must be enabled (chat.disableAIFeatures=false) and its product.json must include defaultChatAgent and trustedExtensionAuthAccess for GitHub.copilot-chat. Then run Developer: Reload Window in " + name + "."
+	switch {
+	case c.none:
+		return "Install GitHub Copilot Chat in " + name + " to see magpie's models in its Chat. " + setup
+	case c.unsupported:
+		return name + "'s GitHub Copilot Chat " + c.version + " has neither a Custom Endpoint nor an OpenAI Compatible provider, so it can't list magpie's models."
+	case c.vendor == vscodeOAI:
+		return "magpie's models are in " + name + "'s Chat model picker under magpie, from GitHub Copilot Chat " + c.version + "'s OpenAI Compatible provider, which it offers only while it is signed in to GitHub with a personal Copilot plan. " + setup
+	}
+	return setup
+}
+
+// vscodeNewer is whether extension version a is later than b, compared
+// number by number.
+func vscodeNewer(a, b string) bool {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) || i < len(bs); i++ {
+		var x, y int
+		if i < len(as) {
+			x, _ = strconv.Atoi(as[i])
+		}
+		if i < len(bs) {
+			y, _ = strconv.Atoi(bs[i])
+		}
+		if x != y {
+			return x > y
+		}
+	}
+	return false
 }

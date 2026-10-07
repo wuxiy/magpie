@@ -3,8 +3,11 @@
 // 的过程中经常自动关闭了. Settings → General has a "Keep awake while agents
 // work" row, off by default: On and Off are saved as keepAwake true and
 // false, the click moving nothing; another setting saved keeps it; a
-// browser's page (magpie web, the gateway's own computer) shows it too. In
-// English and Chinese, with the API faked.
+// browser's page (magpie web, the gateway's own computer) shows it too.
+// #975 (Hu9956: an agent recording the screen found it locked): a third
+// choice keeps the display on too, saved as keepAwakeDisplay, its line
+// saying so, and another setting's save keeps it. In every language, at
+// 900px and 440px, with the API faked.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -13,8 +16,10 @@ const { chromium, webkit } = require("playwright");
 
 const assets = path.resolve(__dirname, "../assets");
 const words = {
-  en: { name: "Keep awake while agents work", sub: "Keeps this computer from going to sleep by itself while agents work through magpie and for ten minutes after; the display may still turn off", on: "On", off: "Off" },
-  zh: { name: "防止睡眠（Agent 工作时）", sub: "Agent 通过 magpie 工作时及之后十分钟内，阻止这台电脑自动睡眠；屏幕仍可能关闭", on: "开启", off: "关闭" },
+  en: { name: "Keep awake while agents work", sub: "Keeps this computer from going to sleep by itself while agents work through magpie and for ten minutes after; the display may still turn off", on: "On", off: "Off", display: "Screen on too", displaySub: "Keeps this computer from going to sleep and its display on while agents work through magpie and for ten minutes after" },
+  zh: { name: "防止睡眠（Agent 工作时）", sub: "Agent 通过 magpie 工作时及之后十分钟内，阻止这台电脑自动睡眠；屏幕仍可能关闭", on: "开启", off: "关闭", display: "屏幕也常亮", displaySub: "Agent 通过 magpie 工作时及之后十分钟内，阻止这台电脑睡眠，屏幕也保持常亮、不锁屏" },
+  ja: { name: "エージェントの作業中はスリープしない", sub: "エージェントが magpie 経由で作業している間とその後 10 分間、このコンピューターが自動でスリープしないようにします。ディスプレイはオフになることがあります", on: "オン", off: "オフ", display: "画面もオン", displaySub: "エージェントが magpie 経由で作業している間とその後 10 分間、このコンピューターをスリープさせず、ディスプレイもオンのままにします" },
+  de: { name: "Wach halten, während Agenten arbeiten", sub: "Verhindert, dass dieser Computer von selbst in den Ruhezustand geht, während Agenten über magpie arbeiten, und zehn Minuten danach; der Bildschirm kann sich trotzdem ausschalten", on: "An", off: "Aus", display: "Bildschirm auch an", displaySub: "Verhindert, dass dieser Computer in den Ruhezustand geht, und hält den Bildschirm an, während Agenten über magpie arbeiten, und zehn Minuten danach" },
 };
 
 function serve(lang, web, posted, st) {
@@ -44,10 +49,10 @@ function serve(lang, web, posted, st) {
   };
 }
 
-async function open(engine, lang, web, posted, st, t) {
+async function open(engine, lang, web, posted, st, t, width = 900) {
   const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
   t.after(() => browser.close());
-  const page = await (await browser.newContext({ viewport: { width: 900, height: 700 } })).newPage();
+  const page = await (await browser.newContext({ viewport: { width, height: 700 } })).newPage();
   page.setDefaultTimeout(5000);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -58,15 +63,15 @@ async function open(engine, lang, web, posted, st, t) {
 }
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
-  for (const lang of ["en", "zh"]) {
+  for (const lang of ["en", "zh", "ja", "de"]) for (const width of [900, 440]) {
     const w = words[lang];
-    test(`${engine} ${lang}: keep awake is turned on and off in Settings → General`, async (t) => {
+    test(`${engine} ${lang} ${width}px: keep awake is turned on and off in Settings → General`, async (t) => {
       const posted = [], st = {};
-      const { page, errors } = await open(engine, lang, false, posted, st, t);
+      const { page, errors } = await open(engine, lang, false, posted, st, t, width);
       const row = page.locator("#keepAwakeRow");
       await row.waitFor();
       // the row is near the page's end: scrolled by the reader, out from under the footer
-      await page.mouse.move(450, 350);
+      await page.mouse.move(width / 2, 350);
       const end = () => page.evaluate(() => { const m = document.querySelector("#view-settings"); return m.scrollTop + m.clientHeight >= m.scrollHeight - 1; });
       for (let i = 0; i < 20 && !(await end()); i++) {
         await page.mouse.wheel(0, 400);
@@ -74,7 +79,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       }
       assert.equal(await row.locator(".name").innerText(), w.name);
       assert.equal(await row.locator(".sub").innerText(), w.sub);
-      const opt = (name) => row.locator("#keepAwakeSegs .opt", { hasText: name });
+      const opt = (name) => row.locator("#keepAwakeSegs .opt").getByText(name, { exact: true });
       assert.equal(await row.locator("#keepAwakeSegs .opt.on").innerText(), w.off, "off by default");
       const where = () => page.evaluate(() => [scrollX, scrollY, document.scrollingElement.scrollTop, ...[...document.querySelectorAll("*")].filter((e) => e.scrollTop).map((e) => e.scrollTop)]);
       const before = await where();
@@ -94,9 +99,35 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await click(page.locator("#dockSegs .opt").first()).catch(() => {});
       for (let i = 0; i < 20 && posted.length === n; i++) await page.waitForTimeout(50);
       if (posted.length > n) assert.equal(posted.at(-1).keepAwake, true, "another setting's save turned it off");
+      // the display kept on too (#975)
+      await click(opt(w.display));
+      for (let i = 0; i < 50 && posted.at(-1)?.keepAwakeDisplay !== true; i++) await page.waitForTimeout(50);
+      assert.equal(posted.at(-1).keepAwake, true);
+      assert.equal(posted.at(-1).keepAwakeDisplay, true);
+      assert.equal(await row.locator("#keepAwakeSegs .opt.on").innerText(), w.display);
+      // the row is drawn again as the save comes back
+      for (let i = 0; i < 50 && (await row.locator(".sub").innerText()) !== w.displaySub; i++) await page.waitForTimeout(50);
+      assert.equal(await row.locator(".sub").innerText(), w.displaySub);
+      const m = posted.length;
+      await click(page.locator("#dockSegs .opt").first()).catch(() => {});
+      for (let i = 0; i < 20 && posted.length === m; i++) await page.waitForTimeout(50);
+      if (posted.length > m) assert.equal(posted.at(-1).keepAwakeDisplay, true, "another setting's save turned the display off");
+      // the segments fit the row, none cut off
+      const fit = await page.evaluate(() => {
+        const row = document.querySelector("#keepAwakeRow").getBoundingClientRect();
+        return [...document.querySelectorAll("#keepAwakeSegs .opt")].every((o) => { const b = o.getBoundingClientRect(); return b.width > 0 && b.right <= row.right + 1 && o.scrollWidth <= o.clientWidth + 1; });
+      });
+      assert(fit, "the segments don't fit the row");
+      await click(opt(w.on));
+      for (let i = 0; i < 50 && posted.at(-1)?.keepAwakeDisplay !== false; i++) await page.waitForTimeout(50);
+      assert.equal(posted.at(-1).keepAwake, true);
+      assert.equal(posted.at(-1).keepAwakeDisplay, false);
+      for (let i = 0; i < 50 && (await row.locator(".sub").innerText()) !== w.sub; i++) await page.waitForTimeout(50);
+      assert.equal(await row.locator(".sub").innerText(), w.sub);
       await click(opt(w.off));
       for (let i = 0; i < 50 && posted.at(-1)?.keepAwake !== false; i++) await page.waitForTimeout(50);
       assert.equal(posted.at(-1).keepAwake, false);
+      assert.equal(posted.at(-1).keepAwakeDisplay, false);
       assert.deepEqual(await where(), before, "the clicks moved the page");
       // the row has no coloured stripe down its left
       const left = await row.evaluate((e) => getComputedStyle(e).borderLeftWidth);
@@ -104,10 +135,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(errors, []);
     });
 
-    test(`${engine} ${lang}: a browser's page has keep awake too`, async (t) => {
+    if (width === 900) test(`${engine} ${lang}: a browser's page has keep awake too`, async (t) => {
       const { page, errors } = await open(engine, lang, true, [], { keepAwake: true }, t);
       assert.equal(await page.locator("#keepAwakeRow").isVisible(), true);
       assert.equal(await page.locator("#keepAwakeSegs .opt.on").innerText(), words[lang].on);
+      assert.deepEqual(errors, []);
+    });
+
+    if (width === 900) test(`${engine} ${lang}: the display kept on is shown as saved`, async (t) => {
+      const { page, errors } = await open(engine, lang, false, [], { keepAwake: true, keepAwakeDisplay: true }, t);
+      assert.equal(await page.locator("#keepAwakeSegs .opt.on").innerText(), words[lang].display);
+      assert.equal(await page.locator("#keepAwakeRow .sub").innerText(), words[lang].displaySub);
       assert.deepEqual(errors, []);
     });
   }

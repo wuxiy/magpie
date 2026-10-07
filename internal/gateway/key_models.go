@@ -252,6 +252,14 @@ func keyModelError(who access.Identity, model string) string {
 // keyAccountsError is what a request every candidate of which was an
 // account or key its key may not use is told.
 func keyAccountsError(who access.Identity, model string) string {
+	return fmt.Sprintf("The gateway key %q is not allowed to use the accounts behind %s: no account or key behind it is one the key may use; it may use %s. Change the key's accounts in magpie's Gateway page, or use an account it has.",
+		who.KeyName, model, keyAccountNames(who))
+}
+
+// keyAccountNames is the key's accounts as an error message shows them:
+// named as the accounts list names them, "<provider>/<user>" where a
+// provider has the account now, the id alone otherwise.
+func keyAccountNames(who access.Identity) string {
 	names := provider.AccountNames()
 	shown := make([]string, len(who.Accounts))
 	for i, a := range who.Accounts {
@@ -261,8 +269,7 @@ func keyAccountsError(who access.Identity, model string) string {
 			shown[i] = a
 		}
 	}
-	return fmt.Sprintf("The gateway key %q is not allowed to use the accounts behind %s: no account or key behind it is one the key may use; it may use %s. Change the key's accounts in magpie's Gateway page, or use an account it has.",
-		who.KeyName, model, strings.Join(shown, ", "))
+	return strings.Join(shown, ", ")
 }
 
 // countHeld answers the 403 a gateway key held to some models (#882) gets

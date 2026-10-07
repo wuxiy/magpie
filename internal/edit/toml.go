@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pelletier/go-toml/v2/unstable"
@@ -240,6 +241,16 @@ func getTOMLTopLines(path, key string) (string, bool) {
 // there is none. Every key is located in the file as it was read, so the
 // edit is one write that either happens entirely or not at all.
 func SetTOMLTop(path string, kvs ...KV) error {
+	return setTOMLTop(path, false, kvs...)
+}
+
+// SetTOMLTopPreserving is SetTOMLTop with an existing key's spacing and trailing
+// comment kept. New keys use the same spelling as SetTOMLTop.
+func SetTOMLTopPreserving(path string, kvs ...KV) error {
+	return setTOMLTop(path, true, kvs...)
+}
+
+func setTOMLTop(path string, preserve bool, kvs ...KV) error {
 	raw, err := Read(path)
 	if err != nil {
 		return err
@@ -261,10 +272,13 @@ func SetTOMLTop(path string, kvs ...KV) error {
 		at = doc.root.keys[n-1].to
 	}
 	for _, kv := range kvs {
-		line := kv.Path + " = " + strconv.Quote(toString(kv.Value))
+		line := kv.Path + " = " + tomlLiteral(kv.Value)
 		found := false
 		for _, k := range doc.root.keys {
 			if k.name == kv.Path {
+				if preserve {
+					line = k.prefix + tomlLiteral(kv.Value) + k.suffix
+				}
 				replace[k.from] = span{k.to, line}
 				found = true
 				break
@@ -605,7 +619,56 @@ func tomlLiteral(v any) string {
 	case int:
 		return strconv.Itoa(x)
 	}
-	return strconv.Quote(toString(v))
+	return tomlString(toString(v))
+}
+
+// tomlString spells s as a TOML basic string. Go's strconv.Quote is not a
+// substitute: it escapes a control byte as \x01, and TOML defines no \x
+// escape, so such a value leaves a file no TOML parser reads. writeTOML
+// refuses that file before any change reaches the disk, so the config is
+// never corrupted, but the edit then cannot be made at all — an agent's own
+// value has to be writable. Escapes taken from the TOML spec; anything else
+// that is printable, including non-ASCII, is written as it is.
+func tomlString(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('"')
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+		if r == utf8.RuneError && size == 1 {
+			// One byte that is not part of a rune: TOML has no escape for a
+			// single byte, only for code points, so a value that is not valid
+			// UTF-8 cannot be written. It is left as it is, and writeTOML
+			// refuses the file, rather than being quietly replaced by U+FFFD.
+			b.WriteByte(s[i-size])
+			continue
+		}
+		switch r {
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&b, `\u%04X`, r)
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 // Table is one TOML table: its header name and its keys, in order.

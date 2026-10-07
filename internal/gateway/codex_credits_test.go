@@ -64,13 +64,17 @@ func TestCodexNoCreditsEveryAccount(t *testing.T) {
 	if tried, _ := b.seen(); code != 429 || tried != "" {
 		t.Fatalf("%d tried %q: %s", code, tried, body)
 	}
-	for _, want := range []string{"rate_limit_error", "set in magpie not to spend its credits", "me@example.com", "spare@example.com", "quota credits"} {
+	for _, want := range []string{"rate_limit_error", "set in magpie not to spend its credits", "me@example.com", "spare@example.com", "if an account holds credits, let it spend them", "quota credits"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("no %q in %s", want, body)
 		}
 	}
 	if strings.Contains(body, "usage cap reached") {
 		t.Errorf("told as a cap: %s", body)
+	}
+	// the request's record says the same as the client was told
+	if c := srv.Recent()[0]; c.Status != 429 || c.Error != "every account held: set not to spend its credits" {
+		t.Errorf("recorded %d %q", c.Status, c.Error)
 	}
 
 	// one held at its cap, the other for its credits: both told
@@ -81,10 +85,13 @@ func TestCodexNoCreditsEveryAccount(t *testing.T) {
 	if tried, _ := b.seen(); code != 429 || tried != "" {
 		t.Fatalf("%d tried %q: %s", code, tried, body)
 	}
-	for _, want := range []string{"held by magpie", "past its 70% cap", "(spare@example.com) has used up a usage window and is set not to spend its credits", "account-cap", "quota credits"} {
+	for _, want := range []string{"held by magpie", "past its 70% cap", "(spare@example.com) has used up a usage window and is set not to spend its credits", "account-cap", "if an account holds credits, let it spend them", "quota credits"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("no %q in %s", want, body)
 		}
+	}
+	if c := srv.Recent()[0]; c.Status != 429 || c.Error != "every account held: at its usage cap or set not to spend its credits" {
+		t.Errorf("recorded %d %q", c.Status, c.Error)
 	}
 }
 

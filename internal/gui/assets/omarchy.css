@@ -14,7 +14,8 @@ html.omarchy .om-hide { display: none !important; }
 html.omarchy .om-only { display: revert !important; }
 html.omarchy .om-theme-name { color: var(--accent); font-size: 12px; white-space: nowrap; }
 
-html.omarchy, html.omarchy body { font-family: var(--font); font-size: var(--om-size); }
+html.omarchy, html.omarchy body { font-family: var(--ui-font, var(--font)); font-size: var(--om-size); }
+html:where([data-fonts]).omarchy, html:where([data-fonts]).omarchy body { font-style: var(--ui-style, inherit); font-weight: var(--ui-weight, inherit); font-stretch: var(--ui-stretch, 100%); }
 html.omarchy body { -webkit-font-smoothing: antialiased; }
 
 /* square, or rounded as far as Hyprland rounds its windows; what spins or

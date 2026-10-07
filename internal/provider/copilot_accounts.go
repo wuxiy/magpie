@@ -129,9 +129,14 @@ func copilotAlsoOn() []Provider {
 	return out
 }
 
-// copilotPlans names Copilot's plans as GitHub sells them.
+// copilotPlans names Copilot's plans as GitHub sells them, as GitHub's own
+// clients name each copilot_plan (VS Code's chatEntitlementService,
+// CopilotForXcode's planDisplayName): individual_pro is Pro+ and
+// individual_max is Max. individual_edu is the student plan, which the
+// free_educational_quota SKU also names.
 var copilotPlans = map[string]string{
 	"free": "Free", "individual": "Pro", "individual_pro": "Pro+",
+	"individual_max": "Max", "individual_edu": "Education",
 	"business": "Business", "enterprise": "Enterprise",
 }
 

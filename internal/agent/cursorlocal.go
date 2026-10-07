@@ -28,12 +28,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/yetone/magpie/internal/appdir"
 	"github.com/yetone/magpie/internal/gateway"
+	"github.com/yetone/magpie/internal/provider"
 )
 
 // CursorLocalID is the agent's id, which its key names (TokenFor).
@@ -265,9 +267,45 @@ func cursorLocal() *Agent {
 				return []Option{{Value: magpieID, Label: "magpie", Icon: "magpie",
 					Note: "CURSOR_LOCAL_AGENT_BASE_URL and _API_KEY set for your user, which only this build reads (quit it and open it again)"}}
 			},
+		}, {
+			// how hard its models reason, which neither its environment nor,
+			// for most models, its app can say (#1003): the gateway asks
+			// its requests for it (provider.AgentEffort)
+			Key: "effort", Label: "effort",
+			Get: func() string { return provider.AgentEffort(CursorLocalID) },
+			Set: func(v string) error { return provider.SetAgentEffort(CursorLocalID, v) },
+			Options: func(map[string]string) []Option {
+				if !cursorLocalWired() {
+					return nil
+				}
+				return cursorLocalEfforts()
+			},
 		}},
 		Notice: func() string {
 			return cursorLocalName + " reads magpie's gateway from CURSOR_LOCAL_AGENT_BASE_URL and CURSOR_LOCAL_AGENT_API_KEY, now set for your user: quit it (the app, not only its window) and open it again, as it keeps the model list it was first given until it quits. A base URL or API key set in its Open configuration or a model's settings comes first, so leave both empty (or set the base URL to " + gateway.URL() + "/v1 and the key to " + gateway.TokenFor(CursorLocalID) + ")."
 		},
 	}
+}
+
+// cursorLocalEfforts are the levels Cursor Private Inference's effort is
+// picked among: the default, its requests going as it asks, then every
+// level a model its list shows has (low, medium and high for models that
+// reason with levels unknown). None when no model it lists reasons.
+func cursorLocalEfforts() []Option {
+	shown, _ := provider.CatalogFor(CursorLocalID)
+	has, reasons := map[string]bool{}, false
+	for _, e := range shown {
+		reasons = reasons || e.Reasoning
+		for _, l := range e.Efforts {
+			has[l] = true
+		}
+	}
+	levels := slices.DeleteFunc(slices.Clone(provider.MemberEfforts), func(l string) bool { return !has[l] })
+	if len(levels) == 0 && reasons {
+		levels = []string{"low", "medium", "high"}
+	}
+	if len(levels) == 0 {
+		return nil
+	}
+	return append([]Option{{Value: ""}}, static(levels...)...)
 }

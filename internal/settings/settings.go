@@ -27,6 +27,7 @@ import (
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/edit"
 	"github.com/yetone/magpie/internal/filememo"
+	"github.com/yetone/magpie/internal/fonts"
 	"github.com/yetone/magpie/internal/redact"
 	"github.com/yetone/magpie/internal/steady"
 )
@@ -84,6 +85,12 @@ type Settings struct {
 	// named caller keys. LANKey is retained for older Magpie versions.
 	LAN    bool   `json:"lan,omitempty"`
 	LANKey string `json:"lanKey,omitempty"`
+	// CORSOrigins are the web pages (scheme://host[:port]) whose scripts
+	// may call the gateway from a browser (#1051): a preflight from one is
+	// answered, and its calls carry the CORS headers that let it read the
+	// reply, each with an enabled gateway key. None by default: a page
+	// gets no CORS headers, as before.
+	CORSOrigins []string `json:"corsOrigins,omitempty"`
 	// Port is the gateway's port on this computer, 0 for DefaultPort.
 	// MAGPIE_ADDR, where it is set, comes first (GatewayAddr).
 	Port int `json:"port,omitempty"`
@@ -146,6 +153,10 @@ type Settings struct {
 	// and Qoder CN account (its plugin's) once a Beijing day (ARNO on
 	// Discord).
 	QoderCheckin bool `json:"qoderCheckin,omitempty"`
+	// PluginCheckins turns a plugin's own daily check-in (auth.checkin)
+	// on or off, by the plugin's provider id; one not set follows its
+	// vendor's switch above, which the plugin took over, else is off.
+	PluginCheckins map[string]bool `json:"pluginCheckins,omitempty"`
 	// MemberModel has a reply's model name the routing group's member
 	// that answered, as magpie's provider/model id (workbuddy/glm-5.3-flash),
 	// rather than the vendor's own name for it, for agents that count
@@ -223,6 +234,10 @@ type Settings struct {
 	// agents work through the gateway and for a while after (xiao_wang24004
 	// on X; internal/awake). This computer's own (KeepOwn).
 	KeepAwake bool `json:"keepAwake,omitempty"`
+	// KeepAwakeDisplay keeps the display on too while KeepAwake holds the
+	// computer awake (#975, Hu9956: an agent recording the screen to check
+	// its work found it locked). This computer's own (KeepOwn).
+	KeepAwakeDisplay bool `json:"keepAwakeDisplay,omitempty"`
 	// GatewayMode is whether `magpie web` shows only what a gateway serving
 	// other machines needs (Player on Discord): "on", "off", or "" to
 	// decide by itself — on for `magpie web --gateway`, or with no agents
@@ -297,6 +312,10 @@ type Settings struct {
 	// drawn, in percent (one of TextSizes): the webviews' own zoom, as a
 	// browser's, so the text and everything around it grow together.
 	TextSize int `json:"textSize,omitempty"`
+	// UIFont and CodeFont are this computer's installed faces. Nil keeps
+	// the platform's stack (or Omarchy's). Sync never replaces them.
+	UIFont   *fonts.Face `json:"uiFont,omitempty"`
+	CodeFont *fonts.Face `json:"codeFont,omitempty"`
 	// How the agents are listed, by agent id. AgentOrder comes first, as
 	// ordered; an agent it doesn't name (one installed since) follows in
 	// magpie's own order. A hidden agent is folded away at the bottom of the
@@ -310,6 +329,11 @@ type Settings struct {
 	// own order. Only the page's: the order providers are tried in is the
 	// Providers page's.
 	UsageOrder []string `json:"usageOrder,omitempty"`
+	// PanelUsageHidden are the subscriptions, by provider id, that the tray
+	// panel's Allowances tab leaves out (H20 on Discord). It is what the
+	// panel shows, nothing more: routing, caps, the Usage page and the menu
+	// bar's cells still have them. The panel's order is UsageOrder.
+	PanelUsageHidden []string `json:"panelUsageHidden,omitempty"`
 	// Visible narrows the models an agent is shown, by agent id: the
 	// families (the tag a provider or group is given), provider ids and
 	// group ids its lists hold. An agent it doesn't name is shown them all.
@@ -318,6 +342,11 @@ type Settings struct {
 	// or a group's) taken out of an agent's lists one by one, by agent id,
 	// after Visible: a model not named here, a new one among them, is shown.
 	HiddenModels map[string][]string `json:"hiddenModels,omitempty"`
+	// AgentEfforts are the reasoning efforts the gateway asks for on an
+	// agent's requests, by agent id, for an agent whose own config can't
+	// carry one (Cursor Private Inference, #1003): one of the levels in
+	// provider.MemberEfforts.
+	AgentEfforts map[string]string `json:"agentEfforts,omitempty"`
 	// OrderedModels is the order an agent's lists put its models in, by
 	// agent id and then entry id, as the user dragged them on the Agents
 	// page (Codex's, #855): the ones named first, any other after them.
@@ -393,9 +422,15 @@ type Settings struct {
 	// than by its own id, for an id no rule of magpie's matches up
 	// (kyzhouxu, #583). Absent leaves it to its id.
 	ModelSameAs map[string]string `json:"modelSameAs,omitempty"`
-	// The main window's size when it was last resized, width and height,
-	// so it opens at it again after a restart.
+	// The main window's size as it last settled, width and height, so it
+	// opens at it again after a restart: the size it is restored to, kept as
+	// it was while it is maximised, and a side fitted to a smaller screen
+	// keeps the larger one (gui's settle).
 	Window []int `json:"window,omitempty"`
+	// WindowMaximised: the main window was maximised (zoomed, on the Mac)
+	// when it last settled, so it opens maximised again; Window is still the
+	// size it is restored to.
+	WindowMaximised bool `json:"windowMaximised,omitempty"`
 }
 
 // ModelPrice is the price of one model as the user states it. Each part is a
@@ -667,13 +702,14 @@ func (s Settings) Compact() int {
 }
 
 // KeepOwn puts back cur's settings that are this computer's own, which a
-// sync or a restored backup never brings from another: the window's size,
-// the proxy, the gateway's port, the Dock, gateway mode, and what the menu bar or tray shows beside magpie's
+// sync or a restored backup never brings from another: the window's size
+// and whether it was maximised, the proxy, the gateway's port, the Dock, gateway mode, and what the menu bar or tray shows beside magpie's
 // icon (yoooo on Discord: usage turned off on a Mac came back from a
 // Windows box that shows it).
 func (s *Settings) KeepOwn(cur Settings) {
+	s.UIFont, s.CodeFont = cur.UIFont, cur.CodeFont
 	s.Window, s.Proxy, s.Port, s.Dock, s.DockWindow, s.Lightweight = cur.Window, cur.Proxy, cur.Port, cur.Dock, cur.DockWindow, cur.Lightweight
-	s.KeepAwake = cur.KeepAwake
+	s.WindowMaximised, s.KeepAwake, s.KeepAwakeDisplay = cur.WindowMaximised, cur.KeepAwake, cur.KeepAwakeDisplay
 	s.TrayUsages, s.TrayUsage, s.TrayUsageEvery, s.TrayNoLogos, s.TrayNoBird = cur.TrayUsages, cur.TrayUsage, cur.TrayUsageEvery, cur.TrayNoLogos, cur.TrayNoBird
 	s.GatewayMode = cur.GatewayMode
 }
@@ -817,6 +853,11 @@ func Save(s Settings) error {
 	if s.SessionTerminal != "" && s.SessionTerminal != "system" && !validTerminalBundleID.MatchString(s.SessionTerminal) {
 		return fmt.Errorf("session terminal must be an app bundle id or system, not %q", s.SessionTerminal)
 	}
+	for _, choice := range []*fonts.Face{s.UIFont, s.CodeFont} {
+		if err := fonts.Validate(choice); err != nil {
+			return err
+		}
+	}
 	if !slices.Contains(Currencies, s.Currency) {
 		return fmt.Errorf("currency must be one of %v, not %q", Currencies, s.Currency)
 	}
@@ -900,6 +941,7 @@ func Save(s Settings) error {
 	s.RedactRules = rules
 	s.AgentOrder, s.AgentsHidden, s.AgentsShown = ids(s.AgentOrder), ids(s.AgentsHidden), ids(s.AgentsShown)
 	s.UsageOrder = ids(s.UsageOrder)
+	s.PanelUsageHidden = ids(s.PanelUsageHidden)
 	s.TrayUsages = ids(s.TrayUsages)
 	for i, u := range s.CodexAutoReset {
 		s.CodexAutoReset[i] = strings.ToLower(u)

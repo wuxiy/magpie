@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/tidwall/jsonc"
@@ -1006,7 +1009,13 @@ func tomlValue(v any) string {
 	switch x := v.(type) {
 	case string:
 		return tomlString(x)
-	case bool, int, int64, float64:
+	case bool, int, int64:
+		return fmt.Sprint(x)
+	case float64:
+		return tomlFloat(x)
+	case time.Time:
+		return x.Format(time.RFC3339Nano)
+	case toml.LocalDate, toml.LocalTime, toml.LocalDateTime:
 		return fmt.Sprint(x)
 	case []string:
 		parts := make([]string, len(x))
@@ -1038,6 +1047,24 @@ func tomlValue(v any) string {
 		return "{ " + strings.Join(parts, ", ") + " }"
 	}
 	return tomlString(fmt.Sprint(v))
+}
+
+// tomlFloat writes a float as one, so a user's tool_timeout_sec = 120.0
+// stays a float and doesn't come back as an integer.
+func tomlFloat(f float64) string {
+	switch {
+	case math.IsNaN(f):
+		return "nan"
+	case math.IsInf(f, 1):
+		return "inf"
+	case math.IsInf(f, -1):
+		return "-inf"
+	}
+	s := strconv.FormatFloat(f, 'g', -1, 64)
+	if !strings.ContainsAny(s, ".eE") {
+		s += ".0"
+	}
+	return s
 }
 
 // ---- found in agents ------------------------------------------------------

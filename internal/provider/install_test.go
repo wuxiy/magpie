@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/yetone/magpie/internal/testenv"
 )
 
 // a sign-in that needs a CLI this machine lacks installs it, then goes on
@@ -35,7 +37,7 @@ func TestSignInInstallsMissingCLI(t *testing.T) {
 		ran = c.sh
 		<-release
 		os.MkdirAll(filepath.Dir(exe), 0o755)
-		os.WriteFile(exe, []byte("#!/bin/sh\nprintf 'Logged in (via Devin).\\n  Email: dev@example.com\\n  Tier: Devin Pro\\n'\n"), 0o755)
+		testenv.Program(t, exe, "#!/bin/sh\nprintf 'Logged in (via Devin).\\n  Email: dev@example.com\\n  Tier: Devin Pro\\n'\n")
 		// as Devin's does: `devin setup` gives up on its sign-in without a terminal
 		return []byte("Installed devin\nError: Login canceled\n"), errors.New("exit status 1")
 	}
@@ -126,7 +128,7 @@ func TestDevinSignInUnseen(t *testing.T) {
 	home := claudeHome(t)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 	exe := filepath.Join(home, "devin")
-	os.WriteFile(exe, []byte("#!/bin/sh\necho 'Not logged in.'\n"), 0o755)
+	testenv.Program(t, exe, "#!/bin/sh\necho 'Not logged in.'\n")
 	oldExe := DevinExecutable
 	DevinExecutable = func() string { return exe }
 	t.Cleanup(func() { DevinExecutable = oldExe })

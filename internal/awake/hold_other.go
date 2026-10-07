@@ -4,4 +4,4 @@ package awake
 
 import "errors"
 
-func takeHold() (func(), error) { return nil, errors.New("not on this system") }
+func takeHold(bool) (func(), error) { return nil, errors.New("not on this system") }

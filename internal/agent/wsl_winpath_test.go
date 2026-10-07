@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yetone/magpie/internal/testenv"
 )
 
 // WSL puts Windows' PATH on the distro's, so `command -v pi` there finds
@@ -56,7 +58,7 @@ func TestWSLProbeScriptSaysWhere(t *testing.T) {
 		t.Skip("no sh")
 	}
 	home, bin := t.TempDir(), t.TempDir()
-	os.WriteFile(filepath.Join(bin, "pi"), []byte("#!/bin/sh\n"), 0o755)
+	testenv.Program(t, filepath.Join(bin, "pi"), "#!/bin/sh\n")
 	cmd := exec.Command(sh, "-c", wslProbeScript)
 	cmd.Env = []string{"HOME=" + home, "PATH=" + bin + ":/usr/bin:/bin"}
 	out, err := cmd.Output()

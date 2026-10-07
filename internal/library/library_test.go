@@ -20,6 +20,7 @@ import (
 	"github.com/tidwall/jsonc"
 
 	"github.com/yetone/magpie/internal/agentenv"
+	"github.com/yetone/magpie/internal/testenv"
 )
 
 // sandbox is a home with every agent magpie can give the library to, and
@@ -32,8 +33,7 @@ func sandbox(t *testing.T) string {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(h, ".config"))
 	// Gemini CLI is found by its binary alone
 	bin := filepath.Join(h, "bin")
-	write(t, filepath.Join(bin, "gemini"), "#!/bin/sh\n")
-	os.Chmod(filepath.Join(bin, "gemini"), 0o755)
+	testenv.Program(t, filepath.Join(bin, "gemini"), "#!/bin/sh\n")
 	write(t, filepath.Join(bin, "gemini.exe"), "")
 	t.Setenv("PATH", bin)
 	// never the machine's global node_modules
@@ -342,6 +342,123 @@ source = "local"
 	after, err = f.entries()
 	if err != nil || after["x"] != nil || read(t, path) != other {
 		t.Fatalf("server was not completely removed: %v, %v\n%s", after, err, read(t, path))
+	}
+}
+
+// Every key Codex reads for a server (codex-rs/config/src/mcp_types.rs,
+// RawMcpServerConfig) is as the user wrote it after the server is taken
+// into the library and saved again for Codex and Claude Code: the value and
+// its TOML type, a float written as one among them.
+func TestCodexServerKeysSurviveTheLibrary(t *testing.T) {
+	h := sandbox(t)
+	cfg := filepath.Join(h, ".codex/config.toml")
+	write(t, cfg, `model = "gpt-5"
+
+[mcp_servers.inner]
+command = "node"
+args = ["/srv/mcp.js", "--tool-args", "{\"strict\":true}", "a b"]
+cwd = "/srv"
+env_vars = ["HOME", { name = "TOKEN", source = "local" }]
+startup_timeout_sec = 20.5
+startup_timeout_ms = 30000
+tool_timeout_sec = 120.0
+enabled = true
+required = false
+supports_parallel_tool_calls = true
+tool_input_schema_max_bytes = 50000
+default_tools_approval_mode = "approve"
+enabled_tools = ["search", "fetch"]
+disabled_tools = ["drop"]
+startup_readiness = "cached"
+omit_tools_from = ["code_mode"]
+environment_id = "local"
+name = "Inner"
+
+[mcp_servers.inner.env]
+API_KEY = "k"
+PORT = "8080"
+
+[mcp_servers.inner.tools.search]
+approval_mode = "approve"
+output_token_limit = 4000
+
+[mcp_servers.web]
+url = "https://x.example/mcp"
+bearer_token = "b"
+bearer_token_env_var = "WEB_TOKEN"
+http_headers = { "X-Team" = "a" }
+env_http_headers = { "X-Key" = "WEB_KEY" }
+http_headers_helper = "/bin/helper"
+auth = "oauth"
+scopes = ["read", "write"]
+oauth_resource = "https://x.example"
+startup_timeout_sec = 1e1
+
+[mcp_servers.web.oauth]
+client_id = "cid"
+client_secret = "s"
+callback_url = "http://127.0.0.1:8765/cb"
+callback_port = 8765
+authorization_server_issuer = "https://id.example"
+`)
+	f := &mcpFile{Path: cfg, Format: fmtCodex}
+	before, err := f.entries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok(t)(ImportServer("inner"))
+	ok(t)(ImportServer("web"))
+	l, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"inner", "web"} {
+		s := *l.server(name)
+		if !s.Remote() {
+			s.Args = append(slices.Clone(s.Args), "--more")
+		}
+		s.Agents = []string{"claude", "codex"}
+		ok(t)(SaveServer(name, s))
+	}
+	after, err := f.entries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, m := range before {
+		for k, v := range m {
+			if k == "args" {
+				continue
+			}
+			if got := after[name][k]; !reflect.DeepEqual(got, v) {
+				t.Errorf("%s.%s: %#v (%T) came back %#v (%T)", name, k, v, v, got, got)
+			}
+		}
+	}
+	if a := after["inner"]["args"]; !reflect.DeepEqual(a, []any{"/srv/mcp.js", "--tool-args", `{"strict":true}`, "a b", "--more"}) {
+		t.Errorf("args: %#v", a)
+	}
+	if t.Failed() {
+		t.Log(read(t, cfg))
+	}
+}
+
+// What a TOML value magpie keeps reads back as the same value and type.
+func TestTOMLValueKeepsTypes(t *testing.T) {
+	src := "f = 120.0\ng = 1e21\nh = -0.5\ni = 7\nd = 2026-10-06\nlt = 07:32:00.5\nldt = 2026-10-06T07:32:00\nodt = 2026-10-06T07:32:00.123+08:00\ninf = inf\n"
+	var want map[string]any
+	if err := toml.Unmarshal([]byte(src), &want); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for _, k := range slices.Sorted(maps.Keys(want)) {
+		b.WriteString(k + " = " + tomlValue(want[k]) + "\n")
+	}
+	var got map[string]any
+	if err := toml.Unmarshal([]byte(b.String()), &got); err != nil {
+		t.Fatalf("%v\n%s", err, b.String())
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %#v\nwant %#v\n%s", got, want, b.String())
 	}
 }
 

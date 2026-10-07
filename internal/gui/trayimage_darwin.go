@@ -303,7 +303,12 @@ static CGFloat mpHitW = 0;
 
 // Used by the single status-item monitor and native tests. Modified clicks
 // retain the button's normal action; an unmodified quota click uses its ID.
-static BOOL mpClickCell(NSArray *cells, CGFloat in, CGFloat x, CGFloat w, NSEventModifierFlags flags) {
+// Shown without the bird, the cards are the whole item, and a click on them
+// is the item's own: it opens the panel on the tab left last, as a click on
+// the bird does (the owner: with the bird off, every click opened Allowances,
+// since there was nowhere left to click that didn't).
+static BOOL mpClickCell(NSArray *cells, BOOL bird, CGFloat in, CGFloat x, CGFloat w, NSEventModifierFlags flags) {
+	if (!bird) return NO;
 	if (flags & (NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagShift)) return NO;
 	int i = mpCellAt(cells, in, x, w);
 	if (i < 0) return NO;
@@ -406,7 +411,7 @@ static void mpOwnClicks(void) {
 				// Route quota clicks before the generic action, within this
 				// one monitor; local monitor ordering is not guaranteed.
 				CGFloat x = p.x - (b.bounds.size.width - mpHitW) / 2;
-				if (mpClickCell(mpShown, mpIn(mpBird, [[NSStatusBar systemStatusBar] thickness]), x, mpHitW, e.modifierFlags)) return nil;
+				if (mpClickCell(mpShown, mpBird != nil, mpIn(mpBird, [[NSStatusBar systemStatusBar] thickness]), x, mpHitW, e.modifierFlags)) return nil;
 				[NSApp sendAction:b.action to:b.target from:b];
 				return nil;
 			}];
@@ -472,10 +477,11 @@ static CGFloat mpCellStartAt(mpTrayCell *cells, int n, CGFloat h, int i) {
 }
 
 // Exercise the same identity lookup and C-to-Go callback without a live status item.
-static int mpClickCellsAt(mpTrayCell *cells, int n, CGFloat h, CGFloat x, unsigned long flags) {
+static int mpClickCellsAt(mpTrayCell *cells, int n, int bird, CGFloat h, CGFloat x, unsigned long flags) {
 	@autoreleasepool {
 		NSArray *cs = mpCells(cells, n);
-		return mpClickCell(cs, h + mpBirdGap, x, mpWidth(cs, h, h + mpBirdGap), flags);
+		CGFloat in = bird ? h + mpBirdGap : 0;
+		return mpClickCell(cs, bird, in, x, mpWidth(cs, h, in), flags);
 	}
 }
 
@@ -604,10 +610,14 @@ func trayImageCellStart(cells []trayCell, h float64, i int) float64 {
 	return s
 }
 
-func trayImageClickAt(cells []trayCell, h, x float64, modifiers uint64) bool {
+func trayImageClickAt(cells []trayCell, bird bool, h, x float64, modifiers uint64) bool {
 	hit := false
+	b := C.int(0)
+	if bird {
+		b = 1
+	}
 	withCells(cells, func(cs *C.mpTrayCell, count C.int) {
-		hit = C.mpClickCellsAt(cs, count, C.CGFloat(h), C.CGFloat(x), C.ulong(modifiers)) != 0
+		hit = C.mpClickCellsAt(cs, count, b, C.CGFloat(h), C.CGFloat(x), C.ulong(modifiers)) != 0
 	})
 	return hit
 }

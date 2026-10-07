@@ -72,6 +72,12 @@ type Provider struct {
 	// Jev answers), for routing groups' choices of model and effort. The
 	// provider may also serve conversations on the other endpoints.
 	Decide string `json:"decide,omitempty"`
+	// BaseAPI is the API the user gave a custom provider's Base URL as,
+	// in its editor: "chat", "responses", "anthropic" or "decide". The
+	// editor shows that pick again, where it would otherwise show the
+	// first API with a URL (01huadalang: Responses picked and saved came
+	// back as OpenAI compatible). Requests go by which URLs are set.
+	BaseAPI string `json:"baseAPI,omitempty"`
 
 	// Fallback is where a request goes when this provider can't take it —
 	// out of quota, rate limited, overloaded or down — before any of the
@@ -163,6 +169,14 @@ type Provider struct {
 	// model through an AI gateway that may serve it from any host, and
 	// DeepSeek's own keeps its prompt cache. See ClinePin.
 	PinUpstream bool `json:"pinUpstream,omitempty"`
+
+	// Unredacted has requests to a provider on this machine or the local
+	// network (Ollama, LM Studio, a vLLM box) go as the agent wrote them,
+	// unmasked by Settings' redaction, which keeps secrets from vendors
+	// (lc on Discord). It is the user's word, not the address's: a relay
+	// run locally, or Ollama's cloud models, pass a request on to a vendor.
+	// See SkipsRedaction.
+	Unredacted bool `json:"unredacted,omitempty"`
 
 	// Proxy is the proxy magpie's requests to this provider go through
 	// (#237: Codex through one, a vendor at home without): "" follows
@@ -508,7 +522,11 @@ func Save(p Provider) error {
 	if p.ID == "" {
 		p.ID = Slug(p.Name)
 	}
-	if p.ID == "" || p.ID != Slug(p.ID) {
+	// an id stored already is the provider's, whatever it is: one put in
+	// providers.json by hand ("b.ai") was refused on every Save, so the
+	// editor could neither change it nor rename it to one that is right
+	// (01huadalang on Discord: 我不管改成什么都显示不能用 b.ai)
+	if p.ID == "" || p.ID != Slug(p.ID) && !stored(p.ID) {
 		return fmt.Errorf("provider id must be lowercase letters, digits and dashes, not %q", p.ID)
 	}
 	if p.ID == "magpie" {
@@ -634,6 +652,7 @@ func AddCopy(p Provider, from string) (string, error) {
 	}
 	p.Unlisted = p.Unlisted || src.Unlisted
 	p.Searches = p.Searches || src.Searches
+	p.Unredacted = p.Unredacted || src.Unredacted
 	if p.Website == "" {
 		p.Website = src.Website
 	}
@@ -847,6 +866,10 @@ func normalize(p Provider) Provider {
 			break
 		}
 	}
+	// a pick whose URL is gone (cleared from the CLI) is no pick
+	if p.BaseAPI != "" && p.baseOf(p.BaseAPI) == "" {
+		p.BaseAPI = ""
+	}
 	p.Models = cleanList(p.Models)
 	p.Fallback = cleanList(p.Fallback)
 	// a provider saved under an id a preset carried before (presetAliases:
@@ -967,6 +990,22 @@ func contains(xs []string, x string) bool {
 	return false
 }
 
+// baseOf is the URL saved for one of the editor's Base URL APIs (BaseAPI),
+// "" for an API it doesn't know.
+func (p Provider) baseOf(api string) string {
+	switch api {
+	case "chat":
+		return p.Chat
+	case "responses":
+		return p.Responses
+	case "anthropic":
+		return p.Anthropic
+	case "decide":
+		return p.Decide
+	}
+	return ""
+}
+
 // Base returns the base URL for a protocol, or "" when the vendor lacks it.
 func (p Provider) Base(proto Protocol) string {
 	switch proto {
@@ -1028,6 +1067,38 @@ func (p Provider) ResponsesFirst(model string) bool {
 	return openAIModel(model)
 }
 
+// MessagesFirst: a Claude model where the provider has Anthropic's Messages
+// API, which is best asked there though its Chat or Responses API serves
+// it too — a relay that serves both drops cache_control on Chat, so every
+// turn was billed uncached (#997; ReturnTrue on Discord: 0% cache hits
+// until the relay's OpenAI URL was left empty), and thinking with it.
+func (p Provider) MessagesFirst(model string) bool {
+	return p.Anthropic != "" && claudeModel(model)
+}
+
+// OnMessages: a Claude model MessagesFirst asks on Messages whatever API
+// the client spoke, not only when the client's isn't served — unless the
+// user set the API it is asked on, or the vendor's list names the APIs it
+// serves it on (Copilot's Claude on Chat and Messages), where a request is
+// relayed on the client's own API as before.
+func (p Provider) OnMessages(model string) bool {
+	if !p.MessagesFirst(model) {
+		return false
+	}
+	if _, ok := p.ModelAPI(model); ok {
+		return false
+	}
+	return p.ListedAPIs(model) == nil
+}
+
+// claudeModel is whether model is one of Anthropic's Claude models by its
+// name, after any vendor prefix (anthropic/claude-sonnet-4.5) or as
+// Bedrock names it.
+func claudeModel(model string) bool {
+	m := strings.ToLower(model[strings.LastIndex(model, "/")+1:])
+	return strings.HasPrefix(m, "claude") || bedrockClaude(m)
+}
+
 // openAIModel is whether model is one of OpenAI's own by its name: a GPT,
 // a Codex or an o-series model, after any vendor prefix.
 func openAIModel(model string) bool {
@@ -1039,7 +1110,8 @@ func openAIModel(model string) bool {
 // Native is the API model is best asked on at this provider: one it serves
 // the model on itself, so a request on it is relayed as it is rather than
 // translated — Responses for a ChatGPT sign-in, or an OpenAI model on
-// OpenAI's API or Copilot's; Chat where that is served. "" when every
+// OpenAI's API or Copilot's; Anthropic's Messages for a Claude model
+// where that is served; Chat where that is served. "" when every
 // request is translated anyway: a sign-in served through its agent's own
 // API (Claude Code's binary, Cursor, Devin, Kiro, Code Assist).
 func (p Provider) Native(model string) Protocol {
@@ -1061,6 +1133,9 @@ func (p Provider) Native(model string) Protocol {
 	}
 	if p.ResponsesFirst(model) && slices.Contains(out, Responses) {
 		return Responses
+	}
+	if p.MessagesFirst(model) && slices.Contains(out, Anthropic) {
+		return Anthropic
 	}
 	return out[0]
 }

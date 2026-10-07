@@ -284,6 +284,35 @@ func TestRefusalAfterContentPassesThrough(t *testing.T) {
 	}
 }
 
+// A safety filter's refusal that arrives once the reply has begun goes to
+// the agent as it came — nobody else is asked, the reply already reached
+// it — and it is the vendor refusing the turn, as one before anything was
+// said is: nobody rests for it, and the account is asked again as any
+// other (#248).
+func TestRefusalMidReplyRestsNobody(t *testing.T) {
+	fresh(t)
+	late := sse(`data: {"id":"c1","choices":[{"index":0,"delta":{"role":"assistant","content":"half"}}]}`,
+		`data: {"error":{"code":"content_filter","message":"The response was filtered"}}`,
+		`data: [DONE]`)
+	a := &scripted{replies: []reply{{200, "text/event-stream", late}}}
+	b := &scripted{replies: []reply{{200, "", chatOK}}}
+	scriptedOn(t, "a", provider.Chat, a)
+	scriptedOn(t, "b", provider.Chat, b)
+	refusalGroup(t, "a/m", "b/m")
+	s := New()
+	code, body := sendTo(s, "/v1/chat/completions", `{"model":"group/g","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	if code != 200 || !strings.Contains(body, "half") || !strings.Contains(body, "content_filter") || b.n != 0 {
+		t.Fatalf("chat: %d %s (b %d)", code, body, b.n)
+	}
+	r := s.trace.routes[len(s.trace.routes)-1]
+	if len(r.Tries) != 1 || r.Tries[0].Fail != failRefused || r.Tries[0].Rest != nil || r.Tries[0].Status != 200 {
+		t.Fatalf("tries: %+v", r.Tries)
+	}
+	if s.resting("a") {
+		t.Fatal("a refusal after content set the member aside")
+	}
+}
+
 func TestStreamEventRefusals(t *testing.T) {
 	for _, x := range []struct {
 		ev   string

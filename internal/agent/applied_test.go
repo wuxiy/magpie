@@ -10,8 +10,29 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/gateway"
-	"github.com/yetone/magpie/internal/usage"
 )
+
+// sameGroup compares two values of a field, one of them read back from the
+// agent's own settings where Claude Code's [1m] mark rides on the group's
+// id: the marked one is the group magpie set, not another group — the
+// gateway serves either (#750's comparison, with the mark on one side).
+func TestSameGroupTakesTheOneMMarkOff(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"group/auto-gpt-5", "group/auto-gpt-5[1m]"},
+		{"group/auto-gpt-5[1m]", "group/auto-gpt-5"},
+		{"group/auto-gpt-5[1m]", "magpie/group/auto-gpt-5"},
+	} {
+		if !sameGroup(pair[0], pair[1]) {
+			t.Errorf("sameGroup(%q, %q) = false", pair[0], pair[1])
+		}
+	}
+	if sameGroup("group/auto-gpt-5", "group/auto-other") {
+		t.Error("two different groups are the same")
+	}
+	if sameGroup("group/auto-gpt-5", "a/gpt-5") {
+		t.Error("a group and a model are the same")
+	}
+}
 
 // Something else rewrote Codex's config: the base URL gone while the model
 // is still magpie's is unwired, and setting it again wires it back.
@@ -72,6 +93,11 @@ func TestDriftBypassed(t *testing.T) {
 	cx := codex(home)
 	defer func(s time.Time) { started = s }(started)
 	started = time.Now().Add(-time.Hour)
+	// a request reaching the gateway, kept to this run: usage.Saw's record
+	// lasts the process, so the next run (-count=2) would start with it
+	var saw time.Time
+	defer func(f func(string) time.Time) { lastSeen = f }(lastSeen)
+	lastSeen = func(string) time.Time { return saw }
 	if err := cx.Apply("model", "fake/m1"); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +115,7 @@ func TestDriftBypassed(t *testing.T) {
 	if d := cx.Drift(); d == nil || d.Kind != "bypassed" || d.Want != "fake/m1" {
 		t.Fatalf("bypassed: %+v", d)
 	}
-	usage.Saw("codex")
+	saw = time.Now()
 	if d := cx.Drift(); d != nil {
 		t.Fatalf("a request arrived: %+v", d)
 	}

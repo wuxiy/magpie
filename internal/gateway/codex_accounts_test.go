@@ -266,6 +266,148 @@ func TestGatewayKeyAccountsHoldCodexOwnModel(t *testing.T) {
 	}
 }
 
+// A gateway key held to some accounts (#905) holds Codex's native
+// compaction too: /responses/compact for one of Codex's own models,
+// kept native (#876) for the encrypted history only the ChatGPT backend
+// can read, still relays on the account Codex is signed in to, with
+// nothing of the key asked — so a key held to other accounts is refused
+// with nothing asked of OpenAI, as its turns are (#967), the message
+// saying the two ways out; one held to the account in use, or naming no
+// Codex account at all (AllowsAccount's rule), compacts on it as it
+// always did, as a key that names no account does; and the gate fails
+// closed — Codex switched off in magpie, the sign-in nowhere magpie can
+// resolve, is refused as an account the key may not use is.
+func TestGatewayKeyAccountsHoldCodexCompact(t *testing.T) {
+	codexSignedIn(t, "spare@example.com")
+	var asked, bodies []string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		asked = append(asked, strings.TrimPrefix(r.URL.Path, "/backend-api/codex")+" "+modelOf(b))
+		bodies = append(bodies, string(b))
+		io.WriteString(w, sse(
+			`data: {"type":"response.output_item.done","output_index":0,"item":{"type":"compaction","id":"cmp_openai","encrypted_content":"openai-own"}}`,
+			`data: {"type":"response.completed","response":{"id":"resp_openai","status":"completed","output":[{"type":"compaction","id":"cmp_openai","encrypted_content":"openai-own"}]}}`))
+	}))
+	t.Cleanup(up.Close)
+	was := provider.CodexBase
+	provider.CodexBase = up.URL + "/backend-api/codex"
+	t.Cleanup(func() { provider.CodexBase = was })
+
+	s := New()
+	keys, secrets := newCaller(t, "Held", "Free")
+	setAccounts := func(t *testing.T, id string, as ...string) {
+		t.Helper()
+		if _, err := access.Update("accounts-key", access.Change{Key: id, Accounts: as}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	compact := `{"model":"gpt-5.5","stream":true,"tools":[{"type":"function","name":"shell"}],"input":[{"type":"message","role":"user","content":"remember this"},{"type":"compaction_trigger"}]}`
+	post := func(secret string) (int, string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", CodexPath+"/responses/compact", strings.NewReader(compact))
+		req.Header.Set("Authorization", "Bearer "+secret)
+		s.Handler().ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	// the sign-in isn't the key's: refused, nothing asked of OpenAI, the
+	// message saying the two ways out
+	setAccounts(t, keys[0].ID, "codex/spare@example.com")
+	code, body := post(secrets[0])
+	var e struct {
+		Error struct{ Message, Type string }
+	}
+	json.Unmarshal([]byte(body), &e)
+	if code != 403 || e.Error.Type != "permission_error" || !strings.Contains(e.Error.Message, `"Held"`) || !strings.Contains(e.Error.Message, "may not use") ||
+		!strings.Contains(e.Error.Message, "it may use codex/spare@example.com") || !strings.Contains(e.Error.Message, "add the signed-in account to the key") ||
+		!strings.Contains(e.Error.Message, "compaction_trigger on /responses") {
+		t.Fatalf("held off the sign-in: %d %s", code, body)
+	}
+	if len(asked) != 0 {
+		t.Fatalf("a compaction on an account the key may not use reached OpenAI: %v", asked)
+	}
+	// the sign-in is the key's: compaction relays as it came, on the
+	// model Codex asked for
+	setAccounts(t, keys[0].ID, "codex/me@example.com")
+	code, body = post(secrets[0])
+	if code != 200 || !strings.Contains(body, `"id":"cmp_openai"`) {
+		t.Fatalf("held to the sign-in: %d %s", code, body)
+	}
+	if len(asked) != 1 || asked[0] != "/responses/compact gpt-5.5" || bodies[0] != compact {
+		t.Fatalf("compacted %v", asked)
+	}
+	// a key that names no Codex account uses the sign-in as it always
+	// did: the list holds it to some accounts of the providers it names
+	if err := provider.Save(provider.Provider{ID: "relay", Name: "Relay", Key: "relay-secret", Chat: "https://relay.invalid/v1", Models: []string{"m1"}}); err != nil {
+		t.Fatal(err)
+	}
+	setAccounts(t, keys[0].ID, "relay/"+provider.KeyID("relay-secret"))
+	code, body = post(secrets[0])
+	if code != 200 || len(asked) != 2 {
+		t.Fatalf("naming no Codex account: %d %s, %d upstream requests", code, body, len(asked))
+	}
+	// a key that names no account compacts as it always did
+	code, body = post(secrets[1])
+	if code != 200 || !strings.Contains(body, `"id":"cmp_openai"`) || len(asked) != 3 {
+		t.Fatalf("a free key: %d %s, %d upstream requests", code, body, len(asked))
+	}
+	// Codex switched off in magpie, the sign-in still on it: the gate
+	// fails closed, refused as an account the key may not use is
+	setAccounts(t, keys[0].ID, "codex/spare@example.com")
+	if err := provider.SetOff("codex", true); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := provider.SetOff("codex", false); err != nil {
+			t.Errorf("switching Codex back on: %v", err)
+		}
+	})
+	provider.ForgetAccounts()
+	code, body = post(secrets[0])
+	json.Unmarshal([]byte(body), &e)
+	if code != 403 || e.Error.Type != "permission_error" || len(asked) != 3 {
+		t.Fatalf("the provider off, held off the sign-in: %d %s, %d upstream requests", code, body, len(asked))
+	}
+}
+
+// Codex itself signed in with an OpenAI API key (auth.json's auth_mode)
+// rather than a ChatGPT account: a held key's native compaction relays
+// as it always did — the sign-in is a key's, spending no account a
+// gateway key's list governs.
+func TestGatewayKeyCompactOnCodexAPIKey(t *testing.T) {
+	codexSignedIn(t, "spare@example.com")
+	s := New()
+	keys, secrets := newCaller(t, "Held")
+	if _, err := access.Update("accounts-key", access.Change{Key: keys[0].ID, Accounts: []string{"codex/spare@example.com"}}); err != nil {
+		t.Fatal(err)
+	}
+	// Codex signs back in with an API key: no ChatGPT account behind the
+	// sign-in, and no codex provider in magpie at all
+	os.WriteFile(filepath.Join(os.Getenv("HOME"), ".codex", "auth.json"),
+		[]byte(`{"auth_mode":"apikey","OPENAI_API_KEY":"sk-test"}`), 0o600)
+	provider.ForgetAccounts()
+	var asked []string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		asked = append(asked, strings.TrimPrefix(r.URL.Path, "/backend-api/codex")+" "+modelOf(b))
+		io.WriteString(w, sse(
+			`data: {"type":"response.output_item.done","output_index":0,"item":{"type":"compaction","id":"cmp_openai","encrypted_content":"openai-own"}}`,
+			`data: {"type":"response.completed","response":{"id":"resp_openai","status":"completed","output":[{"type":"compaction","id":"cmp_openai","encrypted_content":"openai-own"}]}}`))
+	}))
+	t.Cleanup(up.Close)
+	was := provider.CodexBase
+	provider.CodexBase = up.URL + "/backend-api/codex"
+	t.Cleanup(func() { provider.CodexBase = was })
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", CodexPath+"/responses/compact", strings.NewReader(`{"model":"gpt-5.5","stream":true,"input":"x"}`))
+	req.Header.Set("Authorization", "Bearer "+secrets[0])
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != 200 || strings.Join(asked, ",") != "/responses/compact gpt-5.5" {
+		t.Fatalf("on Codex's API key: %d %s asked %v", rec.Code, rec.Body.String(), asked)
+	}
+}
+
 // A gateway key held to some models (#882) holds Codex's own models too,
 // asked for by their bare native names: the turn goes through routing,
 // which names them codex/<model> as the catalog does, and one the key

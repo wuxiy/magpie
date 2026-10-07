@@ -102,7 +102,13 @@ everything built on it.**
   (69a7744a).
 - d1c19131 added facts only to lists fetched afterwards. Lists saved on
   disk stayed empty (37231626).
-- Seen 1× (2026-10-05).
+- 10-06: e0bf3e61 changed the names the catalog gives an unlisted model.
+  internal/agent's Hanako tests are built on those names and went red
+  (c0c3b20b). 2a990175 (#971) made Usage and Providers ask a new
+  /api/upstream. menu-scroll.test.cjs fails on any API it doesn't serve, and
+  it failed 24 of 24 on main until b2b72ea0. A new endpoint the GUI calls
+  means running the whole GUI suite, not only the touched page's tests.
+- Seen 2× (2026-10-05, 2026-10-06).
 
 **A restriction covers every route that reaches the thing it guards.**
 - 46f03154 (#882) held keys to some models. count_tokens and System One's
@@ -147,7 +153,13 @@ could match the same key.**
   Desktop. Its skills page hung for 2 days (#863, 50d6c9a3).
 - For layered vendor configs, read the vendor's merge code first. 9761248d
   guessed dsh's merge rules (#838).
-- Seen 1× (2026-10-05).
+- 10-06: #966's review asked that Codex's limit_reached count as "held",
+  without reading the app. 38 minutes later #996 read ChatGPT.app's app.asar.
+  Its composer only stops on rate_limit.allowed === false, so #996 undid part
+  of #966. #996 and e2f1c6ba are how to do it: e2f1c6ba sealed its fixture
+  the way OpenHanako 1.0 seals provider-catalog.json and was checked on a
+  copy of the owner's real ~/.hanako.
+- Seen 2× (2026-10-05, 2026-10-06).
 
 ## Verification
 
@@ -179,6 +191,30 @@ in every language.**
   only; c6e318e1 did WebKit 40 minutes later.
 - Seen 2× (2026-10-05, 2026-10-06).
 
+## Concurrency and tests
+
+**Never send on a channel, or call anything that can block, while holding a
+lock the receiver needs before it reads. Set shared state before the
+handoff that lets another goroutine look at it.**
+- 85fd35ab's emit sent to a full 64-slot segment while holding r.mu, and the
+  reader takes r.mu first. It hung macOS -race CI for 20 minutes
+  (4fb8e887). -race -count=50 locally didn't catch it. A test that fills the
+  buffer first catches it every time.
+- The Claude subscription run recorded run.tools after continueWith had
+  already answered the agent, so a quick turn read the old tools
+  (TestToolSearchLoadKeepsTheRun, c8690ca0).
+- Seen 1× (2026-10-06).
+
+**A fake or child process a test starts ends when the test does.**
+- TestClaudeSignInByPaste's fake `claude auth login` polled every 50ms for 2
+  days after its test, waiting on a file in a TempDir that was gone
+  (38a0f470).
+- After a test times out, check `ps` for its binary. An orphaned gateway.test
+  spun at 96% CPU for 30 minutes.
+- Size -count to -timeout. A timeout panic is not a hang until its stacks
+  show one.
+- Seen 1× (2026-10-06).
+
 ## Red tests and releases
 
 **A test that fails on main is a bug to fix now, not a baseline.**
@@ -195,6 +231,18 @@ in every language.**
   that "failed under the full run's load and pass on their own". Two of them
   weren't load: TestProvidersAnswerWhileListsComeIn depended on test order
   (bfe8bcaf), and Kiro's identity refresh had a data race (ccdd18e3).
+- Later on 10-06: TestPluginSOCKSProxy timed out at 60s on ubuntu CI and was
+  rerun as "load jitter". It takes 3s on a Mac every time, and a dead local
+  proxy should refuse in milliseconds, so something on that path waits.
+  TestUnreadLoginsNotWrittenOver needed two writes inside one wall-clock
+  second (a `.bad-<second>` name) and failed on Linux CI (237d216b). Test a
+  name made from time.Now() across a second boundary.
+- Before fixing a red CI run, `git log origin/main` for a commit that names
+  that run or test. 85fd35ab and e34e53a1 fixed the same lost tail in two
+  sessions at once.
+- Done right: 2bd49cc5's race was fixed at its cause in 25 minutes
+  (28049bd2, -race -count=40 -cpu 1,2). 60f87223 and b1cba654 fixed two
+  flakes at their cause instead of retrying.
 - Seen 2× (2026-10-05, dozens of commits; 2026-10-06).
 
 **Don't tag until a CI Test run on that commit, or one containing it, has
@@ -216,10 +264,18 @@ finished green. A cancelled run is not a pass.**
 - Use `gh pr merge --match-head-commit <sha>`.
 - #736 and #827 merged commits pushed after the last review. #807 and #838
   posted their verification after merging.
+- 10-06: #974 was reviewed at 95b66f60, force-pushed 45 minutes later with a
+  rebase and a new commit, and merged with nothing said about the new head.
+  #966 is the model: re-checked at the new head, and the merge comment says
+  so.
+- Write what you ran on the PR, then merge. On 10-06, #1004, #1015, #1018,
+  #1021, #1029 and #1034 each got their "verified" comment 2 to 14 seconds
+  after the merge. #981, #1000 and #1030 got none. A merge with no record of
+  what was run can't be checked afterwards.
 - Never merge a PR whose own new test fails (#885, #826). Fix or file the
   problems a review lists before merging. #846 merged with four known-wrong
   translations.
-- Seen 1× (2026-10-05).
+- Seen 2× (2026-10-05, 2026-10-06).
 
 **Keep the issue open until the reporter's case works. Reopen when they say
 it doesn't.**

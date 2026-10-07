@@ -134,7 +134,9 @@ func served(ref string) bool {
 // down to one provider, it is that model from the first provider still
 // serving it; none for any other routing group, which is nobody else's.
 func sameModel(opts []Option, ref string) Option {
-	if gid, ok := strings.CutPrefix(ref, provider.GroupPrefix); ok {
+	// a group's id carries Claude Code's [1m] mark as a model's does, and
+	// this ref comes from the agent's own settings
+	if gid, ok := provider.GroupIDOf(ref); ok {
 		if !strings.HasPrefix(gid, "auto-") {
 			return Option{}
 		}

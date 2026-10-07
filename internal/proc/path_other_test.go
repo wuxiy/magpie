@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/agentenv"
+	"github.com/yetone/magpie/internal/testenv"
 )
 
 // A desktop app with launchd's PATH finds a claude installed under a custom
@@ -22,9 +23,9 @@ func TestUserPath(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	npm := filepath.Join(home, ".npm-global", "bin")
 	os.MkdirAll(npm, 0o755)
-	os.WriteFile(filepath.Join(npm, "claude"), []byte("#!/bin/sh\n"), 0o755)
+	testenv.Program(t, filepath.Join(npm, "claude"), "#!/bin/sh\n")
 	sh := filepath.Join(home, "sh")
-	os.WriteFile(sh, []byte("#!/bin/sh\necho 'welcome back!'\nPATH=/from/profile:$PATH\neval \"$2\"\necho bye\n"), 0o755)
+	testenv.Program(t, sh, "#!/bin/sh\necho 'welcome back!'\nPATH=/from/profile:$PATH\neval \"$2\"\necho bye\n")
 	t.Setenv("SHELL", sh)
 	t.Setenv("PATH", "/usr/bin:/bin")
 
@@ -54,9 +55,9 @@ func TestUserPathTakesAgentVars(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	pi := filepath.Join(home, "pi agent") // a space survives
 	sh := filepath.Join(home, "sh")
-	os.WriteFile(sh, []byte("#!/bin/sh\necho 'a profile that talks'\n"+
+	testenv.Program(t, sh, "#!/bin/sh\necho 'a profile that talks'\n"+
 		"export PI_CODING_AGENT_DIR='"+pi+"'\nexport CODEX_HOME=/from/profile/codex\nexport GROK_HOME=\n"+
-		"eval \"$2\"\necho bye\n"), 0o755)
+		"eval \"$2\"\necho bye\n")
 	t.Setenv("SHELL", sh)
 	t.Setenv("PATH", "/usr/bin:/bin")
 	for _, v := range []string{"PI_CODING_AGENT_DIR", "GROK_HOME", "CLAUDE_CONFIG_DIR"} {

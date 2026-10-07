@@ -202,6 +202,74 @@ func TestBurstTellsNoSpeed(t *testing.T) {
 	}
 }
 
+// A reply that reasoned is timed by its answer (tony on Discord: gpt-6.1-sol
+// read 163 tok/s with a 14 s first token). A Codex turn of 2000 hidden
+// reasoning tokens before its first content at 14 s and a 200-token answer
+// over the 1.5 s after counted 2200 tokens in 1.5 s, 1,467 tok/s; it's 200
+// in 1.5 s, 133. Two such subagents running at once are each their own
+// window, summed, not the wall clock's. A reply that reasoned and wrote
+// only tool calls has no first text and tells no speed; one that didn't
+// reason, or wasn't streamed, is timed as before. The summary, ledger rows
+// and the timeline's parts agree.
+func TestReasoningReplyTimedByItsAnswer(t *testing.T) {
+	now := time.Date(2026, 10, 6, 15, 30, 0, 0, time.UTC)
+	at := now.Add(-time.Hour)
+	codex := func(out, reasoning int, ms, ttft, text int64) Record {
+		return Record{Time: at, Provider: "codex", Model: "gpt-6.1-sol", Output: out, Reasoning: reasoning, Millis: ms, TTFT: ttft, FirstText: text, Status: 200}
+	}
+	recs := []Record{
+		codex(2200, 2000, 15500, 14000, 14000), // the turn: 200 in 1.5 s
+		codex(2200, 2000, 15500, 13990, 14000), // a summary 10 ms before the text: the same
+		codex(1300, 1000, 9000, 6000, 6000),    // a subagent at once: 300 in 3 s
+		codex(1500, 1400, 9000, 8000, 0),       // reasoning, then tool calls only: no speed
+		codex(900, 1000, 9000, 6000, 6000),     // reasoning over output: none
+		{Time: at, Provider: "codex", Model: "gpt-6.1-sol", Output: 500, Millis: 7000, TTFT: 2000, Status: 200},     // no reasoning: 500 in 5 s
+		{Time: at, Provider: "codex", Model: "gpt-6.1-sol", Output: 900, Reasoning: 300, Millis: 7000, Status: 200}, // not streamed
+	}
+	const ms, out = 1500 + 1500 + 3000 + 5000, 200 + 200 + 300 + 500
+	m := summarize(Today, now, recs).Models[0]
+	if m.Timed != 6 || m.DecodeMs != ms || m.DecodeOut != out || m.Speed() != 109.0909090909091 {
+		t.Fatalf("model: %+v, %v tok/s", m.Totals, m.Speed())
+	}
+	var rows Totals
+	var lr []Row
+	held := holdClock(t, time.Date(2026, 9, 30, 12, 0, 0, 0, time.Local))
+	for _, r := range recs {
+		rows.addRow(Row{Record: r})
+		// LedgerSeries buckets today by Clock, so the timeline's rows are
+		// made at the time it is held at
+		r.Time = held
+		lr = append(lr, Row{Record: r})
+	}
+	if rows.Timed != 6 || rows.DecodeMs != ms || rows.DecodeOut != out {
+		t.Fatalf("rows: %+v", rows)
+	}
+	_, pts := LedgerSeries(Today, lr)
+	var p Part
+	for _, pt := range pts {
+		if q, ok := pt.By["model"]["gpt-6.1-sol"]; ok {
+			p = q
+		}
+	}
+	if p.DecodeMs != ms || p.DecodeOut != out {
+		t.Fatalf("part: %+v", p)
+	}
+	for _, c := range []struct {
+		r Record
+		n int
+		w int64
+	}{
+		{recs[0], 200, 1500},
+		{recs[3], 0, 0},
+		{recs[5], 500, 5000},
+		{recs[6], 0, 0},
+	} {
+		if n, w := c.r.Decode(); n != c.n || w != c.w {
+			t.Errorf("Decode(%+v) = %d, %d; want %d, %d", c.r, n, w, c.n, c.w)
+		}
+	}
+}
+
 // FormatCost stays in dollars unless cny is asked for and a usable rate is
 // given; it keeps the same 0/2/3-decimal rule either currency, and a rate
 // that's missing or non-positive falls back to USD rather than hiding the
@@ -226,5 +294,20 @@ func TestFormatCost(t *testing.T) {
 		if got := FormatCost(c.amount, c.currency, c.rate); got != c.want {
 			t.Errorf("FormatCost(%v, %q, %v) = %q, want %q", c.amount, c.currency, c.rate, got, c.want)
 		}
+	}
+}
+
+// A request Saw note is LastSeen's answer at once, before any record of it
+// is written.
+func TestSawIsLastSeen(t *testing.T) {
+	const agent = "saw-is-last-seen"
+	t.Cleanup(func() { seen.Delete(agent) }) // the record lasts the process
+	if at := LastSeen(agent); !at.IsZero() {
+		t.Fatalf("before any request: %v", at)
+	}
+	before := time.Now()
+	Saw(agent)
+	if at := LastSeen(agent); at.Before(before) || time.Since(at) > time.Minute {
+		t.Fatalf("after a request: %v", at)
 	}
 }

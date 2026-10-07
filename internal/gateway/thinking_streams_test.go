@@ -138,3 +138,92 @@ func TestThinkingHeldFor(t *testing.T) {
 		}
 	}
 }
+
+// Claude's or OpenAI's reasoning at a provider nothing else stands behind
+// is streamed as it comes: held for a refusal (#248) that would go to the
+// agent anyway, as the last candidate's does, a relay's Claude showed
+// Claude Code its thinking all at once with the text, and Codex none until
+// then (iTianbao on X). Each of the relay's APIs, to Claude Code and
+// Codex.
+func TestThinkingStreamsWithNoOneElse(t *testing.T) {
+	responsesThinks := []string{
+		`event: response.created` + "\n" + `data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress","output":[]}}`,
+		`event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":0,"item":{"id":"rs_1","type":"reasoning","summary":[]}}`,
+		`event: response.reasoning_summary_part.added` + "\n" + `data: {"type":"response.reasoning_summary_part.added","item_id":"rs_1","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":""}}`,
+		`event: response.reasoning_summary_text.delta` + "\n" + `data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,"summary_index":0,"delta":"first thought"}`,
+		`event: response.reasoning_summary_text.delta` + "\n" + `data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,"summary_index":0,"delta":" second thought"}`,
+		`event: response.reasoning_summary_text.delta` + "\n" + `data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,"summary_index":0,"delta":" third thought"}`,
+		`event: response.output_item.done` + "\n" + `data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"first thought second thought third thought"}]}}`,
+		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","item_id":"m1","output_index":1,"content_index":0,"delta":"done"}`,
+		`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"first thought second thought third thought"}]},{"id":"m1","type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}],"usage":{"input_tokens":1,"output_tokens":9,"total_tokens":10}}}`,
+	}
+	codexAsks := `{"model":"relay/MODEL","stream":true,"reasoning":{"effort":"medium","summary":"auto"},"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]}`
+	claudeAsks := strings.Replace(claudeCodeAsk, "group/g", "relay/MODEL", 1)
+	for _, x := range []struct {
+		name   string
+		proto  provider.Protocol
+		events []string
+		model  string
+	}{
+		{"anthropic", provider.Anthropic, glmThinksSlowly, "claude-opus-5-5"},
+		{"chat", provider.Chat, glmChatThinksSlowly, "claude-opus-5-5"},
+		{"chat gpt", provider.Chat, glmChatThinksSlowly, "gpt-5.2"},
+		{"responses", provider.Responses, responsesThinks, "gpt-5.2"},
+	} {
+		for _, ask := range []struct{ path, body, thought, text string }{
+			{"/v1/messages", claudeAsks, `"thinking_delta"`, `"text_delta"`},
+			{"/v1/responses", codexAsks, `"response.reasoning_summary_text.delta"`, `"response.output_text.delta"`},
+		} {
+			t.Run(x.name+ask.path, func(t *testing.T) {
+				fresh(t)
+				up := &slowThinker{events: x.events, gap: 200 * time.Millisecond, done: make(chan time.Time, 1)}
+				vendor := httptest.NewServer(up)
+				t.Cleanup(vendor.Close)
+				p := provider.Provider{ID: "relay", Name: "Relay", Key: "k", Models: []string{x.model}}
+				switch x.proto {
+				case provider.Anthropic:
+					p.Anthropic = vendor.URL
+				case provider.Chat:
+					p.Chat = vendor.URL + "/v1"
+				default:
+					p.Responses = vendor.URL + "/v1"
+				}
+				if err := provider.Save(p); err != nil {
+					t.Fatal(err)
+				}
+				gw := httptest.NewServer(New().Handler())
+				t.Cleanup(gw.Close)
+				res, err := http.Post(gw.URL+ask.path, "application/json", strings.NewReader(strings.Replace(ask.body, "MODEL", x.model, 1)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer res.Body.Close()
+				var firstThought, firstText time.Time
+				rd := bufio.NewReader(res.Body)
+				for {
+					ln, err := rd.ReadString('\n')
+					if firstThought.IsZero() && strings.Contains(ln, ask.thought) {
+						firstThought = time.Now()
+					}
+					if firstText.IsZero() && strings.Contains(ln, ask.text) {
+						firstText = time.Now()
+					}
+					if err != nil {
+						break
+					}
+				}
+				select {
+				case <-up.done:
+				case <-time.After(5 * time.Second):
+					t.Fatal("the vendor never finished")
+				}
+				if firstThought.IsZero() || firstText.IsZero() {
+					t.Fatal("no thinking or no text reached the client")
+				}
+				if firstText.Sub(firstThought) < 300*time.Millisecond {
+					t.Fatalf("thinking held: first thought only %v before the text", firstText.Sub(firstThought))
+				}
+			})
+		}
+	}
+}

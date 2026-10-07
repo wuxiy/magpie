@@ -39,7 +39,7 @@ func TestNative(t *testing.T) {
 		{"Chat and Responses elsewhere", Provider{ID: "both", Chat: "https://x.test/v1", Responses: "https://x.test/v1"}, "gpt-5.5", Chat},
 		{"anthropic only", Provider{ID: "anthropic", Anthropic: "https://api.anthropic.com"}, "claude-sonnet-5", Anthropic},
 		{"Copilot GPT", copilot, "gpt-5.5", Responses},
-		{"Copilot Claude", copilot, "claude-sonnet-5", Chat},
+		{"Copilot Claude", copilot, "claude-sonnet-5", Anthropic},
 		{"Cursor", Provider{ID: "cursor", Chat: "https://cursor.test/v1", Account: &Account{Agent: "cursor"}}, "auto", ""},
 		{"Claude Code", Provider{ID: "claude", Anthropic: "https://api.anthropic.com", Account: &Account{Agent: "claude"}}, "claude-sonnet-5", ""},
 		{"nothing", Provider{ID: "none"}, "m", ""},

@@ -81,8 +81,13 @@ func TestSubscriptionUsageServesStale(t *testing.T) {
 	}
 	// what showed the stale copy hears when the new one lands
 	landed := make(chan struct{}, 1)
-	OnSubscriptionUsage = func() { landed <- struct{}{} }
-	t.Cleanup(func() { OnSubscriptionUsage = nil })
+	OnSubscriptionUsage(func() {
+		select {
+		case landed <- struct{}{}:
+		default:
+		}
+	})
+	t.Cleanup(func() { OnSubscriptionUsage(nil) })
 	c.Lock()
 	p := c.pending
 	c.at = time.Time{}

@@ -81,13 +81,14 @@ var cliSpecs = map[string]cliSpec{
 			}
 			return nil
 		}},
-	"pi":      {npm: []string{"@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"}},
-	"omp":     {npm: []string{"@oh-my-pi/pi-coding-agent"}},
-	"copilot": {npm: []string{"@github/copilot"}, brew: []string{"copilot-cli"}},
-	"crush":   {npm: []string{"@charmland/crush"}, brew: []string{"crush"}},
-	"cline":   {npm: []string{"cline"}},
-	"dsh":     {npm: []string{"@deepseek-ai/dsh"}},
-	"goose":   {brew: []string{"block-goose-cli"}},
+	"pi":        {npm: []string{"@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"}},
+	"omp":       {npm: []string{"@oh-my-pi/pi-coding-agent"}},
+	"copilot":   {npm: []string{"@github/copilot"}, brew: []string{"copilot-cli"}},
+	"crush":     {npm: []string{"@charmland/crush"}, brew: []string{"crush"}},
+	"cline":     {npm: []string{"cline"}},
+	"dsh":       {npm: []string{"@deepseek-ai/dsh"}},
+	"codebuddy": {npm: []string{"@tencent-ai/codebuddy-code"}},
+	"goose":     {brew: []string{"block-goose-cli"}},
 	// AtomCode's installer chooses /usr/local/bin or ~/.local/bin by
 	// writability (`.local\bin\atomcode.exe` on Windows); `atomcode upgrade`
 	// exists, but its installed-binary update path is not exercised here, so

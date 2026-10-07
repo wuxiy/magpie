@@ -83,7 +83,10 @@ type Provider struct {
 	// an https URL or a data:image URI (internal/provider keeps it)
 	Icon string `json:"icon,omitempty"`
 	// Usage says the plugin tells each account's allowance (auth.usage)
-	Usage     bool    `json:"usage"`
+	Usage bool `json:"usage"`
+	// Checkin says the plugin presses its vendor's daily check-in for each
+	// account (auth.checkin)
+	Checkin   bool    `json:"checkin,omitempty"`
 	SignedIn  bool    `json:"signedIn"`
 	AuthType  string  `json:"authType"`
 	AccountID string  `json:"accountId"`
@@ -838,6 +841,24 @@ type UsageWindow struct {
 	Models    []string `json:"models"`
 	NotModels []string `json:"notModels"`
 	Aside     bool     `json:"aside"`
+}
+
+// Checkin is what came of an account's daily check-in, as the plugin's
+// auth.checkin said: Outcome is one of claimed, done, ineligible,
+// inactive, captcha and failed.
+type Checkin struct {
+	Outcome string  `json:"outcome"`
+	Credit  float64 `json:"credit"`
+	Streak  int     `json:"streak"`
+	Message string  `json:"message"`
+}
+
+// AccountCheckin asks the plugin to check account of provider in for the
+// day.
+func AccountCheckin(ctx context.Context, provider, account string) (Checkin, error) {
+	var c Checkin
+	err := Call(ctx, "checkin", map[string]any{"provider": provider, "account": account, "proxy": proxyOf(ctx)}, &c)
+	return c, err
 }
 
 // AccountUsage asks the plugin for account's usage of provider.

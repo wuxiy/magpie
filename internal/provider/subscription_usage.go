@@ -144,9 +144,19 @@ var subscriptionUsageCache struct {
 	asked   bool          // the user asked (AskClaudeUsage): wait for the refresh
 }
 
-// OnSubscriptionUsage is told when a refresh has landed, for what shows a
-// stale copy meanwhile (the menu bar's text) to read the new one.
-var OnSubscriptionUsage func()
+// OnSubscriptionUsage sets what is told when a refresh has landed, for what
+// shows a stale copy meanwhile (the menu bar's text) to read the new one; nil
+// tells nothing. It is held atomically: a refresh runs in the background and
+// may be under way while it is set (#1023).
+func OnSubscriptionUsage(f func()) {
+	if f == nil {
+		onSubscriptionUsage.Store(nil)
+		return
+	}
+	onSubscriptionUsage.Store(&f)
+}
+
+var onSubscriptionUsage atomic.Pointer[func()]
 
 // subscriptionTimeout bounds one refresh; the vendors' endpoints can be
 // unreachable without a proxy, and then each fetch would hang to it.
@@ -181,10 +191,12 @@ func SubscriptionUsage(ctx context.Context) []SubscriptionQuota {
 				c.at = time.Time{} // asked meanwhile: read again
 			}
 			c.Unlock()
-			close(done)
-			if f := OnSubscriptionUsage; f != nil {
-				f()
+			// told before done is closed, so whoever waits for the refresh
+			// has it finished, hook and all
+			if f := onSubscriptionUsage.Load(); f != nil {
+				(*f)()
 			}
+			close(done)
 		}()
 	}
 	pending := c.pending
@@ -339,7 +351,9 @@ func fetchSubscriptionUsage(ctx context.Context) []SubscriptionQuota {
 		if ls := accountsOf("claude"); len(ls) > 1 || p.Account.standIn {
 			fetches = append(fetches, perLogin(via("claude"), ls, "Claude Code", "claude-color")...)
 		} else {
-			fetches = append(fetches, withUser(ctx, p.Account.User, func() SubscriptionQuota { return claudeSubscriptionUsage(viaLogin("claude", p.Account.User), p.Account.User) }))
+			fetches = append(fetches, withUser(ctx, p.Account.User, func() SubscriptionQuota {
+				return claudeSubscriptionUsage(viaLogin("claude", p.Account.User), p.Account.User)
+			}))
 		}
 	}
 	if user, plan, ok := cursorIdentity(); !moved("cursor") && ok && !hidden["cursor"] {
@@ -844,12 +858,11 @@ type codexUsage struct {
 		OverageReached *bool `json:"overage_limit_reached"`
 	} `json:"credits"`
 	RateLimit struct {
-		// false, or limit_reached true, once its allowance is used up;
-		// held only with no credits to go on with (codexHeld)
-		Allowed      *bool        `json:"allowed"`
-		LimitReached *bool        `json:"limit_reached"`
-		Primary      *codexWindow `json:"primary_window"`
-		Secondary    *codexWindow `json:"secondary_window"`
+		// false once its allowance is used up; held only with no credits
+		// to go on with (codexHeld)
+		Allowed   *bool        `json:"allowed"`
+		Primary   *codexWindow `json:"primary_window"`
+		Secondary *codexWindow `json:"secondary_window"`
 	} `json:"rate_limit"`
 	SpendControl *struct {
 		Reached bool `json:"reached"`
@@ -865,10 +878,14 @@ type codexUsage struct {
 }
 
 // codexWorkspacePlans are the plans of a ChatGPT workspace: every plan
-// /wham/usage names (codex-rs codex-backend-openapi-models PlanType) but
-// guest, free, go, plus, pro, prolite and promax, and Codex's own "hc".
+// /wham/usage names (codex-rs codex-backend-openapi-models PlanType, and
+// the Codex app's own plan_type switch for its usage banner, search
+// "case`enterprise_cbp_trial`:" in ChatGPT.app 26.930.61225 app-initial)
+// but guest, free, go, plus, pro, prolite and promax. A plan not listed
+// isn't a workspace, so it is held on no credits.
 var codexWorkspacePlans = []string{"free_workspace", "team", "self_serve_business_prolite", "self_serve_business_usage_based",
-	"business", "ent26", "enterprise_cbp_automation", "enterprise_cbp_usage_based", "enterprise", "hc",
+	"business", "ent26", "enterprise_cbp_automation", "enterprise_cbp_trial", "enterprise_cbp_usage_based",
+	"enterprise_cbp_view_only", "enterprise", "hc", "finserv", "law", "sci",
 	"education", "edu", "edu_plus", "edu_pro", "quorum", "k12"}
 
 // codexReservePlans are the workspace plans the Codex app's reserve
@@ -878,41 +895,41 @@ var codexReservePlans = []string{"team", "self_serve_business_prolite"}
 
 // codexHeld reports whether the Codex app (ChatGPT Desktop) holds its
 // composer for the account, sending nothing at all, whichever model the
-// turn is on: the backend says the account isn't allowed now (allowed
-// false or limit_reached true), and it is at a spend cap or past its
-// overage, or has no credits to go on with (has_credits or unlimited) and
-// isn't a workspace one still within its overage. A window's percent never
-// says it: a Pro account reads 100% on its week and is not allowed, while
-// its credits carry every turn on (the app's composer stays open and the
-// backend answers). Not said is not held.
+// turn is on, as the app itself decides it: the backend says the account
+// isn't allowed now (rate_limit.allowed false; limit_reached alone isn't
+// read), and it has no credits to go on with (has_credits or unlimited),
+// and isn't a workspace one still within its overage (overage not
+// reached, no spend cap, an ordinary rate_limit_reached). A window's
+// percent never says it: a Pro account reads 100% on its week and is not
+// allowed, while its credits carry every turn on (the app's composer
+// stays open and the backend answers). Not said is not held.
 //
-// A spend cap or a reached overage holds it whatever its credits say, as
-// the app's readiness check reads it (26.930: `spend_control?.reached||
-// credits?.overage_limit_reached` is `limited` before `has_credits`), where
-// its composer gate alone (`hP`) lets credits through first: the backend
-// refuses an account at its cap, and magpie as Codex's provider can serve
-// the turn elsewhere. Where the app goes by what usage can't show (an
-// experiment's gate, the reserve it may send on, a reset redeemed in the
-// app), this says held too: wrongly held costs the app its ChatGPT extras
-// while magpie serves the turn, wrongly not held leaves it sending nothing
-// at all.
+// This is the composer's own gate in ChatGPT.app 26.930.61225, either of
+// two checks: hP in app-primary (search "n.rate_limit?.allowed!==!1||Jpe(n)"),
+// which lets credits through, then a workspace within its overage, and
+// hardBlocked in app-initial (search "hardBlocked:r.rate_limit?.allowed===!1"),
+// which lets credits through but no overage, for the reserve experiment's
+// plans. Tht (search "spend_control?.reached||e.credits?.overage_limit_reached"),
+// which reads a spend cap before credits, is not the gate: it only tells a
+// poller when to read usage again.
+//
+// Where the app goes by what usage can't show (the reserve experiment's
+// gate, the reserve it may send on, a reset redeemed in the app), this
+// says held: wrongly held costs the app its ChatGPT extras while magpie
+// serves the turn, wrongly not held leaves it sending nothing at all.
 func codexHeld(u codexUsage) bool {
-	r := u.RateLimit
-	if (r.Allowed == nil || *r.Allowed) && (r.LimitReached == nil || !*r.LimitReached) {
+	if u.RateLimit.Allowed == nil || *u.RateLimit.Allowed {
 		return false
 	}
 	c := u.Credits
-	spent := u.SpendControl != nil && u.SpendControl.Reached
-	if spent || c != nil && c.OverageReached != nil && *c.OverageReached {
-		return true
-	}
 	if c != nil && (c.Has || c.Unlimited) {
 		return false
 	}
+	spent := u.SpendControl != nil && u.SpendControl.Reached
 	why := u.ReachedType != nil && u.ReachedType.Type != nil && *u.ReachedType.Type != "rate_limit_reached"
 	plan := strings.ToLower(u.PlanType)
 	workspace := slices.Contains(codexWorkspacePlans, plan) && !slices.Contains(codexReservePlans, plan)
-	if workspace && c != nil && c.OverageReached != nil && !why {
+	if workspace && c != nil && c.OverageReached != nil && !*c.OverageReached && !spent && !why {
 		return false
 	}
 	return true
@@ -985,30 +1002,90 @@ func copilotSubscriptionUsage(ctx context.Context, githubToken, host string) Sub
 	} else if t, err := time.Parse("2006-01-02", data.ResetDay); err == nil {
 		resets = &t
 	}
+	// A Business or Enterprise seat's organization decides what happens
+	// past its allowance, so using it up pauses the seat whatever
+	// overage_permitted says, as VS Code's isChatQuotaExceeded has it.
+	managed := strings.EqualFold(data.Plan, "business") || strings.EqualFold(data.Plan, "enterprise")
 	for _, x := range []struct{ id, name string }{{"chat", "Chat requests"}, {"completions", "Completions"}, {"premium_interactions", "Premium requests"}} {
 		w, ok := data.Snapshots[x.id]
-		if ok && w.Unlimited {
+		if !ok {
+			continue
+		}
+		at := resets
+		if sec, ok := w.ResetAt.value(); ok && sec > 0 {
+			t := time.Unix(int64(sec), 0)
+			at = &t
+		}
+		if w.Unlimited {
+			// An organization's pooled premium allowance reads unlimited,
+			// and has_quota false when the pool is spent (#1063): VS Code
+			// pauses the seat then, so it is used up, not unlimited. Chat
+			// and completions say has_quota false under token-based
+			// billing whatever is left, and VS Code reads them unlimited.
+			if x.id == "premium_interactions" && w.HasQuota != nil && !*w.HasQuota {
+				q.Windows = append(q.Windows, QuotaWindow{Name: x.name, Used: 100, ResetsAt: at,
+					Span: 30 * 24 * time.Hour, Aside: w.Overage && !managed})
+				continue
+			}
 			unlimited = append(unlimited, QuotaWindow{Name: x.name, Unlimited: true, Display: "Unlimited", Aside: true})
 			continue
 		}
-		if !ok || !w.HasQuota || w.Entitlement <= 0 {
+		// has_quota isn't whether there is an allowance: GitHub says false
+		// for one used up, and under token-based billing for every one
+		// (#1063). The entitlement says it; 0 is none, as VS Code reads it.
+		ent, entOK := w.Entitlement.value()
+		if entOK && ent <= 0 {
 			continue
 		}
-		used := w.Entitlement - w.Remaining
-		q.Windows = append(q.Windows, QuotaWindow{Name: x.name, Used: 100 * used / w.Entitlement, ResetsAt: resets,
-			Display: fmt.Sprintf("%s / %s", compactNumber(used), compactNumber(w.Entitlement)),
-			Span:    30 * 24 * time.Hour, Aside: x.id == "completions"})
+		var used float64
+		display := ""
+		if rem, ok := w.Remaining.value(); entOK && ok {
+			n := max(0, ent-rem)
+			used = min(100, 100*n/ent)
+			display = fmt.Sprintf("%s / %s", compactNumber(n), compactNumber(ent))
+		} else if w.Percent != nil {
+			used = min(100, max(0, 100-*w.Percent))
+		} else {
+			// nothing says how much is used: unknown, never unlimited
+			continue
+		}
+		q.Windows = append(q.Windows, QuotaWindow{Name: x.name, Used: used, ResetsAt: at, Display: display,
+			Span:  30 * 24 * time.Hour,
+			Aside: x.id == "completions" || x.id == "premium_interactions" && w.Overage && !managed})
 	}
 	q.Windows = append(q.Windows, unlimited...)
 	return q
 }
 
+// copilotQuotaWire is one of /copilot_internal/user's quota_snapshots, as
+// VS Code's IQuotaSnapshotData has it: entitlement and quota_remaining
+// come as numbers or, under token-based billing, as strings ("3900").
 type copilotQuotaWire struct {
-	Unlimited   bool    `json:"unlimited"`
-	HasQuota    bool    `json:"has_quota"`
-	Entitlement float64 `json:"entitlement"`
-	Remaining   float64 `json:"quota_remaining"`
+	Unlimited   bool          `json:"unlimited"`
+	HasQuota    *bool         `json:"has_quota"`
+	Entitlement copilotNumber `json:"entitlement"`
+	Remaining   copilotNumber `json:"quota_remaining"`
+	Percent     *float64      `json:"percent_remaining"`
+	Overage     bool          `json:"overage_permitted"`
+	ResetAt     copilotNumber `json:"quota_reset_at"`
 }
+
+// copilotNumber is a JSON number or a string of one; absent, null or
+// unreadable is unknown.
+type copilotNumber struct {
+	n  float64
+	ok bool
+}
+
+func (c *copilotNumber) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(strings.TrimSpace(string(b)), `"`)
+	if n, err := strconv.ParseFloat(s, 64); err == nil && !math.IsNaN(n) && !math.IsInf(n, 0) {
+		*c = copilotNumber{n, true}
+	}
+	return nil
+}
+
+func (c copilotNumber) value() (float64, bool) { return c.n, c.ok }
 
 func compactNumber(n float64) string {
 	if n == float64(int64(n)) {

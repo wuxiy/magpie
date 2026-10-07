@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/yetone/magpie/internal/edit"
+	"github.com/yetone/magpie/internal/testenv"
 )
 
 // #304: PI_CODING_AGENT_DIR moves Pi's agent folder (config.js,
@@ -116,5 +117,48 @@ func TestOmpAgentDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".omp")); !os.IsNotExist(err) {
 		t.Fatalf("~/.omp was touched: %v", err)
+	}
+}
+
+// PI_CODING_AGENT_DIR may name Pi's folder, which is no sign of omp: its
+// config.yml, its own folder or its command is.
+func TestOmpDetectedWithPiDir(t *testing.T) {
+	home := syncHome(t)
+	pi := filepath.Join(home, ".pi", "agent")
+	if err := os.MkdirAll(pi, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	t.Setenv("PI_CODING_AGENT_DIR", pi)
+	t.Setenv("PI_CONFIG_DIR", "")
+	os.Unsetenv("OMP_PROFILE")
+	t.Setenv("PI_PROFILE", "")
+	if omp(home).Detected() {
+		t.Error("Pi's folder is taken for omp's")
+	}
+	testenv.Program(t, filepath.Join(bin, "omp"), "#!/bin/sh\n")
+	if !omp(home).Detected() {
+		t.Error("omp's command is not")
+	}
+	os.Remove(filepath.Join(bin, "omp"))
+	if err := os.WriteFile(filepath.Join(pi, "config.yml"), []byte("modelRoles: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !omp(home).Detected() {
+		t.Error("omp's config.yml is not")
+	}
+
+	// with no variable, ~/.omp/agent is omp's own
+	os.Remove(filepath.Join(pi, "config.yml"))
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	if omp(home).Detected() {
+		t.Fatal("omp is here with nothing of it")
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".omp", "agent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !omp(home).Detected() {
+		t.Error("~/.omp/agent is not taken for omp's")
 	}
 }

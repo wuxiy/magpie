@@ -32,7 +32,7 @@ func TestKeep(t *testing.T) {
 	defer func() { hold, tick = oldHold, oldTick }()
 	tick = time.Millisecond
 	var held, takes atomic.Int32
-	hold = func() (func(), error) {
+	hold = func(bool) (func(), error) {
 		held.Add(1)
 		takes.Add(1)
 		return func() { held.Add(-1) }, nil
@@ -43,7 +43,14 @@ func TestKeep(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		Keep(ctx, func() bool { mu.Lock(); defer mu.Unlock(); return on },
+		Keep(ctx, func() Level {
+			mu.Lock()
+			defer mu.Unlock()
+			if on {
+				return System
+			}
+			return Off
+		},
 			func() State { mu.Lock(); defer mu.Unlock(); return st })
 		close(done)
 	}()
@@ -76,4 +83,63 @@ func TestKeep(t *testing.T) {
 	cancel()
 	<-done
 	wait(0, "ended")
+}
+
+// TestKeepDisplay holds the display on only at Display, and takes the hold
+// anew when the level changes while the agents work (#975).
+func TestKeepDisplay(t *testing.T) {
+	oldHold, oldTick := hold, tick
+	defer func() { hold, tick = oldHold, oldTick }()
+	tick = time.Millisecond
+	var mu sync.Mutex
+	var holds []bool // display of each hold taken
+	live := 0
+	hold = func(display bool) (func(), error) {
+		mu.Lock()
+		defer mu.Unlock()
+		holds = append(holds, display)
+		live++
+		return func() { mu.Lock(); live--; mu.Unlock() }, nil
+	}
+	level := System
+	set := func(l Level) { mu.Lock(); level = l; mu.Unlock() }
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		Keep(ctx, func() Level { mu.Lock(); defer mu.Unlock(); return level },
+			func() State { return State{Busy: true} })
+		close(done)
+	}()
+	waitFor := func(what string, ok func() bool) {
+		t.Helper()
+		for end := time.Now().Add(2 * time.Second); ; {
+			mu.Lock()
+			good := ok()
+			mu.Unlock()
+			if good {
+				return
+			}
+			if time.Now().After(end) {
+				mu.Lock()
+				defer mu.Unlock()
+				t.Fatalf("%s: holds %v, live %d", what, holds, live)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	waitFor("system", func() bool { return len(holds) == 1 && !holds[0] && live == 1 })
+	set(Display)
+	waitFor("display", func() bool { return len(holds) == 2 && holds[1] && live == 1 })
+	time.Sleep(20 * time.Millisecond)
+	mu.Lock()
+	if len(holds) != 2 {
+		t.Errorf("taken again at the same level: %v", holds)
+	}
+	mu.Unlock()
+	set(System)
+	waitFor("system again", func() bool { return len(holds) == 3 && !holds[2] && live == 1 })
+	set(Off)
+	waitFor("off", func() bool { return live == 0 })
+	cancel()
+	<-done
 }

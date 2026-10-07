@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/yetone/magpie/internal/provider"
+	"github.com/yetone/magpie/internal/testenv"
 )
 
 // What Claude Code writes as it exits reaches the client: its output is
@@ -32,7 +33,7 @@ echo '{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reas
 echo '{"type":"stream_event","event":{"type":"message_stop"}}'
 }
 `
-	os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755)
+	testenv.Program(t, filepath.Join(dir, "claude"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	for i := 0; i < 5; i++ {
 		s := New()

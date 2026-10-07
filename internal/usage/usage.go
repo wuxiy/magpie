@@ -146,7 +146,7 @@ var mu sync.Mutex
 // break a call.
 func Append(r Record) {
 	if r.Time.IsZero() {
-		r.Time = time.Now()
+		r.Time = Clock()
 	}
 	offerOTel(r)
 	b, err := json.Marshal(r)
@@ -277,8 +277,9 @@ type Totals struct {
 	Unpriced     int     `json:"unpriced"` // calls with tokens but no known price
 	// Timed: the answered calls whose first token was timed (streamed),
 	// TTFT the sum of their ttft_ms; DecodeMs the time from it to the end
-	// of those that wrote any, over which DecodeOut tokens came: their
-	// mean wait, and how fast they wrote (#196)
+	// of those that wrote any, over which DecodeOut tokens came (a
+	// reasoning reply's answer, Record.Decode): their mean wait, and how
+	// fast they wrote (#196)
 	Timed     int   `json:"timed,omitempty"`
 	TTFT      int64 `json:"ttft_ms,omitempty"`
 	DecodeMs  int64 `json:"decode_ms,omitempty"`
@@ -306,7 +307,7 @@ func (t Totals) Speed() float64 {
 }
 
 // A reply's speed is its output tokens over its decode window, the ms
-// from its first content to its end (#196); a window counts only when it
+// from its first content to its end (#196; one that reasoned, DecodeOf); a window counts only when it
 // timed the writing (#731). One that is shorter than MinDecodeMs, or over
 // which the tokens would have come faster than MaxDecodeSpeed a second,
 // didn't: the reply came in one burst at its end, written before the
@@ -332,6 +333,36 @@ func DecodeWindow(out int, ms, ttft int64) int64 {
 		return 0
 	}
 	return w
+}
+
+// DecodeOf is what a reply's speed is told by: the tokens it was seen to
+// write and the ms it took (tony on Discord: gpt-6.1-sol read 163 tok/s,
+// with a 14 s first token). A reply that reasoned counts only its answer —
+// its output less the reasoning, from its first text — as most vendors
+// keep the reasoning out of the stream (OpenAI's is encrypted, its summary
+// sent when it's done; Claude's may come with no text): its tokens were
+// written before the first content, over time the window from it doesn't
+// hold, and counting them read a 2,000-token think and a 200-token answer
+// in 1.5 s as 1,467 tok/s. Its time goes to the wait before the answer.
+// One with reasoning and no text (all tool calls) tells no speed. The
+// window is DecodeWindow's: 0 for a reply that tells none.
+func DecodeOf(out, reasoning int, ms, ttft, firstText int64) (tokens int, w int64) {
+	start := ttft
+	if reasoning > 0 {
+		out, start = out-reasoning, firstText
+	}
+	if ttft <= 0 {
+		return 0, 0
+	}
+	if w = DecodeWindow(out, ms, start); w == 0 {
+		return 0, 0
+	}
+	return out, w
+}
+
+// Decode is the record's DecodeOf.
+func (r Record) Decode() (tokens int, w int64) {
+	return DecodeOf(r.Output, r.Reasoning, r.Millis, r.TTFT, r.FirstText)
 }
 
 // FormatCost renders an effective-price cost, kept in USD everywhere it's
@@ -370,9 +401,9 @@ func (t *Totals) add(r Record, price *catalog.Price) {
 	if r.TTFT > 0 && !r.Failed() {
 		t.Timed++
 		t.TTFT += r.TTFT
-		if w := DecodeWindow(r.Output, r.Millis, r.TTFT); w > 0 {
+		if n, w := r.Decode(); w > 0 {
 			t.DecodeMs += w
-			t.DecodeOut += r.Output
+			t.DecodeOut += n
 		}
 	}
 	if r.Input+r.Output == 0 {
@@ -461,7 +492,7 @@ type Summary struct {
 // Summarize caches the four periods over an indexed log snapshot. Callers
 // receive their own result slices, without retaining historical Records.
 func Summarize(p Period) Summary {
-	return indexedSummary(p)
+	return indexedSummary(p, Clock())
 }
 
 func summarize(p Period, now time.Time, recs []Record) Summary {

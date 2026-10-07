@@ -517,7 +517,7 @@ func capHeld(p, acct provider.Provider, model string, now time.Time) *capHold {
 func cappedError(model string, ws []Weighed, now time.Time) (string, time.Time) {
 	var held []string
 	var soonest time.Time
-	capped, noCredits := false, false
+	capped, noCredits := heldBy(ws)
 	for _, w := range ws {
 		if w.Capped == 0 {
 			continue
@@ -525,9 +525,6 @@ func cappedError(model string, ws []Weighed, now time.Time) (string, time.Time) 
 		s := fmt.Sprintf("%s (%s) is at %.0f%% of a usage window, past its %d%% cap", w.Name, w.Who, w.Used, w.Capped)
 		if w.NoCredits {
 			s = fmt.Sprintf("%s (%s) has used up a usage window and is set not to spend its credits", w.Name, w.Who)
-			noCredits = true
-		} else {
-			capped = true
 		}
 		if w.CapBack != nil {
 			s += ", until " + w.CapBack.Local().Format("Jan 2 15:04")
@@ -541,9 +538,32 @@ func cappedError(model string, ws []Weighed, now time.Time) (string, time.Time) 
 	case !noCredits:
 		return fmt.Sprintf("usage cap reached: every account that serves %q is held at the usage cap set on it in magpie — %s. magpie uses it again once that window renews; raise or lift the cap in magpie (Providers → the account's cap, or magpie provider account-cap)", model, strings.Join(held, "; ")), soonest
 	case !capped:
-		return fmt.Sprintf("usage limit reached: every account that serves %q has used up its allowance and is set in magpie not to spend its credits — %s. magpie uses it again once that window renews; to go on now, let an account spend its credits (Usage → the account's Use credits, or magpie quota credits <account> on)", model, strings.Join(held, "; ")), soonest
+		return fmt.Sprintf("usage limit reached: every account that serves %q has used up its allowance and is set in magpie not to spend its credits — %s. magpie uses it again once that window renews; to go on now, if an account holds credits, let it spend them (Usage → the account's Use credits, or magpie quota credits <account> on)", model, strings.Join(held, "; ")), soonest
 	}
-	return fmt.Sprintf("usage limit reached: every account that serves %q is held by magpie — %s. magpie uses it again once that window renews; to go on now, raise or lift a cap (Providers → the account's cap, or magpie provider account-cap) or let an account spend its credits (Usage → the account's Use credits, or magpie quota credits <account> on)", model, strings.Join(held, "; ")), soonest
+	return fmt.Sprintf("usage limit reached: every account that serves %q is held by magpie — %s. magpie uses it again once that window renews; to go on now, raise or lift a cap (Providers → the account's cap, or magpie provider account-cap) or, if an account holds credits, let it spend them (Usage → the account's Use credits, or magpie quota credits <account> on)", model, strings.Join(held, "; ")), soonest
+}
+
+// heldBy says what holds the accounts of ws held at a share: a usage cap
+// set on one, credits it is set not to spend, or both.
+func heldBy(ws []Weighed) (capped, noCredits bool) {
+	for _, w := range ws {
+		if w.Capped > 0 {
+			capped, noCredits = capped || !w.NoCredits, noCredits || w.NoCredits
+		}
+	}
+	return capped, noCredits
+}
+
+// cappedRecord is the call's record of the same refusal as cappedError,
+// told apart the same way.
+func cappedRecord(ws []Weighed) string {
+	switch capped, noCredits := heldBy(ws); {
+	case !noCredits:
+		return "every account at its usage cap"
+	case !capped:
+		return "every account held: set not to spend its credits"
+	}
+	return "every account held: at its usage cap or set not to spend its credits"
 }
 
 // creditsHeld are those of cs held only as they won't spend their
@@ -607,9 +627,7 @@ func asideOf(cs []candidate, q provider.Provider, fallback bool, from provider.P
 // restLast moves those resting after a recent failure behind the rest.
 func restLast(out []candidate, pl planned) ([]candidate, planned) {
 	if len(out) == 1 {
-		if r, ok := restOf(out[0].restKey()); ok {
-			pl.order[0].Rest = &r // tried all the same: there is no other
-		} else if r, ok := restOf(out[0].restID()); ok {
+		if r, ok := restingOf(out[0]); ok {
 			pl.order[0].Rest = &r // tried all the same: there is no other
 		}
 		return out, pl
@@ -617,11 +635,7 @@ func restLast(out []candidate, pl planned) ([]candidate, planned) {
 	var ready, resting []candidate
 	var wReady, wResting []Weighed
 	for i, c := range out {
-		r, ok := restOf(c.restKey())
-		if !ok && c.restID() != c.restKey() {
-			r, ok = restOf(c.restID())
-		}
-		if ok {
+		if r, ok := restingOf(c); ok {
 			pl.order[i].Rest = &r
 			resting, wResting = append(resting, c), append(wResting, pl.order[i])
 		} else {
@@ -630,6 +644,22 @@ func restLast(out []candidate, pl planned) ([]candidate, planned) {
 	}
 	pl.order = append(wReady, wResting...)
 	return append(ready, resting...), pl
+}
+
+// restingOf is why c rests, by its own key or else its provider's, while
+// it does. A key resting out of its own windows has them read again as it
+// is planned, behind the request and once a minute at most: an ordered
+// group weighs nothing by them, and a reading that finds them full no
+// more is what brings it back (renewed).
+func restingOf(c candidate) (Rest, bool) {
+	r, ok := restOf(c.restKey())
+	if !ok && c.restID() != c.restKey() {
+		r, ok = restOf(c.restID())
+	}
+	if ok && r.agent == "" && r.user != "" {
+		keyAllowance(c.p)
+	}
+	return r, ok
 }
 
 // spentAfter says whether every candidate in cs rests with its allowance
@@ -927,7 +957,15 @@ type holdWriter struct {
 	// was said — Anthropic's stop_reason "refusal", OpenAI's content_filter
 	// — which another account or model may answer (#248)
 	refused bool
-	whole   bool // a reply that isn't streamed, held whole until release
+	// refusedAfter: the same filter ended a reply that had already begun,
+	// which the scan of a held stream never sees, as the reply goes
+	// through as it comes. A refusal isn't a failure of the account, so
+	// nobody rests for it, whatever its timing (#248)
+	refusedAfter bool
+	// after is what came of the reply once it began, for a refusal in it
+	// to be read event by event
+	after []byte
+	whole bool // a reply that isn't streamed, held whole until release
 
 	// buffered: the vendor said it holds the reply back for safety checks,
 	// which may end in a refusal: held longer (holdBuffered)
@@ -949,6 +987,10 @@ type holdWriter struct {
 	// reasoning keeps the agent from its idle timeout with SSE comments
 	// meanwhile (#751)
 	alive *keptAlive
+	// notes are the headers magpie says of the try (noteMember), set
+	// under mu: all keepAlive sends of the try's before it has its status,
+	// as until then the try is still writing header, with no lock
+	notes http.Header
 
 	first firstToken // when its first content and text came (#196)
 
@@ -987,6 +1029,18 @@ func newHoldWriter(w http.ResponseWriter, hold bool) *holdWriter {
 }
 
 func (h *holdWriter) Header() http.Header { return h.header }
+
+// note sets a header magpie says of the try, which keepAlive may send
+// from watch's goroutine before the try has its status.
+func (h *holdWriter) note(k, v string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.header.Set(k, v)
+	if h.notes == nil {
+		h.notes = http.Header{}
+	}
+	h.notes.Set(k, v)
+}
 
 func (h *holdWriter) WriteHeader(code int) {
 	h.mu.Lock()
@@ -1042,6 +1096,9 @@ func (h *holdWriter) Write(b []byte) (int, error) {
 	h.see(b)
 	h.first.see(b)
 	h.heard = time.Now()
+	if h.first.first != 0 || h.passing {
+		h.refusalAfter(b)
+	}
 	if h.passing {
 		h.sent(b)
 		return h.w.Write(b)
@@ -1203,10 +1260,17 @@ func (h *holdWriter) keepAlive() {
 		return
 	}
 	if !a.sent {
+		// the try's header is whole once it has its status (WriteHeader,
+		// under mu); before, the vendor's are still being copied into it
+		// from the try's goroutine, and only magpie's notes are read
+		src := h.header
+		if h.status == 0 {
+			src = h.notes
+		}
 		dst := h.w.Header()
-		for k, v := range h.header {
+		for k, v := range src {
 			if k != resetsHeader && k != refusedHeader && k != "Content-Length" {
-				dst[k] = v
+				dst[k] = slices.Clone(v)
 			}
 		}
 		dst.Set("Content-Type", "text/event-stream; charset=utf-8")
@@ -1227,6 +1291,56 @@ func (h *holdWriter) sent(b []byte) {
 	if len(b) > 0 {
 		h.wrote, h.atLine = time.Now(), b[len(b)-1] == '\n'
 	}
+}
+
+// refusalAfter reads the events of a reply that has begun, for the safety
+// filter's refusal in one of them. The reply goes through as it comes, so
+// the scan that reads a stream held for its first content never sees an
+// event that comes after it, and the filter refusing a turn it had begun
+// is no failure of the account, as one it refuses before any of it is said
+// is not (#248). What is read is kept only as far as the event it is in is
+// whole, as a write may end in the middle of one.
+func (h *holdWriter) refusalAfter(b []byte) {
+	if len(h.after) == 0 && !mayRefuse(b) {
+		return // most of a reply's events are content
+	}
+	h.after = append(h.after, b...)
+	for {
+		end := eventEnd(h.after)
+		if end < 0 {
+			break
+		}
+		ev, rest := h.after[:end], h.after[end:]
+		h.after = rest
+		if mayRefuse(ev) {
+			if kind, _, _ := streamEvent(ev); kind == eventRefusal {
+				h.refusedAfter = true
+			}
+		}
+	}
+	if len(h.after) == 0 || len(h.after) > holdMost {
+		h.after = nil
+	}
+}
+
+// mayRefuse is whether an event may be the safety filter's refusal, by the
+// words its shapes carry, before it is read as JSON at all: every event of
+// a reply that has begun goes through this.
+func mayRefuse(ev []byte) bool {
+	for _, w := range refusalSays {
+		if bytes.Contains(ev, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// refusalSays are the words the events a vendor's filter refuses a reply
+// with carry: an error's code, a stop reason's, a finish reason's, a
+// Gemini block reason's.
+var refusalSays = [][]byte{
+	[]byte(`"error"`), []byte(`failed`), []byte(`refusal`), []byte(`filter`),
+	[]byte(`incomplete`), []byte(`finishReason`), []byte(`blockReason`),
 }
 
 // flow lets a held stream through, and what follows it.

@@ -87,6 +87,7 @@ func All() []*Agent {
 		copilot(home),
 		crush(home, cfg),
 		dsh(home),
+		reasonix(home),
 		commandCode(home),
 		fx(home),
 		omp(home),
@@ -104,6 +105,7 @@ func All() []*Agent {
 		grok(home),
 		zcode(home),
 		workbuddy(home),
+		codebuddy(home),
 		pencil(home),
 		t3code(home),
 		hanako(home),
@@ -882,9 +884,15 @@ func piLike(at place, id, name, dir string) *Agent {
 	}
 }
 
-func goose(home, cfg string) *Agent {
+func goose(home, cfg string) *Agent { return gooseIn(here(home), cfg) }
+
+// gooseIn is Goose at a place whose config folder is cfg: this machine's,
+// or a WSL distro's ~/.config (see wsl.go), where Goose keeps Linux's
+// layout and its custom provider names the gateway as the distro reaches
+// it, with the key it takes from there.
+func gooseIn(at place, cfg string) *Agent {
 	path := filepath.Join(cfg, "goose", "config.yaml")
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && at.spell == nil {
 		if app := appdir.Getenv("APPDATA"); app != "" {
 			path = filepath.Join(app, "Block", "goose", "config", "config.yaml")
 		}
@@ -892,6 +900,12 @@ func goose(home, cfg string) *Agent {
 	get := func(k string) (string, bool) { return edit.GetYAMLTop(path, k) }
 	set := func(kvs ...edit.KV) error { return edit.SetYAMLTop(path, kvs...) }
 	provider := gooseProviderPath(path)
+	// the provider keys goose takes from its environment: this machine's
+	// for this machine's goose, none of a distro's
+	keyEnv := os.Getenv
+	if at.spell != nil {
+		keyEnv = func(string) string { return "" }
+	}
 	return &Agent{
 		ID: "goose", Name: "Goose", Icon: "goose", Bin: "goose", Dir: filepath.Dir(path), Path: path, Spelled: prefixed,
 		UA: []string{"goose"},
@@ -900,9 +914,9 @@ func goose(home, cfg string) *Agent {
 				return ""
 			}
 			return wiringOff("Goose", provider, func(k string) (string, bool) { return edit.GetJSON(provider, k) },
-				"base_url", gatewayV1(), "headers.Authorization", "Bearer "+gateway.Token)
+				"base_url", at.v1(), "headers.Authorization", "Bearer "+at.gwKey())
 		},
-		Sync: func() error { return syncGooseProvider(provider) },
+		Sync: func() error { return syncGooseProvider(provider, at) },
 		// goose loads custom_providers when it starts
 		Notice: func() string {
 			if p, _ := gooseActive(path); p == gooseProviderID && Running(`Goose\.app/`, `(^|/)goose( |$)`) {
@@ -934,7 +948,7 @@ func goose(home, cfg string) *Agent {
 				// Goose's, each model with its window and whether Goose
 				// can send it a thinking level (see goose.go)
 				if ref, ok := strings.CutPrefix(v, gooseProviderID+"/"); ok && isMagpie(ref) {
-					if err := writeGooseProvider(provider); err != nil {
+					if err := writeGooseProvider(provider, at); err != nil {
 						return err
 					}
 				}
@@ -944,7 +958,7 @@ func goose(home, cfg string) *Agent {
 				// only the native providers this goose is set up with (#987:
 				// every one of four was listed, OpenRouter's hundreds of
 				// models on a goose that had only magpie)
-				return append(ownOptions("", cur["model"], gooseConfigured(path)...), viaMagpie("goose", gooseProviderID+"/")...)
+				return append(ownOptions("", cur["model"], gooseConfigured(path, keyEnv)...), viaMagpie("goose", gooseProviderID+"/")...)
 			},
 		}, {
 			// GOOSE_THINKING_EFFORT, the effort goose asks of a model that

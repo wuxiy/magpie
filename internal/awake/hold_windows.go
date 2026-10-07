@@ -6,15 +6,17 @@ import (
 )
 
 const (
-	esSystemRequired = 0x00000001
-	esContinuous     = 0x80000000
+	esSystemRequired  = 0x00000001
+	esDisplayRequired = 0x00000002
+	esContinuous      = 0x80000000
 )
 
 var setThreadExecutionState = syscall.NewLazyDLL("kernel32.dll").NewProc("SetThreadExecutionState")
 
-// takeHold asks Windows to keep the system awake from a thread of its own,
-// whose state it is, and clears it on that thread at release.
-func takeHold() (func(), error) {
+// takeHold asks Windows to keep the system awake, with display its display
+// on too, from a thread of its own, whose state it is, and clears it on that
+// thread at release.
+func takeHold(display bool) (func(), error) {
 	if err := setThreadExecutionState.Find(); err != nil {
 		return nil, err
 	}
@@ -22,7 +24,7 @@ func takeHold() (func(), error) {
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		if r, _, err := setThreadExecutionState.Call(esContinuous | esSystemRequired); r == 0 {
+		if r, _, err := setThreadExecutionState.Call(executionState(display)); r == 0 {
 			set <- err
 			return
 		}
@@ -34,4 +36,13 @@ func takeHold() (func(), error) {
 		return nil, err
 	}
 	return func() { close(done) }, nil
+}
+
+// executionState is what takeHold sets.
+func executionState(display bool) uintptr {
+	st := uintptr(esContinuous | esSystemRequired)
+	if display {
+		st |= esDisplayRequired
+	}
+	return st
 }

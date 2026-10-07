@@ -13,9 +13,8 @@ import (
 
 // The account Codex is signed in to is out (CodexUsedUp, which makes magpie
 // Codex's provider and the Codex app lose its ChatGPT sign-in) only when the
-// Codex app itself holds it: the backend says it isn't allowed, and it is at
-// a spend cap or past its overage, credits or not, or has no credits to go
-// on with, a workspace one past its overage too. A window at
+// Codex app itself holds it: the backend says it isn't allowed and it has no
+// credits to go on with, a workspace one past its overage too. A window at
 // 100% alone isn't: a Pro account with credits read 100% on its week and
 // "allowed": false, and the app kept sending, the backend answering 200,
 // while magpie had taken Codex out of ChatGPT ("Sign in to ChatGPT to start
@@ -39,6 +38,7 @@ func TestCodexUsedUpIsWhatTheAppHolds(t *testing.T) {
 		return m
 	}
 	credits := func(m map[string]any) map[string]any { return m["credits"].(map[string]any) }
+	rateLimit := func(m map[string]any) map[string]any { return m["rate_limit"].(map[string]any) }
 	// a workspace on no credits that the app sends for: within its overage,
 	// not at a spend cap, held for its allowance alone
 	within := func(plan string, edit func(m map[string]any)) map[string]any {
@@ -57,13 +57,7 @@ func TestCodexUsedUpIsWhatTheAppHolds(t *testing.T) {
 		want bool
 	}{
 		{"Pro at 100% on its week, with credits", read("codex_usage_pro_credits.json"), false},
-		{"Team at its spend cap, with credits", read("codex_usage_team_spend_cap.json"), true},
-		{"Pro at 100%, with credits, past its overage", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
-			credits(m)["overage_limit_reached"] = true
-		}), true},
-		{"Pro at 100%, with credits, at a spend cap", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
-			m["spend_control"].(map[string]any)["reached"] = true
-		}), true},
+		{"Team at its spend cap, with credits", read("codex_usage_team_spend_cap.json"), false},
 		{"Pro at 100%, credits spent", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
 			credits(m)["has_credits"], credits(m)["balance"] = false, "0"
 		}), true},
@@ -73,35 +67,35 @@ func TestCodexUsedUpIsWhatTheAppHolds(t *testing.T) {
 		{"Pro at 100%, no credits said", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
 			delete(m, "credits")
 		}), true},
-		{"allowed not said", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
-			delete(m, "credits")
-			delete(m["rate_limit"].(map[string]any), "allowed")
-			delete(m["rate_limit"].(map[string]any), "limit_reached")
+		// the app reads the spend cap and the overage only for a workspace
+		// with no credits: credits carry a Pro account on past both
+		{"Pro with credits, past its overage", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
+			credits(m)["overage_limit_reached"] = true
 		}), false},
-		{"allowed", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
-			delete(m, "credits")
-			m["rate_limit"].(map[string]any)["allowed"] = true
-			m["rate_limit"].(map[string]any)["limit_reached"] = false
+		{"Pro with credits, at a spend cap", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
+			m["spend_control"].(map[string]any)["reached"] = true
 		}), false},
-		{"allowed, its limit reached, no credits", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
+		// only allowed false holds it: limit_reached alone doesn't
+		{"limit reached but allowed, no credits", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
 			delete(m, "credits")
-			m["rate_limit"].(map[string]any)["allowed"] = true
-		}), true},
-		{"allowed, its limit reached, with credits", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
-			m["rate_limit"].(map[string]any)["allowed"] = true
+			rateLimit(m)["limit_reached"], rateLimit(m)["allowed"] = true, true
 		}), false},
 		{"limit reached, allowed not said, no credits", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
 			delete(m, "credits")
-			delete(m["rate_limit"].(map[string]any), "allowed")
-		}), true},
-		// a workspace's included usage still served past its spend cap
-		{"Business at its spend cap, still allowed", within("business", func(m map[string]any) {
-			m["spend_control"].(map[string]any)["reached"] = true
-			m["rate_limit"].(map[string]any)["allowed"] = true
-			m["rate_limit"].(map[string]any)["limit_reached"] = false
+			rateLimit(m)["limit_reached"] = true
+			delete(rateLimit(m), "allowed")
 		}), false},
+		{"not allowed, limit not reached, no credits", with(read("codex_usage_pro_credits.json"), func(m map[string]any) {
+			delete(m, "credits")
+			rateLimit(m)["limit_reached"], rateLimit(m)["allowed"] = false, false
+		}), true},
 		{"Business without credits, within its overage", within("business", as), false},
 		{"K12 without credits, within its overage", within("k12", as), false},
+		{"Law without credits, within its overage", within("law", as), false},
+		{"Sci without credits, within its overage", within("sci", as), false},
+		{"FinServ without credits, within its overage", within("finserv", as), false},
+		{"Enterprise trial without credits, within its overage", within("enterprise_cbp_trial", as), false},
+		{"Enterprise view-only without credits, within its overage", within("enterprise_cbp_view_only", as), false},
 		{"Pro without credits, its overage open", within("pro", as), true},
 		// the app's reserve experiment holds these on no credits, overage
 		// or not, and magpie can't see whether it is on
@@ -146,40 +140,9 @@ func TestCodexUsedUpIsWhatTheAppHolds(t *testing.T) {
 // the window that held it has started again, as its usage does: else a
 // 503 after the reset kept Codex on magpie, out of ChatGPT, with room.
 func TestCodexHeldKeptOnlyTillTheReset(t *testing.T) {
-	signIn(t)
-	rememberLogins(true)
-	lastQuotas.Lock()
-	lastQuotas.m, lastQuotas.loaded = nil, false
-	lastQuotas.Unlock()
-	b, err := os.ReadFile("testdata/codex_usage_pro_credits.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var body map[string]any
-	if err := json.Unmarshal(b, &body); err != nil {
-		t.Fatal(err)
-	}
-	cr := body["credits"].(map[string]any)
-	cr["has_credits"], cr["balance"] = false, "0"
+	body := heldUsage(t)
 	body["rate_limit"].(map[string]any)["primary_window"].(map[string]any)["reset_at"] = time.Now().Add(time.Hour).Unix()
-	var down atomic.Bool
-	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if down.Load() {
-			http.Error(w, "upstream", http.StatusServiceUnavailable)
-			return
-		}
-		json.NewEncoder(w).Encode(body)
-	}))
-	defer fake.Close()
-	old := CodexBase
-	CodexBase = fake.URL + "/backend-api/codex"
-	t.Cleanup(func() { CodexBase = old })
-	read := func() bool {
-		loginUsageCache.Lock()
-		loginUsageCache.m = nil
-		loginUsageCache.Unlock()
-		return CodexUsedUp(context.Background())
-	}
+	read, down := servedUsage(t, body)
 	if !read() {
 		t.Fatal("CodexUsedUp = false on a held reading")
 	}
@@ -199,4 +162,69 @@ func TestCodexHeldKeptOnlyTillTheReset(t *testing.T) {
 	if read() {
 		t.Fatal("CodexUsedUp = true on the kept reading after its window started again")
 	}
+}
+
+// A hold with no window used up (the backend says not allowed, no credits,
+// every window under 100%) has no reset to end it: the kept reading stays
+// held through a failed read, till a fresh one says otherwise. Else a 503
+// put Codex back on an account its app sends nothing for.
+func TestCodexHeldWithNoWindowUpKeptTillAFreshRead(t *testing.T) {
+	body := heldUsage(t)
+	body["rate_limit"].(map[string]any)["primary_window"].(map[string]any)["used_percent"] = 40
+	read, down := servedUsage(t, body)
+	if !read() {
+		t.Fatal("CodexUsedUp = false on a held reading")
+	}
+	down.Store(true)
+	if !read() {
+		t.Fatal("CodexUsedUp = false on the kept held reading, no window used up")
+	}
+}
+
+// heldUsage is the real Pro reply with its credits spent: not allowed, no
+// credits, so held.
+func heldUsage(t *testing.T) map[string]any {
+	t.Helper()
+	b, err := os.ReadFile("testdata/codex_usage_pro_credits.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatal(err)
+	}
+	cr := body["credits"].(map[string]any)
+	cr["has_credits"], cr["balance"] = false, "0"
+	return body
+}
+
+// servedUsage signs in the account Codex is on and serves body as its
+// /wham/usage, or a 503 once down is set. read is CodexUsedUp on a fresh
+// read, which falls back on the kept reading when it fails.
+func servedUsage(t *testing.T, body map[string]any) (read func() bool, down *atomic.Bool) {
+	t.Helper()
+	signIn(t)
+	rememberLogins(true)
+	lastQuotas.Lock()
+	lastQuotas.m, lastQuotas.loaded = nil, false
+	lastQuotas.Unlock()
+	down = new(atomic.Bool)
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if down.Load() {
+			http.Error(w, "upstream", http.StatusServiceUnavailable)
+			return
+		}
+		json.NewEncoder(w).Encode(body)
+	}))
+	t.Cleanup(fake.Close)
+	old := CodexBase
+	CodexBase = fake.URL + "/backend-api/codex"
+	t.Cleanup(func() { CodexBase = old })
+	read = func() bool {
+		loginUsageCache.Lock()
+		loginUsageCache.m = nil
+		loginUsageCache.Unlock()
+		return CodexUsedUp(context.Background())
+	}
+	return read, down
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/yetone/magpie/internal/provider"
+	"github.com/yetone/magpie/internal/testenv"
 )
 
 func TestFx(t *testing.T) {
@@ -76,5 +77,30 @@ func TestFx(t *testing.T) {
 	s = read()
 	if s["provider"] != nil || s["providers"].(map[string]any)["magpie"] != nil || s["models"].(map[string]any)["magpie"] != nil {
 		t.Fatalf("reset: %v", s)
+	}
+}
+
+// fx is also the JSON viewer's name: a command of that name on PATH is no
+// sign of the agent, its folder is.
+func TestFxDetected(t *testing.T) {
+	home := t.TempDir()
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	testenv.Program(t, filepath.Join(bin, "fx"), "#!/bin/sh\n")
+	if fx(home).Detected() {
+		t.Error("an fx command alone is taken for the agent")
+	}
+	if err := os.WriteFile(filepath.Join(home, ".fx"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if fx(home).Detected() {
+		t.Error("a file named .fx is taken for the agent's folder")
+	}
+	os.Remove(filepath.Join(home, ".fx"))
+	if err := os.MkdirAll(filepath.Join(home, ".fx"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !fx(home).Detected() {
+		t.Error("~/.fx is not taken for the agent")
 	}
 }

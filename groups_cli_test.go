@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,6 +30,36 @@ func groupsHome(t *testing.T) {
 }
 
 // storedGroups: the groups as the file keeps them.
+// A group an agent is on carries Claude Code's [1m] mark in the agent's
+// own settings, as a model's does: `magpie group` lists "← agent" beside a
+// group by its id, so the mark has to come off the id before it is looked
+// up. Claude Code on group/auto-gpt-5[1m] was on no row at all.
+func TestGroupUsesTakesTheOneMMarkOff(t *testing.T) {
+	groupsHome(t)
+	if err := provider.SaveGroup(provider.Group{ID: "auto-gpt-5", Name: "GPT 5", Members: []string{"a/gpt-5"}}); err != nil {
+		t.Fatal(err)
+	}
+	// Claude Code's settings.json, as the reporter's reads
+	if err := os.MkdirAll(filepath.Join(os.Getenv("HOME"), ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(os.Getenv("HOME"), ".claude/settings.json"),
+		[]byte(`{"model":"group/auto-gpt-5[1m]"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uses := groupUses()
+	if got := uses["auto-gpt-5"]; len(got) != 1 || !strings.Contains(got[0], "Claude") {
+		t.Errorf("the group's agents: %q, all uses %q", got, uses)
+	}
+	if _, marked := uses["auto-gpt-5[1m]"]; marked {
+		t.Errorf("the marked id got its own row: %q", uses)
+	}
+}
+
+// sameGroup compares two values of a field, one of them read back from the
+// agent's own settings where the [1m] mark rides on the group's id: the
+// marked one is the group magpie set, not another group. (internal/agent's
+// own, tested there.)
 func storedGroups(t *testing.T) []map[string]any {
 	t.Helper()
 	b, err := os.ReadFile(provider.Path())

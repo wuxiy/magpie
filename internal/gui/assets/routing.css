@@ -64,7 +64,7 @@
 .rt-accts b .ic { display: inline-flex; width: 16px; height: 16px; margin-right: 7px; vertical-align: -3px; }
 .rt-accts b .ic img, .rt-accts b .ic svg { width: 16px; height: 16px; }
 .rt-accts b .fb { margin-left: 6px; font-size: 10.5px; font-weight: 560; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
-.rt-accts b code.mdl, .rt-req code, .rt-act code.mdl { font: 500 11px/1.5 var(--code); color: var(--fg-2); background: var(--card-2); border-radius: 5px; padding: 0 5px; }
+.rt-accts b code.mdl, .rt-req code, .rt-act code.mdl { font: var(--code-style, normal) 500 11px/1.5 var(--code-font, var(--code)); font-stretch: var(--code-stretch, 100%); color: var(--fg-2); background: var(--card-2); border-radius: 5px; padding: 0 5px; }
 .rt-accts b code.mdl { margin-left: 7px; font-weight: 450; }
 .rt-accts em { font-style: normal; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rt-accts .bar { grid-column: 2 / 4; height: 3px; border-radius: 2px; background: var(--card-2); overflow: hidden; }
@@ -85,7 +85,7 @@
 .rt-accts li.hit { animation: rthit .45s; }
 .rt-accts li.new { animation: rtin .4s ease-out; }
 @keyframes rthit { 20% { translate: -5px; } 40% { translate: 4px; } 60% { translate: -2px; } 80% { translate: 1px; } }
-.rt-accts .tag { position: absolute; right: 10px; top: -10px; padding: 1px 7px; border-radius: 6px; background: var(--red); color: #fff; font: 600 10.5px/1.5 var(--code); opacity: 0; transform: translateY(4px) scale(.9); transition: opacity .25s, transform .25s; pointer-events: none; }
+.rt-accts .tag { position: absolute; right: 10px; top: -10px; padding: 1px 7px; border-radius: 6px; background: var(--red); color: #fff; font: var(--code-style, normal) 600 10.5px/1.5 var(--code-font, var(--code)); font-stretch: var(--code-stretch, 100%); opacity: 0; transform: translateY(4px) scale(.9); transition: opacity .25s, transform .25s; pointer-events: none; }
 .rt-accts li.tagged .tag { opacity: 1; transform: none; }
 .rt-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px 20px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--line); }
 .rt-cap { flex: 1 1 20em; margin: 0; min-height: 3em; display: flex; align-items: center; font-size: 13px; line-height: 1.45; color: var(--fg); }
@@ -103,7 +103,8 @@
 .rt-steps li.why { color: var(--fg); }
 .rt-steps li.why::before { background: var(--fg); }
 .rt-steps li.aside { color: var(--muted); }
-.rt-steps li.said { font-family: var(--code); font-size: 11.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.rt-steps li.said { font-family: var(--code-font, var(--code)); font-size: 11.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
+:where(html[data-fonts]) .rt-steps li.said { font-style: var(--code-style, inherit); font-weight: var(--code-weight, inherit); font-stretch: var(--code-stretch, 100%); }
 .rt-stats > span.rt-errs:not([aria-disabled="true"]) { cursor: pointer; }
 .rt-stats > span.rt-errs:not([aria-disabled="true"]):hover b { color: var(--red); }
 .rt-steps li.aside::before { background: none; border: 1px solid var(--muted); width: 4px; height: 4px; }
@@ -155,8 +156,11 @@
 /* side by side, the accounts end where the requests do and scroll like
    them, not run on down the page beside an empty column: of no height of
    their own, they take what the requests give the row, and no less than a
-   few accounts' */
-@container rt-more (min-width: 860px) {
+   few accounts'. Only where the requests' column still keeps each request
+   on one line (wider than 760px, see below): narrower, one column of
+   one-line requests reads better than two with each request on three
+   (#860, huoranxuanyuan) */
+@container rt-more (min-width: 1150px) {
   .rt-cols { grid-template-columns: minmax(0, 1fr) clamp(280px, 32%, 400px); }
   .rt-cols:not(.solo) .rt-col:last-child { display: flex; flex-direction: column; }
   .rt-cols:not(.solo) .rt-acts { flex: 1 1 auto; height: 0; min-height: 216px; overflow-y: auto; overscroll-behavior: contain; }
@@ -323,11 +327,11 @@ button.rt-session { cursor: pointer; }
 .rt-group .main { flex: 1; min-width: 0; }
 .rt-group .nm { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
 .rt-group .nm b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rt-group .nm code.mdl { font: 500 11px/1.5 var(--code); color: var(--fg-2); background: var(--card-2); border-radius: 5px; padding: 0 5px; white-space: nowrap; }
+.rt-group .nm code.mdl { font: var(--code-style, normal) 500 11px/1.5 var(--code-font, var(--code)); font-stretch: var(--code-stretch, 100%); color: var(--fg-2); background: var(--card-2); border-radius: 5px; padding: 0 5px; white-space: nowrap; }
 .rt-group .nm small.auto { font-size: 11px; color: var(--faint); white-space: nowrap; }
 .rt-group .mem { margin-top: 2px; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* a pattern the group finds models by, and how many it matches now */
-.rt-group .mem.pat code, .rt-pats code { font: 500 11px/1.5 var(--code); color: var(--fg-2); }
+.rt-group .mem.pat code, .rt-pats code { font: var(--code-style, normal) 500 11px/1.5 var(--code-font, var(--code)); font-stretch: var(--code-stretch, 100%); color: var(--fg-2); }
 .rt-group .mem.pat.none, .rt-pats .fbrow.none small { color: var(--amber); }
 .rt-patadd { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
 .rt-patadd input { flex: 1; min-width: 0; }
@@ -466,7 +470,8 @@ button.rt-session { cursor: pointer; }
 }
 .rt-cond:hover { color: var(--fg); border-color: var(--muted); }
 .rt-cond.on { border-style: solid; color: var(--fg); background: var(--card-2); }
-.rt-cond .ic { width: 14px; height: 14px; flex: none; }
+/* a chip in a Settings row too, where .row .ic makes icons 18–22px (duanckham on X) */
+.rt-cond .ic, .row .rt-cond .ic, body.window .row .rt-cond .ic { width: 14px; height: 14px; flex: none; }
 .rt-cond > span { overflow: hidden; text-overflow: ellipsis; }
 /* a group's logos overlap in discs whose rings sit outside them: clipped, the first lost its edge */
 .rt-cond > .ic-stack { overflow: visible; }
@@ -575,7 +580,7 @@ button.rt-session { cursor: pointer; }
 .pr-a, .pr-to { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .pr-a .ic, .pr-a .ic img, .pr-a .ic svg { width: 14px; height: 14px; flex: none; }
 .pr-who { flex: none; color: var(--fg); font-weight: 550; }
-.pr-a .m { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 11px/1.5 var(--code); color: var(--fg-2); background: var(--card-2); border-radius: 5px; padding: 0 5px; }
+.pr-a .m { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--code-style, normal) 500 11px/1.5 var(--code-font, var(--code)); font-stretch: var(--code-stretch, 100%); color: var(--fg-2); background: var(--card-2); border-radius: 5px; padding: 0 5px; }
 .pr-a .kind { flex: 0 100 auto; min-width: 3.2em; max-width: 8em; overflow: hidden; text-overflow: ellipsis; font-size: 10.5px; line-height: 16px; padding: 0 5px; border-radius: 5px; color: var(--muted); background: var(--card-2); border: 1px solid var(--line); white-space: nowrap; }
 .pr-req .at { justify-self: end; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 11px; }
 .pr-to { padding-left: 20px; gap: 5px; color: var(--fg-2); }

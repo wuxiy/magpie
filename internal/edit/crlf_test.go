@@ -47,7 +47,9 @@ func TestSetTOMLKeepsCRLF(t *testing.T) {
 	if err := DelTOMLKey(p, "b", "z"); err != nil {
 		t.Fatal(err)
 	}
-	want := "top = \"9\"\r\nt2 = \"x\"\r\n[a]\r\nk = \"v\"\r\nn = \"added\"\r\n\r\n[c]\r\nq = \"1\"\r\n"
+	// top is written through tomlLiteral, as every other TOML edit is: an int
+	// is a TOML integer (9), not the string "9" strconv.Quote used to make.
+	want := "top = 9\r\nt2 = \"x\"\r\n[a]\r\nk = \"v\"\r\nn = \"added\"\r\n\r\n[c]\r\nq = \"1\"\r\n"
 	if got := read(t, p); got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}

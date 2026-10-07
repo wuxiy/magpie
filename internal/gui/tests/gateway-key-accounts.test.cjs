@@ -1,8 +1,8 @@
 // A gateway key can be held to some accounts (#905): the key's models
-// menu lists the accounts and keys after the models, a plan in their
-// note, and what is picked is sent as "accounts-key" — "All models"
-// takes them all off, a model picked alone leaves the accounts as they
-// were.
+// menu lists the accounts and keys right after their own provider's
+// models, a plan in their note, and what is picked is sent as
+// "accounts-key" — "All models" takes them all off, a model picked alone
+// leaves the accounts as they were.
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
@@ -17,11 +17,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       page.setDefaultTimeout(6000);
       const events = [], errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
-      await page.route("**/*", fixture(lang, "light", events, { lan: true, keyHolds: { server: { accounts: ["relay/me@example.com"] } } }));
+      await page.route("**/*", fixture(lang, "light", events, { lan: true, keyHolds: { server: { accounts: ["relay/me@example.com"] }, laptop: { models: ["relay/gone"], accounts: ["relay/nobody@example.com"] } } }));
       const zh = lang === "zh";
       const w = zh
-        ? { label: "此密钥可用的模型", all: "全部模型", off: "当前未登录" }
-        : { label: "Models this key may use", all: "All models", off: "Not signed in now" };
+        ? { label: "此密钥可用的模型", all: "全部模型", gone: "当前未提供", off: "当前未登录" }
+        : { label: "Models this key may use", all: "All models", gone: "Not served now", off: "Not signed in now" };
       await page.goto("http://magpie.test/?view=gateway");
       await page.locator("#gatewayKeys .acc[data-key]").last().waitFor();
       const row = (id) => page.locator(`#gatewayKeys .acc[data-key="${id}"]`);
@@ -40,14 +40,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const menu = page.locator(".proto-menu");
       await menu.waitFor();
       assert.equal(await page.locator("select").count(), 0, "no native select");
-      // the accounts come after the models, an account by who is signed
-      // in with their plan in the note, a key by its fingerprint
+      // the accounts come right after their own provider's models, not
+      // one block at the end: relay's two behind its models and ahead of
+      // OpenAI's, the key behind GPT-5 — an account by who is signed in
+      // with their plan in the note, a key by its fingerprint
       const names = (await menu.locator(".pm-item").allTextContents()).map((s) => s.trim());
       const at = (s) => names.findIndex((n) => n.includes(s));
-      assert(at("me@example.com") > at("GPT-5"), names.join(" | "));
+      assert(at("me@example.com") > at("Model mini"), names.join(" | "));
+      assert(at("me@example.com") < at("GPT-5"), names.join(" | "));
       assert.match(names[at("me@example.com")], /Pro/);
       assert(at("spare@example.com") > at("me@example.com"), names.join(" | "));
-      assert(at("k-1a2b3c") > at("spare@example.com"), names.join(" | "));
+      assert(at("spare@example.com") < at("GPT-5"), names.join(" | "));
+      assert(at("k-1a2b3c") === at("GPT-5") + 1, names.join(" | "));
+      assert(at("k-1a2b3c") > at("GPT-5"), names.join(" | "));
       await menu.locator(".pm-item", { hasText: "spare@example.com" }).click();
       await page.keyboard.press("Escape");
       await menu.waitFor({ state: "detached" });
@@ -82,8 +87,24 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await until(() => events.some((e) => e.action === "accounts-key" && e.body.key === "server" && !e.body.accounts.length));
       assert.deepEqual(events.filter((e) => e.action === "models-key").at(-1).body, { key: "server", models: [] });
       assert.deepEqual(events.filter((e) => e.action === "accounts-key").at(-1).body, { key: "server", accounts: [] });
-      assert.equal((await badge("server").textContent()).trim(), zh ? "全部模型" : "All models");
+      // the answers come back before the row is drawn with them: wait for it
+      await page.waitForFunction((want) => document.querySelector('#gatewayKeys .acc[data-key="server"] .key-models')?.textContent.trim() === want, w.all);
+      assert.equal((await badge("server").textContent()).trim(), w.all);
       assert.deepEqual(await scrolled(), [await view.evaluate((v) => v.scrollTop), await page.evaluate(() => window.scrollY)], "a click moved the page");
+      // what a key kept that no provider has now is listed behind every
+      // live entry, a model gone before an account signed out, both ticked
+      await row("laptop").hover();
+      await badge("laptop").click();
+      await menu.waitFor();
+      const dead = (await menu.locator(".pm-item").allTextContents()).map((s) => s.trim());
+      const atDead = (s) => dead.findIndex((n) => n.includes(s));
+      assert(dead[atDead("relay/gone")] === "relay/gone" + w.gone, dead.join(" | "));
+      assert(dead[atDead("relay/nobody@example.com")] === "relay/nobody@example.com" + w.off, dead.join(" | "));
+      assert(atDead("relay/gone") > atDead("k-1a2b3c"), dead.join(" | "));
+      assert(atDead("relay/nobody@example.com") > atDead("relay/gone"), dead.join(" | "));
+      assert.deepEqual((await menu.locator(".pm-item.on").allTextContents()).map((s) => s.trim()), ["relay/gone" + w.gone, "relay/nobody@example.com" + w.off]);
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "detached" });
       const lefts = await page.locator("#gatewayKeys .key-models, .proto-menu .pm-item").evaluateAll((els) => els.map((e) => getComputedStyle(e).borderLeftStyle));
       assert(lefts.every((s) => s === "none"), "a coloured left border");
       assert.deepEqual(errors, []);

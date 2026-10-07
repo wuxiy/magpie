@@ -1,5 +1,8 @@
 // Caller keys use the same account list and edit controls as provider keys.
 let gatewayKeys = null, gatewayKeyDraft = null, gatewayKeysBusy = false;
+// gatewayOwnDraft is the value typed for a new key of the user's own (one
+// its clients already send, love1sbug on X); "" lets magpie make one
+let gatewayOwnDraft = "";
 // gatewayAccountNames maps a key's stored account entry ("<provider>/<id>",
 // #905) to how it is shown; what no provider has now is shown as it is kept
 let gatewayAccountNames = {};
@@ -103,23 +106,31 @@ function gatewayKeyForm() {
   const name = input(gatewayKeyDraft, t("Key name, e.g. Laptop"));
   name.setAttribute("aria-label", t("Gateway key name"));
   name.oninput = () => { gatewayKeyDraft = name.value; };
+  const own = input(gatewayOwnDraft, t("Your own key (optional)"), "password");
+  own.setAttribute("aria-label", t("Gateway key value"));
+  own.title = t("Leave empty and magpie makes a key. Or enter one your clients already send, from another gateway, so they keep working.");
+  own.autocomplete = "off";
+  own.oninput = () => { gatewayOwnDraft = own.value; };
   const add = el("button", "text primary", t("Create"));
   const go = async () => {
     add.disabled = true;
-    const out = await gatewayKeyAction("add-key", { name: name.value });
+    const mine = own.value.trim() !== "";
+    const out = await gatewayKeyAction("add-key", mine ? { name: name.value, secret: own.value } : { name: name.value });
     if (!out) { add.disabled = false; return; }
-    status(t("Gateway key created. Use Copy on its row to connect a client."), "ok");
+    gatewayOwnDraft = "";
+    status(t(mine ? "Gateway key created. Clients that send this key reach magpie now." : "Gateway key created. Use Copy on its row to connect a client."), "ok");
   };
   add.onclick = go;
-  name.onkeydown = (e) => {
+  const cancelled = () => { gatewayKeyDraft = null; gatewayOwnDraft = ""; renderGatewayKeys(); };
+  for (const i of [name, own]) i.onkeydown = (e) => {
     e.stopPropagation();
     if (e.key === "Enter" && !add.disabled) go();
-    else if (e.key === "Escape") { gatewayKeyDraft = null; renderGatewayKeys(); }
+    else if (e.key === "Escape") cancelled();
   };
   const cancel = el("button", "text", t("Cancel"));
-  cancel.onclick = () => { gatewayKeyDraft = null; renderGatewayKeys(); };
+  cancel.onclick = cancelled;
   const fields = el("div", "kf");
-  fields.append(name);
+  fields.append(name, own);
   const bar = el("div", "kb");
   bar.append(el("span", "grow"), cancel, add);
   box.append(fields, bar);
@@ -227,10 +238,27 @@ function gatewayModelsBadge(k) {
     if (!b.isConnected) return;
     const opts = [{ v: "", name: "All models", note: "Any model and any account, now and later" }];
     const seen = new Set();
+    // the accounts and keys the key may be held to (#905), each right
+    // after its provider's models, not one block at the end: an account
+    // by who is signed in, a key by its fingerprint
+    const accountsSet = new Set();
+    const ofProvider = new Map();
+    for (const a of accounts || []) {
+      accountsSet.add(a.id);
+      const o = { v: a.id, name: a.name, note: a.plan ? a.providerName + " · " + a.plan : a.providerName, literalName: true };
+      ofProvider.set(a.provider, [...(ofProvider.get(a.provider) || []), o]);
+    }
+    let listed = "";  // the provider whose models the list is in
+    const endBlock = () => {
+      for (const o of ofProvider.get(listed) || []) opts.push(o);
+      ofProvider.delete(listed);
+      listed = "";
+    };
     for (const m of models || []) {
       // a routing group the key names is its with every member in it
       // (Magic_zero on Discord); the groups come first
       if (m.group) {
+        endBlock();
         if (!seen.has("group")) {
           seen.add("group");
           opts.push({ v: "group/*", name: "Every routing group", note: "group/*" });
@@ -238,21 +266,23 @@ function gatewayModelsBadge(k) {
         opts.push({ v: m.id, name: m.name, note: m.id, literalName: true });
         continue;
       }
+      if (m.provider !== listed) {
+        endBlock();
+        listed = m.provider;
+      }
       if (!seen.has(m.provider)) {
         seen.add(m.provider);
         opts.push({ v: m.provider + "/*", name: t("Every {provider} model", { provider: m.providerName }), note: m.provider + "/*", literalName: true });
       }
       opts.push({ v: m.id, name: m.name, note: m.id, literalName: true });
     }
-    // the accounts and keys the key may be held to (#905), after the
-    // models: an account by who is signed in, a key by its fingerprint
-    const accountsSet = new Set();
-    for (const a of accounts || []) {
-      accountsSet.add(a.id);
-      opts.push({ v: a.id, name: a.name, note: a.plan ? a.providerName + " · " + a.plan : a.providerName, literalName: true });
-    }
+    endBlock();
+    // a provider with accounts and no model in the list (one kept
+    // unlisted, or serving none now) keeps its accounts after the models
+    for (const os of ofProvider.values()) opts.push(...os);
     // what the CLI kept that the list hasn't, a pattern, a model gone or
-    // an account signed out
+    // an account signed out: behind every live entry, a model gone
+    // before an account signed out
     for (const v of ms) if (!opts.some((o) => o.v === v)) opts.push({ v, name: v, note: "Not served now", literalName: true });
     for (const v of as) if (!accountsSet.has(v)) { accountsSet.add(v); opts.push({ v, name: v, note: "Not signed in now", literalName: true }); }
     openProtoMenu(b, opts, [...ms, ...as], (picked) => {

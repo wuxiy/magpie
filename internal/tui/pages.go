@@ -616,6 +616,8 @@ var (
 	hasMiniMax   = provider.HasMiniMax
 	checkinQd    = provider.CheckInQoder
 	hasQoder     = provider.HasQoder
+	checkinPl    = func(ctx context.Context) []provider.WorkBuddyCheckin { return provider.CheckInPlugins(ctx) }
+	hasPlugin    = provider.HasPluginCheckin
 )
 
 // checkinCmd presses WorkBuddy's daily check-in (签到) now for every
@@ -624,7 +626,8 @@ var (
 // the built-in's or the plugin's (akic404 on Discord: the TUI had no way
 // to); and Trae CN's (每日签到) for each Trae CN account (#694), and
 // MiniMax Code's for each MiniMax Code account (#811), and Qoder's daily
-// credits for each Qoder account. It says
+// credits for each Qoder account, and each plugin's own check-in
+// (auth.checkin) for its accounts. It says
 // how each account stands: the credits and streak, in
 // already today, or why not. A shared magpie's accounts are checked in
 // on that magpie, from its own app, TUI or CLI.
@@ -665,8 +668,16 @@ func checkinCmd() tea.Msg {
 			parts = append(parts, checkinWords(r))
 		}
 	}
+	if hasPlugin() {
+		for _, r := range checkinPl(ctx) {
+			if r.Outcome == provider.CheckinFailed {
+				failed++
+			}
+			parts = append(parts, checkinWords(r))
+		}
+	}
 	if len(parts) == 0 {
-		return checkinMsg{text: "no WorkBuddy (China), Trae CN, MiniMax Code or Qoder account is signed in · only they have the daily check-in"}
+		return checkinMsg{text: "no WorkBuddy (China), Trae CN, MiniMax Code, Qoder or check-in plugin account is signed in · only they have the daily check-in"}
 	}
 	return checkinMsg{text: strings.Join(parts, "; "), ok: failed == 0}
 }
@@ -687,6 +698,8 @@ func checkinWords(r provider.WorkBuddyCheckin) string {
 		who = "Qoder"
 	case r.By == "qoder":
 		who = "Qoder " + who
+	case r.Vendor != "":
+		who = strings.TrimSpace(r.Vendor + " " + who)
 	case who == "":
 		who = "WorkBuddy"
 	}
@@ -707,6 +720,8 @@ func checkinWords(r provider.WorkBuddyCheckin) string {
 		return who + " isn't eligible for the check-in"
 	case provider.CheckinInactive:
 		return who + ": no check-in event now"
+	case provider.CheckinCaptcha:
+		return who + " asks for a captcha: check in in its own app"
 	}
 	msg := r.Msg
 	if msg == "" {
@@ -740,6 +755,8 @@ func checkinCell(q provider.SubscriptionQuota, now time.Time) string {
 		return sMuted.Render("签到 not eligible")
 	case provider.CheckinInactive:
 		return sMuted.Render("签到 no event now")
+	case provider.CheckinCaptcha:
+		return sMuted.Render("签到 needs a captcha · check in in its app")
 	}
 	return sBad.Render("签到 failed") + sMuted.Render(" · c tries again")
 }
@@ -769,7 +786,7 @@ func (m model) updateUsage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
-	m.sum, m.direct = usage.Summarize(m.period), usage.Direct(m.period)
+	m.sum, m.direct = usage.Summaries(m.period)
 	return m, nil
 }
 

@@ -126,6 +126,15 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const segs = page.locator("#barIconSegs .opt");
         assert.deepEqual(await segs.allTextContents(), [off, on]);
         assert.equal(await segs.nth(0).evaluate((b) => b.classList.contains("on")), true, "off to start");
+        // Font preferences add rows above the bar control. Bring it into
+        // this short window with a reader's wheel before testing a click.
+        await page.locator("#view-settings").hover();
+        await page.mouse.wheel(0, 260);
+        await page.waitForFunction(() => {
+          const r = document.querySelector("#barIconSegs").getBoundingClientRect();
+          const v = document.querySelector("#view-settings").getBoundingClientRect();
+          return r.top >= v.top && r.bottom <= v.bottom;
+        });
         const before = await view(page);
         await segs.nth(1).click();
         await page.locator("#barIconSegs .opt.on", { hasText: on }).waitFor();

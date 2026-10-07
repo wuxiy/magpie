@@ -1029,7 +1029,10 @@ func InstallMarketSkill(source, id string, agents []string) (*Result, error) {
 			}
 		}
 	}
-	return InstallSkills(source, []string{p.Candidates[i].Path}, agents)
+	// the market showed this one skill: the repository's others are
+	// offered as new by a check, beside it
+	path := p.Candidates[i].Path
+	return change(func(l *Library) error { return installFrom(l, p, []string{path}, agents, false) })
 }
 
 // ---- icons ------------------------------------------------------------------

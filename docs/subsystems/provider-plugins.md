@@ -7,7 +7,7 @@ Some built-in subscriptions are deprecated and have community plugins that provi
 | Part | Responsibility | Source |
 | --- | --- | --- |
 | Provider migration | Match subscriptions to plugins, record ownership, transfer accounts, and maintain required plugin versions | [`migrate.go`](../../internal/provider/migrate.go) and `migrate_*.go` in the same directory |
-| Provider integration | Expose plugin-backed provider cards, usage, and sign-in | [`plugins.go`](../../internal/provider/plugins.go), [`plugin_usage.go`](../../internal/provider/plugin_usage.go), [`pluginsignin.go`](../../internal/provider/pluginsignin.go) |
+| Provider integration | Expose plugin-backed provider cards, usage, sign-in, and the plugin's own daily check-in | [`plugins.go`](../../internal/provider/plugins.go), [`plugin_usage.go`](../../internal/provider/plugin_usage.go), [`pluginsignin.go`](../../internal/provider/pluginsignin.go), [`plugin_checkin.go`](../../internal/provider/plugin_checkin.go) |
 | Plugin host | Load plugins and execute their code | [`internal/plugin`](../../internal/plugin), [`host.js`](../../internal/plugin/host.js) |
 | Gateway | Dispatch requests through the implementation that owns the subscription | [`internal/gateway`](../../internal/gateway) |
 | GUI | Present available subscriptions, migration state, and plugin sign-in | [`app.js`](../../internal/gui/assets/app.js) |
@@ -29,6 +29,16 @@ The `movers` map assembled in `internal/provider/migrate*.go` is the authoritati
 For a moved subscription, its built-in upstream implementation does not run. Plugin accounts use `Account.Agent == "plugin"`; requests reach `plugin.Fetch` through `Provider.Do` and bypass the built-in subscription adapter. Magpie still handles routing, protocol conversion, quota handling, and compatibility adjustments, as well as the plugin host, provider integration, migration code, and GUI plugin paths.
 
 Quota aggregation in [`quotas.go`](../../internal/provider/quotas.go) suppresses a key's GLM Coding Plan card only when its comparable reset windows match a ZCode subscription card: built-in or moved `zcode`, or independently installed `zcode-plugin`. [`PlanQuotas`](../../internal/provider/planquota.go) identifies GLM plans by their quota endpoint, including custom provider ids. Matching reset schedules from unrelated vendors do not hide cards. Within this pair, resets remain a heuristic for the shared account; a plan's `User` is a key label or mask, not a login identity. Errors, conflicting resets, or no comparable resets keep the plan visible. This applies to the Usage page, tray, quota reports, alerts, and quota waits; it does not change plugin ownership or upstream requests.
+
+## A plugin's daily check-in
+
+A plugin can press its vendor's daily check-in (签到) itself: its `auth` hook gains `checkin(getAuth, provider)`, beside `usage`. The host lists the provider with `checkin: true` (`plugin.Provider.Checkin`) and answers `checkin({provider, account})` (`plugin.AccountCheckin`) by refreshing the account as `usage` does and calling the hook with the account's auth.
+
+The hook returns `{outcome, credit?, streak?, message?}`. `outcome` is one of `claimed` (checked in now), `done` (already in today), `ineligible`, `inactive` (no check-in event now), `captcha` or `failed`. A throw, or an outcome not in that list, is `failed` with the reason. `captcha` means the vendor wants a captcha: magpie never solves one, and says "check in in its own app" instead. A plugin must not solve captchas either.
+
+[`plugin_checkin.go`](../../internal/provider/plugin_checkin.go) runs these through the same `checkiner` as the built-in check-ins ([`checkin.go`](../../internal/provider/checkin.go)): each signed-in, in-use account once a Beijing day, the first look 2 minutes after start and then every 30 minutes, a `failed` asked again after 30 minutes, every other outcome settled for the day. Results are kept in `plugin-checkin.json` by `provider|account`; a failure is recorded as failed and never resets an account, a key or a previous day's result. Each account's Usage card has the check-in row (`checkinBy: "plugin:<provider>"`), and Settings → Usage has a Plugins tab with a Daily check-in switch per provider (`settings.PluginCheckins`, `POST /api/settings/plugin-checkin {provider, on}`; *Check in now* is `POST /api/usage/plugin-checkin {provider}`). `magpie accounts checkin` and `c` on the TUI's Usage page include them.
+
+The switch is off by default. For a provider whose vendor magpie checked in through the plugin's fetch before (WorkBuddy, Trae CN, MiniMax Code, Qoder), it follows that vendor's existing switch until set on its own, and magpie's own check-in leaves that provider's accounts to the plugin (`pluginChecksIn`), so an account is never checked in twice.
 
 ## How ownership changes
 
@@ -70,6 +80,8 @@ The GUI's plugin integration includes `subOf`, `pluginSubs`, and `startPluginSig
 [`migrate_notice_test.go`](../../internal/provider/migrate_notice_test.go) includes `TestMovedBuiltinsSayTheirPlugin`, which checks that moved built-ins tell contributors which plugin serves them. Migration tests live beside [`migrate.go`](../../internal/provider/migrate.go).
 
 Gateway parity tests in [`plugin_parity_test.go`](../../internal/gateway/plugin_parity_test.go) and other `plugin_*_test.go` files compare or exercise plugin paths. A built-in test alone does not establish moved-user behavior. Inspect each test's fixture to confirm that it covers the provider and operation being changed.
+
+[`plugin_checkin_test.go`](../../internal/provider/plugin_checkin_test.go) runs the fake plugin's `auth.checkin` (`FAKE_CHECKIN`) through the schedule: off, each outcome, no second press the same day, failures only after the retry window, the next day, cards and Settings, and the vendor check-in stepping aside. `plugin-checkin.test.cjs` covers the card row and the Settings tab.
 
 [`quotas_dedupe_test.go`](../../internal/provider/quotas_dedupe_test.go) checks unrelated reset collisions and ZCode deduplication, including plugin usage window conversion for both plugin ids. [`TestPlanQuotas`](../../internal/provider/planquota_test.go) checks the custom GLM endpoint, cached cards, and fallback readings restored from disk. These fixtures do not contact the live vendors or run the community ZCode plugin.
 

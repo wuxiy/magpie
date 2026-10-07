@@ -60,14 +60,14 @@ var (
 		`data: {"id":"c1","model":"m1","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}`,
 		`~data: {"id":"c1","model":"m1","choices":[{"index":0,"delta":{"reasoning_content":"hmm"}}]}`,
 		`~data: {"id":"c1","model":"m1","choices":[{"index":0,"delta":{"content":"hi"}}]}`,
-		`~data: {"id":"c1","model":"m1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":20}}`,
+		`~data: {"id":"c1","model":"m1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":20,"completion_tokens_details":{"reasoning_tokens":12}}}`,
 		`data: [DONE]`,
 	}
 	pacedResponses = []string{
 		"event: response.created\ndata: " + `{"type":"response.created","response":{"id":"r1","status":"in_progress","output":[]}}`,
 		"~event: response.reasoning_summary_text.delta\ndata: " + `{"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,"summary_index":0,"delta":"hmm"}`,
 		"~event: response.output_text.delta\ndata: " + `{"type":"response.output_text.delta","item_id":"msg_1","output_index":1,"content_index":0,"delta":"hi"}`,
-		"~event: response.completed\ndata: " + `{"type":"response.completed","response":{"id":"r1","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":20}}}`,
+		"~event: response.completed\ndata: " + `{"type":"response.completed","response":{"id":"r1","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":20,"output_tokens_details":{"reasoning_tokens":12}}}}`,
 	}
 )
 
@@ -129,6 +129,10 @@ func TestUsageKeepsTimeToFirstToken(t *testing.T) {
 				t.Errorf("usage ttft %d, first text %d, ms %d, out %d; want the reasoning after %d ms and the text after %d", u.TTFT, u.FirstText, u.Millis, u.Output, gap, 2*gap)
 			}
 			r := lastRoute(s)
+			// the reply's reasoning, which its speed leaves out (usage.DecodeOf)
+			if c.proto != provider.Anthropic && (u.Reasoning != 12 || r.Reasoning != 12) {
+				t.Errorf("reasoning: usage %d, route %d; want 12", u.Reasoning, r.Reasoning)
+			}
 			if len(r.Tries) != 1 || r.TTFT != u.TTFT || r.FirstText != u.FirstText || r.Output != 20 ||
 				r.Tries[0].TTFT < gap || r.Tries[0].TTFT > u.TTFT || r.Tries[0].FirstText < 2*gap {
 				t.Errorf("route ttft %d/%d out %d, tries %+v", r.TTFT, r.FirstText, r.Output, r.Tries)

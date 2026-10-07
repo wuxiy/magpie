@@ -26,7 +26,7 @@ func (h *host) watchTrayUsage() {
 	}
 	// a card read while stale is refreshed behind it: read it again once
 	// that lands, not a tick later, so the menu bar says what the panel does
-	provider.OnSubscriptionUsage = onTrayUsage
+	provider.OnSubscriptionUsage(onTrayUsage)
 	// Schedule native cell clicks on the application thread after startup.
 	onTrayCellClick = func(id string) {
 		h.whenReady(func() { application.InvokeAsync(func() { h.trayCellClick(id) }) })

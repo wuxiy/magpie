@@ -34,6 +34,13 @@ import (
 // GroupPrefix starts a group's id in the catalog: "group/<id>".
 const GroupPrefix = "group/"
 
+// GroupIDOf is the group id a ref names ("group/<id>"), with spaces and the
+// [1m] mark Claude Code puts on a 1M window taken off, as an agent's own
+// settings carry it. ok is false for a ref that isn't a group's.
+func GroupIDOf(ref string) (string, bool) {
+	return strings.CutPrefix(strings.TrimSuffix(strings.TrimSpace(ref), "[1m]"), GroupPrefix)
+}
+
 // Affinities are how long a conversation stays with the key or account that
 // answered it: "" auto, as long as what the vendor cached of it is worth
 // keeping; for the whole session; within a turn only, free to move when
@@ -349,7 +356,7 @@ func mergeKey(pid, model string, same map[string]string) string {
 // session begun on it, keeps working, on one provider. ok is false for any
 // other id, a group the user has of that id, or while found groups are on.
 func AutoStandIn(id string) (string, bool) {
-	gid, ok := strings.CutPrefix(strings.TrimSuffix(strings.TrimSpace(id), "[1m]"), GroupPrefix)
+	gid, ok := GroupIDOf(id)
 	if !ok || !strings.HasPrefix(gid, "auto-") || AutoGroupsOn() {
 		return "", false
 	}
@@ -491,7 +498,10 @@ func GroupFinder() func(id string) (Group, []Member, bool) {
 		read    bool
 	)
 	return func(id string) (Group, []Member, bool) {
-		gid, ok := strings.CutPrefix(strings.TrimSpace(id), GroupPrefix)
+		// the mark Claude Code puts on a 1M window rides on the group's
+		// id, as it does on a model's: GroupFor takes it off for the
+		// gateway, and a ref the gateway routes is a group here too
+		gid, ok := GroupIDOf(id)
 		if !ok {
 			return Group{}, nil, false
 		}
@@ -1065,7 +1075,7 @@ func SwitchGroup(id string, on bool) error {
 // DisabledGroup is the group of the user's a model id names ("group/<id>",
 // or a model's as GroupFor takes it) when it is switched off.
 func DisabledGroup(id string) (Group, bool) {
-	gid, ok := strings.CutPrefix(strings.TrimSuffix(strings.TrimSpace(id), "[1m]"), GroupPrefix)
+	gid, ok := GroupIDOf(id)
 	if !ok {
 		if gid, ok = GroupFor(id); !ok {
 			return Group{}, false

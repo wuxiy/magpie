@@ -347,7 +347,7 @@ func TestVSCodiumModelsUseTheirOwnVisibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	has := func(k vscodeKind, id string) bool {
-		b, err := json.Marshal(vscodeGroupJSON(k))
+		b, err := json.Marshal(vscodeGroupJSON(k, vscodeEndpoint))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -358,5 +358,145 @@ func TestVSCodiumModelsUseTheirOwnVisibility(t *testing.T) {
 	}
 	if !has(vscodeStable, "relay/hidden") || has(vscodeStable, "relay/visible") {
 		t.Fatal("VS Code did not retain its own hidden-model list")
+	}
+}
+
+// copilotChat0481Providers is contributes.languageModelChatProviders of
+// the Marketplace's GitHub Copilot Chat 0.48.1, the last one VSCodium can
+// install (its configuration schemas left out): an OpenAI Compatible
+// provider, no Custom Endpoint.
+const copilotChat0481Providers = `[{"vendor": "copilot", "displayName": "Copilot"}, {"vendor": "copilotcli", "displayName": "Copilot CLI", "when": "false"}, {"vendor": "claude-code", "displayName": "Claude Code", "when": "false"}, {"vendor": "anthropic", "displayName": "Anthropic"}, {"vendor": "xai", "displayName": "xAI"}, {"vendor": "gemini", "displayName": "Google"}, {"vendor": "openrouter", "displayName": "OpenRouter"}, {"vendor": "openai", "displayName": "OpenAI"}, {"vendor": "ollama", "displayName": "Ollama"}, {"vendor": "customoai", "when": "productQualityType != 'stable'", "displayName": "OpenAI Compatible"}, {"vendor": "azure", "displayName": "Azure"}]`
+
+// installCopilotChat installs a Copilot Chat of a version declaring
+// providers in VSCodium's extensions folder under home, listed in
+// extensions.json as VSCodium lists it.
+func installCopilotChat(t *testing.T, home, version, providers string) {
+	t.Helper()
+	exts := filepath.Join(home, ".vscode-oss", "extensions")
+	folder := "github.copilot-chat-" + version
+	writeFile(t, filepath.Join(exts, folder, "package.json"), `{"name":"copilot-chat","publisher":"GitHub","version":"`+version+`","contributes":{"languageModelChatProviders":`+providers+`}}`)
+	writeFile(t, filepath.Join(exts, "extensions.json"), `[{"identifier":{"id":"github.copilot-chat","uuid":"7ec7d6e6-b89e-4cc5-a59b-d6c4d238246f"},"version":"`+version+`","location":{"$mid":1,"path":"/x","scheme":"file"},"relativeLocation":"`+folder+`","metadata":{"source":"gallery"}}]`)
+}
+
+func TestVSCodiumCopilotChatOpenAICompatible(t *testing.T) {
+	home := syncHome(t)
+	if err := provider.Save(provider.Provider{ID: "relay", Name: "Relay", Key: "k", Chat: "http://127.0.0.1:1/v1", Models: []string{"m"}}); err != nil {
+		t.Fatal(err)
+	}
+	installCopilotChat(t, home, "0.48.1", copilotChat0481Providers)
+	c, err := Find("vscodium")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lm := filepath.Join(c.Dir, "chatLanguageModels.json")
+	// the user's own groups
+	writeFile(t, lm, `[{"name":"mine","vendor":"customoai","models":[{"id":"x","name":"x","url":"http://h/v1","toolCalling":true,"vision":false,"maxInputTokens":1000,"maxOutputTokens":100}]},{"name":"Theirs","vendor":"customendpoint","models":[]}]`+"\n")
+	writeFile(t, c.Path, "{}\n")
+	if err := c.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	g, ok := edit.GetJSONItem(lm, vscodeGroupOf(vscodeOAI))
+	if !ok {
+		t.Fatalf("no customoai group:\n%s", readFile(lm))
+	}
+	m := gjson.Get(g, `models.#(id=="relay/m")`)
+	if m.Get("url").String() != vscodeURL() || m.Get("requestHeaders.x-api-key").String() != "magpie-vscodium" ||
+		m.Get("requestHeaders.Authorization").Exists() || m.Get("contextWindow").Exists() || gjson.Get(g, "apiKey").Exists() ||
+		m.Get("maxInputTokens").Int() <= 0 || m.Get("maxOutputTokens").Int() <= 0 || !m.Get("toolCalling").Bool() {
+		t.Fatalf("model: %s", m.Raw)
+	}
+	if _, ok := edit.GetJSONItem(lm, vscodeGroup); ok {
+		t.Fatalf("Custom Endpoint group kept:\n%s", readFile(lm))
+	}
+	if _, ok := edit.GetJSONItem(lm, map[string]string{"name": "mine", "vendor": "customoai"}); !ok {
+		t.Fatalf("user's group lost:\n%s", readFile(lm))
+	}
+	if _, ok := edit.GetJSONItem(lm, map[string]string{"name": "Theirs", "vendor": "customendpoint"}); !ok {
+		t.Fatalf("user's group lost:\n%s", readFile(lm))
+	}
+	if !c.Wired() || c.Check() != "" {
+		t.Fatalf("wired %v, check %q", c.Wired(), c.Check())
+	}
+	if n := c.Notice(); !strings.Contains(n, "OpenAI Compatible") || !strings.Contains(n, "personal Copilot plan") {
+		t.Fatalf("notice: %q", n)
+	}
+	if got := usage.AgentOf("vscodium"); got != "vscodium" {
+		t.Fatalf("token: %q", got)
+	}
+
+	// the Custom Endpoint group an older magpie wrote: Sync, as at magpie's
+	// start, writes it for customoai
+	if err := edit.DelJSONItem(lm, vscodeGroupOf(vscodeOAI)); err != nil {
+		t.Fatal(err)
+	}
+	if err := edit.SetJSONItem(lm, vscodeGroup, vscodeGroupJSON(vscodiumKind, vscodeEndpoint)); err != nil {
+		t.Fatal(err)
+	}
+	if c.Check() == "" {
+		t.Fatal("Check missed a Custom Endpoint group on 0.48.1")
+	}
+	if err := c.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := edit.GetJSONItem(lm, vscodeGroup); ok || c.Check() != "" {
+		t.Fatalf("not rewritten (%q):\n%s", c.Check(), readFile(lm))
+	}
+	if _, ok := edit.GetJSONItem(lm, vscodeGroupOf(vscodeOAI)); !ok {
+		t.Fatalf("no customoai group after Sync:\n%s", readFile(lm))
+	}
+
+	// a Copilot Chat with a Custom Endpoint provider: Sync writes that
+	installCopilotChat(t, home, "0.50.0", `[{"vendor":"copilot"},{"vendor":"customendpoint"},{"vendor":"customoai"}]`)
+	if c.Check() == "" {
+		t.Fatal("Check missed the group written for the other provider")
+	}
+	if err := c.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := edit.GetJSONItem(lm, vscodeGroupOf(vscodeOAI)); ok {
+		t.Fatalf("customoai group kept:\n%s", readFile(lm))
+	}
+	g, ok = edit.GetJSONItem(lm, vscodeGroup)
+	if !ok || gjson.Get(g, "models.0.requestHeaders.Authorization").String() != "Bearer magpie-vscodium" || c.Check() != "" {
+		t.Fatalf("custom endpoint: %s %q", g, c.Check())
+	}
+
+	// neither provider: said so
+	installCopilotChat(t, home, "0.51.0", `[{"vendor":"copilot"}]`)
+	if ch := c.Check(); !strings.Contains(ch, "neither") {
+		t.Fatalf("check: %q", ch)
+	}
+	if n := c.Notice(); !strings.Contains(n, "neither") {
+		t.Fatalf("notice: %q", n)
+	}
+
+	if err := c.Disconnect(); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range vscodeVendors {
+		if _, ok := edit.GetJSONItem(lm, vscodeGroupOf(v)); ok {
+			t.Fatalf("disconnected, %s group kept:\n%s", v, readFile(lm))
+		}
+	}
+	if _, ok := edit.GetJSONItem(lm, map[string]string{"name": "mine", "vendor": "customoai"}); !ok {
+		t.Fatalf("user's group lost on disconnect:\n%s", readFile(lm))
+	}
+}
+
+func TestVSCodeChatInstalledWithoutExtensionsJSON(t *testing.T) {
+	dir := t.TempDir()
+	if c := vscodeChatOf(filepath.Join(dir, "missing")); !c.none || c.vendor != vscodeEndpoint {
+		t.Fatalf("missing: %+v", c)
+	}
+	writeFile(t, filepath.Join(dir, "github.copilot-chat-0.9.0", "package.json"), `{"contributes":{"languageModelChatProviders":[{"vendor":"customendpoint"}]}}`)
+	writeFile(t, filepath.Join(dir, "github.copilot-chat-0.48.1", "package.json"), `{"contributes":{"languageModelChatProviders":`+copilotChat0481Providers+`}}`)
+	writeFile(t, filepath.Join(dir, "github.copilot-chat-0.50.0", "package.json"), `{"contributes":{"languageModelChatProviders":[{"vendor":"customendpoint"}]}}`)
+	writeFile(t, filepath.Join(dir, ".obsolete"), `{"github.copilot-chat-0.50.0":true}`)
+	if c := vscodeChatOf(dir); c.vendor != vscodeOAI || c.version != "0.48.1" {
+		t.Fatalf("got %+v", c)
+	}
+	writeFile(t, filepath.Join(dir, "github.copilot-chat-0.48.1", "package.json"), `{not json`)
+	if c := vscodeChatOf(dir); c.vendor != vscodeEndpoint || c.none || c.unsupported {
+		t.Fatalf("unreadable: %+v", c)
 	}
 }
