@@ -1,5 +1,5 @@
 package: cloud.lazycat.app.magpie
-version: 0.1.1079
+version: 0.1.1103
 name: magpie
 description: One place to pick every agent's model - a local gateway that speaks the OpenAI / Anthropic / Gemini APIs for Claude Code, Codex and friends
 author: yetone
