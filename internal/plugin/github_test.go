@@ -20,6 +20,10 @@ import (
 // package.json is word-guard's own, a middleware alone; alfaoz's
 // opencode-see-image (real), whose main is a dist the repository hasn't;
 // and someone/flaky-entry, whose main GitHub doesn't answer for.
+// reads counts what fakeGitHub answered other than searches: package.json,
+// npm and entry files.
+var reads atomic.Int32
+
 func fakeGitHub(t *testing.T, up *atomic.Bool, asked *atomic.Int32) {
 	t.Helper()
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
@@ -54,6 +58,9 @@ func fakeGitHub(t *testing.T, up *atomic.Bool, asked *atomic.Int32) {
 	r["items"] = items
 	search, _ := json.Marshal(r)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+		if q.URL.Path != "/search/repositories" {
+			reads.Add(1)
+		}
 		if !up.Load() || q.URL.Path == "/raw/someone/flaky-entry/main/index.js" {
 			http.Error(w, "down", 503)
 			return
@@ -85,8 +92,16 @@ func fakeGitHub(t *testing.T, up *atomic.Bool, asked *atomic.Int32) {
 	t.Cleanup(srv.Close)
 	api, raw, reg := githubAPI, githubRaw, npmRegistry
 	githubAPI, githubRaw, npmRegistry = srv.URL, srv.URL+"/raw", srv.URL+"/npm"
-	forget := func() { taggedMu.Lock(); taggedL = nil; taggedMu.Unlock() }
+	forget := func() {
+		taggedMu.Lock()
+		taggedL = nil
+		taggedMu.Unlock()
+		readMu.Lock()
+		clear(readRepo)
+		readMu.Unlock()
+	}
 	forget()
+	reads.Store(0)
 	t.Cleanup(func() { githubAPI, githubRaw, npmRegistry = api, raw, reg; forget() })
 }
 
@@ -143,13 +158,31 @@ func TestTaggedRepos(t *testing.T) {
 
 	TaggedRepos(ctx)
 	if n := asked.Load(); n != 1 {
-		t.Fatalf("asked %d times in six hours", n)
+		t.Fatalf("asked %d times in ten minutes", n)
 	}
+
+	// ten minutes on: GitHub's search asked again, so a repository tagged
+	// since shows; the repositories it read already aren't read again,
+	// but for flaky-entry, whose entry GitHub didn't answer for
+	taggedMu.Lock()
+	taggedAt = time.Now().Add(-taggedTTL - time.Second)
+	taggedMu.Unlock()
+	before := reads.Load()
+	if l := TaggedRepos(ctx); len(l) != 5 || asked.Load() != 2 {
+		t.Fatalf("ten minutes on: asked %d times, %d repos", asked.Load(), len(l))
+	}
+	if n := reads.Load() - before; n != 3 {
+		t.Fatalf("ten minutes on: %d reads, want flaky-entry's package.json, npm and entry again", n)
+	}
+	asked.Store(1)
 
 	// started again within the six hours: the copy on disk, GitHub not
 	// asked
 	forget := func() { taggedMu.Lock(); taggedL = nil; taggedMu.Unlock() }
 	forget()
+	if err := os.Chtimes(taggedCache(), time.Now(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	if l := TaggedRepos(ctx); len(l) != 5 || asked.Load() != 1 {
 		t.Fatalf("restarted: asked %d times, %d repos", asked.Load(), len(l))
 	}
@@ -180,7 +213,7 @@ func TestTaggedRepos(t *testing.T) {
 	taggedMu.Lock()
 	taggedL = nil
 	taggedMu.Unlock()
-	before := asked.Load()
+	before = asked.Load()
 	if l := TaggedRepos(ctx); len(l) != 0 || asked.Load() != before {
 		t.Fatalf("off: %+v", l)
 	}
