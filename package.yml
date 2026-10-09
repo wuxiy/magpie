@@ -1,6 +1,8 @@
 package: cloud.lazycat.app.magpie
 version: 0.1.1137
 name: magpie
+# the UI manages provider API keys and sign-ins: admins only
+admin_only: true
 description: One place to pick every agent's model - a local gateway that speaks the OpenAI / Anthropic / Gemini APIs for Claude Code, Codex and friends
 author: yetone
 license: MIT

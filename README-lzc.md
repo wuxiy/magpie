@@ -37,8 +37,10 @@ agent  ── https://magpie.<域名>/v1beta/… ────► 3425 网关（G
 
 - **管理界面**：走懒猫账号登录；`request` inject 会自动带上
   `magpie_web_3430=<MAGPIE_WEB_KEY>` cookie（magpie web 自己的鉴权），
-  所以用户打开即用。万一注入失效，界面地址后加
-  `?k=20539eb40e9f323543e3a1e33f4bbba2` 手动换一次 cookie 即可。
+  所以用户打开即用。web key 用 `{{ stable_secret "magpie_web_key" }}`
+  在部署时按盒子生成（env、inject、usage 三处同源），仓库里不存明文。
+  万一注入失效，从盒子的 `/lzcapp/run/manifest.yml` 查到 key，界面地址
+  后加 `?k=<key>` 手动换一次 cookie。
 - **网关 API**：`/v1`、`/v1beta` 通过 `public_path` 放行（agent 无法走浏览器登录），
   由 magpie 自己的 gateway key 鉴权。`setup_script` 会在首次启动时把
   `/config/magpie/settings.json` 种子为 `{"lan": true}`（即"在局域网共享"），
@@ -69,6 +71,14 @@ lpk 相关文件都在独立路径/文件名下，正常情况下合并无冲突
 合并后更新 `package.yml` 的 `version` 为上游最新 tag（去掉 `v` 前缀，
 如 `v0.1.940` → `0.1.940`）；只改打包不改上游代码时，追加 `+lzc2`、
 `+lzc3` 这样的构建号。
+
+## 商店发布
+
+发布前还需（见 docs 的上架规范）：注册开发者账号；镜像多架构化——当前
+`embed:` 内嵌镜像只含构建盒子的架构（x86_64），上架需把 amd64+arm64
+镜像推到公网 registry 后 `lzc-cli appstore copy-image` 复制到官方源，
+再把 `services.magpie.image` 改成返回的 `registry.lazycat.cloud/...` 地址；
+准备应用截图；`lzc-cli appstore publish <lpk>` 提交审核。
 
 ## 构建与安装
 
@@ -107,7 +117,6 @@ docker buildx build --platform linux/amd64 -t magpie-amd64:test \
 ## 安全清单
 
 - 网关开放路径仅 `/v1`、`/v1beta`，且强制 gateway key（`lan: true` 种子）。
-- 管理界面在懒猫强制登录之后，web key 注入只是第二层；key 写在
-  `lzc-manifest.yml`（environment 与 injects 两处，需保持一致），更换时
-  两处一起改。
+- 管理界面在懒猫强制登录之后，且 `package.yml` 设了 `admin_only: true`
+  （界面能看到所有 provider 的 key）；web key 由 stable_secret 按盒子生成。
 - 不要把 `public_path` 扩到其他路径；magpie 的设置界面和 key 都在登录保护下。

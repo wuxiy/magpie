@@ -24,7 +24,14 @@ usage: |
   3. API key 填第 1 步创建的网关 key。
 
   若浏览器界面提示需要 key（自动登录注入未生效时），在地址后加
-  ?k=20539eb40e9f323543e3a1e33f4bbba2 再打开一次即可。
+  ?k={{ stable_secret "magpie_web_key" }} 再打开一次即可。
+
+  English: The UI opens with your Lazycat account (no extra password).
+  To let agents on other devices use this gateway: create a key under
+  Gateway → Gateway keys, then point the agent at
+  https://{{ .S.AppDomain }}/v1 (OpenAI-style; Anthropic/Gemini use the
+  domain root) with that key as the API key. Requests without a valid
+  key are refused.
 
 application:
   subdomain: magpie
@@ -64,8 +71,8 @@ application:
   injects:
     # sign the browser into magpie web: its guard wants the cookie
     # "magpie_web_<port>" carrying MAGPIE_WEB_KEY, so the Lazycat account
-    # login stays the only thing a user needs. Keep the key in sync with
-    # services.magpie.environment.
+    # login stays the only thing a user needs. The key renders per install
+    # (stable_secret), the same one services.magpie.environment sets.
     - id: magpie-web-autologin
       on: request
       when:
@@ -74,16 +81,16 @@ application:
         - "/v1*"
         - "/v1beta*"
       do: |
-        ctx.headers.set("Cookie", "magpie_web_3430=20539eb40e9f323543e3a1e33f4bbba2");
+        ctx.headers.set("Cookie", "magpie_web_3430={{ stable_secret "magpie_web_key" }}");
 
 services:
   magpie:
     image: embed:magpie
     environment:
       - MAGPIE_ADDR=0.0.0.0:3425
-      # fixed web key: trades the run's random key for one that survives
-      # restarts; the request inject above signs browsers in with it
-      - MAGPIE_WEB_KEY=20539eb40e9f323543e3a1e33f4bbba2
+      # the web key, stable per box and app: set here, carried into the
+      # request inject above, shown in usage; never a constant in the repo
+      - MAGPIE_WEB_KEY={{ stable_secret "magpie_web_key" }}
       # what the UI shows agents as the address to connect to
       - MAGPIE_PUBLIC_URL={{ if .U.public_url }}{{ .U.public_url }}{{ else }}https://{{ .S.AppDomain }}{{ end }}
     binds:
