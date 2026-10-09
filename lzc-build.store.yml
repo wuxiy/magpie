@@ -2,7 +2,7 @@
 # lives under the community namespace, while the local box install keeps
 # its original cloud.lazycat.app.magpie id (and its data). Build with:
 #   lzc-cli project build -f lzc-build.store.yml -o release/<name>.lpk
-pkg_id: cloud.lazycat.community.cywu.magpie
+pkg_id: magpie
 manifest: lzc-manifest.yml
 icon: lzc/icon.png
 buildscript: lzc/build.sh
