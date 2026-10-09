@@ -101,7 +101,12 @@ English and Chinese on Chromium and WebKit. It covers title aliases, literal
 unknown names, unmarked records, pagination and totals, combined failure
 filters and CSV export, route navigation, session grouping, historical days
 and the narrow layout. Routing also covers keyboard dismissal and clearing
-the purpose while keeping the selected day and session grouping. It uses
+the purpose while keeping the selected day and session grouping. Checkbox
+selection also covers combining purposes, immediate updates without closing
+or scrolling, keyboard toggling, restoring all purposes and returning focus
+to the purpose button when All purposes closes the menu, and retaining the
+union through history, session grouping and matching route navigation, in
+English, Simplified/Traditional Chinese, Japanese and German at narrow widths. It uses
 isolated API fixtures. Run with
 `node --test internal/gui/tests/purpose-filter.test.cjs` and the Playwright
 environment described below.
@@ -535,7 +540,10 @@ beside new-api's `/api/usage/token` (and a new one with a token and no
 Balance URL): the editor says so, one click moves it to `/api/user/self`
 with the quota as its field, the New-Api-User header is asked for until it
 is typed, Check balance asks as the form has it and says the fix plainly,
-and the Usage page's card does too.
+and the Usage page's card does too. It also holds the card's own words for
+a ZCode account with nothing left to spend (#1001): a Start Plan that has
+ended is said as that, while one that couldn't be read stays "Allowance
+unavailable" — the two are not the same thing.
 
 `balance-field-default.test.cjs` leaves a custom provider's Balance field
 empty (#881): its placeholder is the field magpie reads from a Balance URL
@@ -611,7 +619,8 @@ session opened draws its latest request's window in 400 cells without moving
 the page, a cell hovered names its part and what is largest in it, and the
 Tools tab of the contents lists only tools; nothing scrolls sideways — in
 Chromium and WebKit, in English, Chinese, Japanese and German, at 1100px and
-420px.
+420px. With the state answering after the history, the cards drawn by the
+agents' ids take their names once it is in, though the history is the same.
 
 `tray-usages.test.cjs` picks several of the Usage page's cards for the menu
 bar in Settings: the menu keeps open as Codex and Claude Code are ticked
@@ -1901,6 +1910,20 @@ control where it was on the screen. It runs in Chromium and WebKit, in
 English and Chinese:
 node --test internal/gui/tests/list-sort.test.cjs
 
+`quota-name-translated.test.cjs` holds the rule that a window's name is
+what magpie translates while its display is shown as it came (#1001): a
+plugin that puts its sentence in the display keeps the card English in
+every language, as the ZCode plugin's claim line did. The fixture is that
+line with its name a sentence magpie knows and a display of the plugin's
+own ("1 · ZCode Trust Build"); the name reads in the language and the
+count and plan name do not. It covers every language magpie has (en, zh,
+zh-TW, ja, de), and each is rendered at 440, 560 and 1000px in Chromium
+and WebKit — a translated name is a sentence, and `.quota-labels > span`
+is nowrap with no ellipsis, so one wider than its `.quota` is cut off
+mid-word in silence. 440 is the narrowest the card is seen at and 560 the
+window minimum; 1000 alone could never catch a name that is too wide:
+node --test internal/gui/tests/quota-name-translated.test.cjs
+
 `quota-pools.test.cjs` checks Antigravity's allowance a row a pool of
 models, each with its 5-hour and its weekly window (a user on Discord: the
 three models read the same, show the 5 hours and the week left): windows
@@ -1994,6 +2017,18 @@ aligned list bottoms, account model labels, and no horizontal overflow at
 node --test internal/gui/tests/routing-columns.test.cjs
 ```
 
+`routing-scroll-end.test.cjs` wheels the Routing page to its end while the
+trace redraws it, at 440x620, 600x700, 900x500, 1200x600 and 1400x700, and
+checks that it stays there (#1249: in WebKit, container queries pulled it
+back). It also checks the stage, request and column layouts that those
+widths select. `context-scroll-end.test.cjs` does the same on Usage's
+Context tab, with a session open, across its timed reads. Both run in
+English and Chinese, on Chromium and WebKit.
+
+```sh
+node --test internal/gui/tests/routing-scroll-end.test.cjs internal/gui/tests/context-scroll-end.test.cjs
+```
+
 ## Automatic Codex title grouping
 
 `routing-sessions.test.cjs` checks automatic grouping after a Codex title write,
@@ -2025,6 +2060,16 @@ of its own (Cindy) on the Agents page: a line under its name says whether
 magpie is added (green once it is), its button stands where the other rows'
 model picker does, as wide and lined up with it at 960 and 700px, and a click
 opens the app's link. English and Chinese, Chromium and WebKit.
+
+`omp-profile-connect.test.cjs` checks an omp named profile's switch (#1187):
+clicking **omp · work** posts `/api/agents/connect/omp%23work`, not a path the
+browser cuts at `#`. A query string on the same page (`/api/usage?period=today`)
+stays a query. English, Chromium and WebKit. The API is faked. Without the `#`
+encoding in `api()` the posted path is `/api/agents/connect/omp`.
+
+```sh
+node --test internal/gui/tests/omp-profile-connect.test.cjs
+```
 
 `privacy-hides-accounts.test.cjs` checks that Privacy's Mask personal data
 hides the accounts on screen too (inaction on Discord): until Hide accounts is

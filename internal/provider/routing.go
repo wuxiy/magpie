@@ -125,7 +125,7 @@ type Limit struct {
 	Unit       string
 	matches    func(string) bool
 	partial    bool   // of a reading that may leave windows out (QuotaWindow.partial)
-	name       string // QuotaWindow.Name: which window it is, one reading to the next
+	Name       string // QuotaWindow.Name: which window it is, one reading to the next (WindowCapID)
 	// ResetRunsOut is when the reset the account spends by itself before
 	// it runs out does (resetRunsOut): spent then, it starts this window
 	// again — at Restarts, which routing takes for the window's renewal
@@ -416,15 +416,20 @@ func Allowances(agent string) map[string]Allowance {
 			share := renewalShare(agent) // read before the lock: it reads providers.json
 			began := time.Now()
 			all := map[string]Allowance{}
-			for user, q := range LoginUsage(ctx, agent) {
+			readings, readAt := loginUsageAt(ctx, agent)
+			for user, q := range readings {
 				if q.Error != "" || len(q.Windows) == 0 {
 					continue
 				}
 				all[user] = allowanceOf(q.Windows, time.Now()).restartedBy(resetRunsOut(agent, user, q.Windows, q.Resets))
 			}
 			c.Lock()
-			at := time.Now()
-			now := at
+			now := time.Now()
+			// as old as its oldest reading: one the Usage page made 50s
+			// ago, taken here, is read again in 10s, not kept a minute
+			// more — near its cap an account was sent on a reading two
+			// minutes old (#1295)
+			at := readAt
 			if c.seen == nil {
 				c.seen = map[string]reading{}
 			}
@@ -618,7 +623,7 @@ func allowanceOf(ws []QuotaWindow, now time.Time) Allowance {
 		if w.Aside {
 			continue
 		}
-		l := Limit{Used: w.Used, Span: w.Span, Model: w.Model, Amount: w.Amount, Of: w.Limit, Unit: w.Unit, matches: w.matches, partial: w.partial, name: w.Name}
+		l := Limit{Used: w.Used, Span: w.Span, Model: w.Model, Amount: w.Amount, Of: w.Limit, Unit: w.Unit, matches: w.matches, partial: w.partial, Name: w.Name}
 		if ids := families[w.Model]; ids != nil && w.Family != "" && w.matches == nil {
 			l.Model = ""
 			l.matches = func(model string) bool { return ids[model] }

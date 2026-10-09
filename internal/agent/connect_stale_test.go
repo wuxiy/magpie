@@ -99,6 +99,11 @@ func TestCodexStaleCopiesSayWhichIsLeft(t *testing.T) {
 			{5 * time.Hour, home + "/.vscode/extensions/openai.chatgpt-26.1003.0-darwin-arm64/bin/macos-aarch64/codex app-server --analytics-default-enabled"},
 			// the CLI's daemon for this home
 			{4 * time.Hour, dir + "/packages/app-server-daemon/releases/0.160.0-aarch64-apple-darwin/bin/codex app-server --listen unix:// --managed-daemon"},
+			// another app's own Codex (miaopasi: Agents Anywhere's
+			// connector), its app-server talked to over stdio
+			{20 * time.Hour, home + "/Library/Application Support/Agents Anywhere/connector/.venv/lib/python3.12/site-packages/codex_cli_bin/bin/codex app-server --listen stdio://"},
+			// a codex fnm installed, run in a terminal: no app's
+			{20 * time.Hour, home + "/Library/Application Support/fnm/node-versions/v24.1.0/installation/bin/codex"},
 			// a codex in a terminal from before, and one opened since
 			{3 * time.Hour, "/opt/homebrew/bin/codex"},
 			{time.Minute, "/opt/homebrew/bin/codex"},
@@ -110,13 +115,16 @@ func TestCodexStaleCopiesSayWhichIsLeft(t *testing.T) {
 	for _, c := range got {
 		kinds = append(kinds, c.Kind)
 	}
-	if want := []string{"app", "ide", "daemon", "cli"}; strings.Join(kinds, ",") != strings.Join(want, ",") {
+	if want := []string{"app", "ide", "daemon", "embedded", "cli", "cli"}; strings.Join(kinds, ",") != strings.Join(want, ",") {
 		t.Fatalf("copies: %v, want %v", kinds, want)
 	}
 	if d := time.Since(got[0].Since); d < 72*time.Hour-time.Minute || d > 72*time.Hour+time.Minute {
 		t.Fatalf("the app's copy started %v ago, want the app-server's 72h", d)
 	}
-	if n := a.Stale(); n != 4 {
-		t.Fatalf("Stale: %d, want 4 (one app, not one per process)", n)
+	if got[3].App != "Agents Anywhere" {
+		t.Fatalf("the embedded copy's app: %q, want Agents Anywhere", got[3].App)
+	}
+	if n := a.Stale(); n != 6 {
+		t.Fatalf("Stale: %d, want 6 (one app, not one per process)", n)
 	}
 }

@@ -228,7 +228,7 @@ func (s *Server) serveCursor(w http.ResponseWriter, r *http.Request, from provid
 	if events == nil {
 		return writeError(w, from, status, msg), msg
 	}
-	return relay(w, r, from, "Cursor", req, events, usage, cancel, func(string, string, bool) {})
+	return relay(w, r, from, "Cursor", req, events, usage, cancel, nil, func(string, string, bool) {})
 }
 
 // askCursor is a round for Cursor's API.
@@ -476,7 +476,7 @@ func cursorMessages(r *Request, tools []bridgeTool) [][]byte {
 			add(map[string]any{"role": "tool", "content": results})
 		}
 	}
-	for _, m := range r.Messages {
+	for _, m := range joinSplitCalls(r.Messages) {
 		if m.Role == "assistant" {
 			answer(nil)
 			var content []any

@@ -76,6 +76,18 @@ func (a *Agent) Source() string {
 	return ""
 }
 
+// FailoverSaid is, for an agent not connected whose requests still go
+// through magpie for account failover alone (FailingOver), what the CLI
+// and the TUI say of it, the Agents page's line in words of their own:
+// why it goes through magpie, and what turns that off (#1385). "" when it
+// doesn't.
+func (a *Agent) FailoverSaid() string {
+	if a.FailingOver == nil || !a.FailingOver() {
+		return ""
+	}
+	return "not connected · goes through magpie only to fail over to your other ChatGPT accounts; switch them off under Providers › Codex to stop it"
+}
+
 // startsWith is, for an agent that reads magpie's models only as it
 // starts, how to find its processes (patterns for pgrep -f), the files it
 // reads them from, and the part of those files magpie writes for it. The
@@ -175,8 +187,10 @@ type StaleCopy struct {
 	// Kind, for Codex: "app" (the ChatGPT or Codex desktop app, its
 	// app-server and helpers), "ide" (an editor extension's), "daemon"
 	// (the background app-server the CLI leaves running) or "cli"; ""
-	// for other agents
+	// for other agents; "embedded" is another app's own Codex, named by
+	// App
 	Kind  string    `json:"kind,omitempty"`
+	App   string    `json:"app,omitempty"`
 	Since time.Time `json:"since"`
 }
 
@@ -216,6 +230,9 @@ func (a *Agent) StaleCopies() []StaleCopy {
 			if a.ID == "codex" {
 				var app string
 				c.Kind, app = codexCopyKind(p.cmd)
+				if c.Kind == "embedded" {
+					c.App = app
+				}
 				if app != "" {
 					if i, ok := apps[app]; ok {
 						if since.Before(out[i].Since) {
@@ -250,6 +267,19 @@ func codexCopyKind(cmd string) (kind, app string) {
 		// the outermost bundle: ChatGPT.app's codex runs from a
 		// CodexCLI.app inside it
 		return "app", exe[:strings.Index(exe, ".app/")+len(".app")]
+	case slices.Contains(strings.Fields(cmd), "app-server"):
+		// an app that ships a Codex of its own and talks to its
+		// app-server (Agents Anywhere's connector, from its folder in
+		// Application Support): reopening that app ends it. A codex
+		// installed there by a version manager (fnm) and run in a
+		// terminal is no app-server, and stays "cli".
+		for _, under := range []string{"/Library/Application Support/", "/.local/share/"} {
+			if _, rest, ok := strings.Cut(exe, under); ok {
+				if name, _, ok := strings.Cut(rest, "/"); ok && name != "" {
+					return "embedded", name
+				}
+			}
+		}
 	}
 	return "cli", ""
 }
